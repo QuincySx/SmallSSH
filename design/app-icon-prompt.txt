@@ -1,0 +1,21 @@
+Production application icon redesign
+Date: 2026-10-23
+Tool: built-in image_gen.imagegen (no API fallback)
+Mode: new generation; transparent_background=true
+Source output: /Users/smallraw/.codex/generated_images/01a16885-cf8f-7af1-b93a-7f69268d2416/exec-7c3d80af-83cd-42ae-ad6a-8198db8aafcc.png
+Production destination: resources/icon.png
+Reference: resources/icon.png was inspected only to understand the previous icon. It was not passed as an image reference to the generation tool.
+
+Exact prompt:
+Use case: logo-brand
+Asset type: production macOS / Windows / Linux desktop application icon, square raster PNG with transparent exterior corners.
+Primary request: Design a beautifully simple, memorable desktop icon for a professional SSH terminal and connection workbench. A single large geometric terminal prompt mark sits directly on one deep midnight-blue rounded-square tile. The symbol is an elegant thick open right-pointing chevron followed by a short horizontal cursor stroke; the two pieces form one balanced terminal-prompt emblem. Keep the mark bold and readable at 16px and 32px.
+Composition/framing: Straight-on orthographic, square 1024x1024 composition. The one outer rounded-square tile fills about 88 percent of the canvas; transparent margin outside its corners. The large central emblem uses about 64 percent of the tile width. Place it optically centered. Broad uninterrupted negative space around the mark. No frame or second tile behind the emblem.
+Style/medium: Premium clean vector-like digital icon with immaculate anti-aliased edges. Mostly flat solid geometry with exceptionally restrained soft surface shading, no illustration or realistic object.
+Color palette: Midnight navy tile with a subtle quiet blue gradient. Pale cool ivory chevron and muted seafoam-teal cursor stroke, excellent foreground/background contrast. Sophisticated and restrained.
+Lighting/mood: Calm professional precision; minimal tactile polish only.
+Text: No words, no letters, no numerals, no product name. Only the geometric terminal chevron and cursor symbol.
+Constraints: Exactly one rounded-square tile, no inner rounded rectangle, no screen outline, no enclosing border, no rings, no circles, no nested badge, no halo, no chains, no intertwined ribbons, no glossy folded ribbons, no glow, no neon, no stars, no decorative dots, no background scene, no mockup, no watermark. All pixels outside the single rounded-square tile must be actually transparent. The tile is the icon itself, not an icon displayed on another background.
+
+Production processing: Standard sips resize from 1254 x 1254 to 1024 x 1024, preserving alpha. No creative editing after generation.
+Visual QA: original generation, 32 x 32 and 16 x 16 thumbnails inspected. The bold chevron and cursor remain readable at both small sizes. Native platform packaging is handled by the existing build workflow.

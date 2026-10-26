@@ -1,0 +1,14 @@
+{
+  "name": "SmallSSH",
+  "identifier": "dev.quincy.sshworkbench.preview",
+  "version": "0.0.1",
+  "main": "./cmd/desktop",
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "13.0",
+    "infoPlist": {
+      "NSLocalNetworkUsageDescription": "SmallSSH 需要连接你指定的局域网 SSH 服务器，以提供终端和文件管理功能。"
+    }
+  },
+  "icon": "resources/icon.png"
+}

@@ -1,0 +1,17 @@
+/build/
+/dist/
+/.mygo/
+*.log
+.DS_Store
+vault.json
+audit.jsonl
+agent.sock
+vault.lock
+device-unlock.json
+transfers/
+qa-stop
+/resources/*/ssh-client
+/resources/*/ssh-client.exe
+/resources/*/biometric-helper
+/resources/*/libsmallssh-auth.dylib
+/resources/*/cli/

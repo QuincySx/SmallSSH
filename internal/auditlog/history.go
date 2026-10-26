@@ -1,0 +1,62 @@
+// Package auditlog defines the metadata-only, local operational history.
+// It is deliberately not a tamper-proof forensic ledger.
+package auditlog
+
+import (
+	"time"
+	"unicode/utf8"
+)
+
+type Event struct {
+	Generation    string    `json:"generation,omitempty"`
+	ParentID      string    `json:"parentId,omitempty"`
+	OwnerIssued   bool      `json:"ownerIssued,omitempty"`
+	OwnerSession  bool      `json:"ownerSession,omitempty"`
+	Time          time.Time `json:"time"`
+	Event         string    `json:"event"`
+	RequestID     string    `json:"requestId,omitempty"`
+	Host          string    `json:"hostId,omitempty"`
+	Kind          string    `json:"kind,omitempty"`
+	OperationHash string    `json:"operationHash,omitempty"`
+	// Client is an unverified caller label, never an authenticated identity.
+	Client   string `json:"client,omitempty"`
+	HostName string `json:"hostName,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+type Query struct {
+	Before string `json:"before,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+type Page struct {
+	Events []Event `json:"events"`
+	Next   string  `json:"next,omitempty"`
+}
+
+// Historical files can contain damaged or externally written metadata. Bound
+// each displayed field so a valid 100-row page also fits the local RPC frame,
+// even when JSON escapes every character. Missing legacy identity stays empty.
+func bounded(v Event) Event {
+	v.Generation = text(v.Generation, 64)
+	v.ParentID = text(v.ParentID, 128)
+	v.Event = text(v.Event, 64)
+	v.RequestID = text(v.RequestID, 128)
+	v.Host = text(v.Host, 128)
+	v.Kind = text(v.Kind, 64)
+	v.OperationHash = text(v.OperationHash, 64)
+	v.Client = text(v.Client, 128)
+	v.HostName = text(v.HostName, 256)
+	v.Reason = text(v.Reason, 64)
+	return v
+}
+
+func text(s string, limit int) string {
+	if len(s) > limit {
+		s = s[:limit]
+	}
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}

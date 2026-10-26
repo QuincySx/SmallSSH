@@ -1,0 +1,1112 @@
+[
+  {
+    "name": "Nginx",
+    "category": "Web",
+    "aliases": [
+      "nginx",
+      "nginx-debug"
+    ],
+    "source": "https://nginx.org/en/",
+    "order": 1
+  },
+  {
+    "name": "OpenResty",
+    "category": "Web",
+    "aliases": [
+      "openresty"
+    ],
+    "source": "https://openresty.org/en/",
+    "order": 1
+  },
+  {
+    "name": "Apache",
+    "category": "Web",
+    "aliases": [
+      "apache2",
+      "httpd",
+      "apache"
+    ],
+    "source": "https://httpd.apache.org/docs/",
+    "order": 1
+  },
+  {
+    "name": "Caddy",
+    "category": "Web",
+    "aliases": [
+      "caddy"
+    ],
+    "source": "https://caddyserver.com/docs/running",
+    "order": 1,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Traefik",
+    "category": "Web",
+    "aliases": [
+      "traefik"
+    ],
+    "source": "https://doc.traefik.io/traefik/",
+    "order": 1,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "HAProxy",
+    "category": "Web",
+    "aliases": [
+      "haproxy"
+    ],
+    "source": "https://docs.haproxy.org/",
+    "order": 1
+  },
+  {
+    "name": "Lighttpd",
+    "category": "Web",
+    "aliases": [
+      "lighttpd"
+    ],
+    "source": "https://www.lighttpd.net/",
+    "order": 1
+  },
+  {
+    "name": "Varnish",
+    "category": "Web",
+    "aliases": [
+      "varnish",
+      "varnish-cache",
+      "varnishd"
+    ],
+    "source": "https://varnish-cache.org/docs/",
+    "order": 1
+  },
+  {
+    "name": "Java",
+    "category": "Java",
+    "aliases": [
+      "java",
+      "openjdk",
+      "eclipse-temurin",
+      "amazoncorretto",
+      "ibm-semeru-runtimes"
+    ],
+    "source": "https://docs.spring.io/spring-boot/how-to/deployment/installing.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Tomcat",
+    "category": "Java",
+    "aliases": [
+      "tomcat"
+    ],
+    "source": "https://tomcat.apache.org/",
+    "order": 4,
+    "unit_patterns": [
+      "^tomcat-?[0-9]+(?:\\.[0-9]+)*$"
+    ],
+    "instances": true
+  },
+  {
+    "name": "Jetty",
+    "category": "Java",
+    "aliases": [
+      "jetty"
+    ],
+    "source": "https://jetty.org/docs/",
+    "order": 4,
+    "unit_patterns": [
+      "^jetty-?[0-9]+(?:\\.[0-9]+)*$"
+    ],
+    "instances": true
+  },
+  {
+    "name": "Spring Boot",
+    "category": "Java",
+    "aliases": [
+      "springboot",
+      "spring-boot"
+    ],
+    "source": "https://docs.spring.io/spring-boot/how-to/deployment/installing.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "WildFly",
+    "category": "Java",
+    "aliases": [
+      "wildfly",
+      "jboss"
+    ],
+    "source": "https://docs.wildfly.org/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "GlassFish",
+    "category": "Java",
+    "aliases": [
+      "glassfish"
+    ],
+    "source": "https://glassfish.org/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Jenkins",
+    "category": "Java",
+    "aliases": [
+      "jenkins"
+    ],
+    "source": "https://www.jenkins.io/doc/book/installing/linux/",
+    "order": 4
+  },
+  {
+    "name": "Keycloak",
+    "category": "Java",
+    "aliases": [
+      "keycloak"
+    ],
+    "source": "https://www.keycloak.org/server/configuration",
+    "order": 4
+  },
+  {
+    "name": "Node.js",
+    "category": "Node.js / JS",
+    "aliases": [
+      "node",
+      "nodejs"
+    ],
+    "source": "https://nodejs.org/en/learn",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "PM2",
+    "category": "Node.js / JS",
+    "aliases": [
+      "pm2"
+    ],
+    "source": "https://pm2.keymetrics.io/docs/usage/startup/",
+    "order": 4,
+    "unit_patterns": [
+      "^pm2-(?P<instance>[a-z_][a-z0-9_-]{0,63})$"
+    ],
+    "instances": true,
+    "excludes": [
+      "pm2-exporter",
+      "pm2-logrotate"
+    ]
+  },
+  {
+    "name": "Bun",
+    "category": "Node.js / JS",
+    "aliases": [
+      "bun"
+    ],
+    "source": "https://bun.sh/docs",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Deno",
+    "category": "Node.js / JS",
+    "aliases": [
+      "deno"
+    ],
+    "source": "https://docs.deno.com/runtime/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Next.js",
+    "category": "Node.js / JS",
+    "aliases": [
+      "nextjs",
+      "next-js"
+    ],
+    "source": "https://nextjs.org/docs/app/guides/self-hosting",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Nuxt",
+    "category": "Node.js / JS",
+    "aliases": [
+      "nuxt",
+      "nuxtjs"
+    ],
+    "source": "https://nuxt.com/docs/getting-started/deployment",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Express",
+    "category": "Node.js / JS",
+    "aliases": [
+      "express",
+      "expressjs"
+    ],
+    "source": "https://expressjs.com/en/advanced/best-practice-performance.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "NestJS",
+    "category": "Node.js / JS",
+    "aliases": [
+      "nestjs",
+      "nestjs-server"
+    ],
+    "source": "https://docs.nestjs.com/deployment",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Fastify",
+    "category": "Node.js / JS",
+    "aliases": [
+      "fastify"
+    ],
+    "source": "https://fastify.dev/docs/latest/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Node-RED",
+    "category": "Node.js / JS",
+    "aliases": [
+      "node-red",
+      "nodered"
+    ],
+    "source": "https://nodered.org/docs/getting-started/",
+    "order": 4
+  },
+  {
+    "name": "n8n",
+    "category": "Node.js / JS",
+    "aliases": [
+      "n8n"
+    ],
+    "source": "https://docs.n8n.io/hosting/",
+    "order": 4
+  },
+  {
+    "name": "Uptime Kuma",
+    "category": "Node.js / JS",
+    "aliases": [
+      "uptime-kuma"
+    ],
+    "source": "https://github.com/louislam/uptime-kuma",
+    "order": 4
+  },
+  {
+    "name": "code-server",
+    "category": "Node.js / JS",
+    "aliases": [
+      "code-server"
+    ],
+    "source": "https://coder.com/docs/code-server/install",
+    "order": 4
+  },
+  {
+    "name": "Python",
+    "category": "Python",
+    "aliases": [
+      "python",
+      "python2",
+      "python3",
+      "pypy",
+      "pypy3"
+    ],
+    "source": "https://docs.python.org/3/using/",
+    "order": 4,
+    "unit_patterns": [
+      "^python[23](?:\\.[0-9]+)+$"
+    ],
+    "instances": true
+  },
+  {
+    "name": "Gunicorn",
+    "category": "Python",
+    "aliases": [
+      "gunicorn"
+    ],
+    "source": "https://gunicorn.org/deploy/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "uWSGI",
+    "category": "Python",
+    "aliases": [
+      "uwsgi"
+    ],
+    "source": "https://uwsgi-docs.readthedocs.io/en/latest/Systemd.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Uvicorn",
+    "category": "Python",
+    "aliases": [
+      "uvicorn"
+    ],
+    "source": "https://uvicorn.dev/deployment/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Daphne",
+    "category": "Python",
+    "aliases": [
+      "daphne"
+    ],
+    "source": "https://github.com/django/daphne",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Hypercorn",
+    "category": "Python",
+    "aliases": [
+      "hypercorn"
+    ],
+    "source": "https://hypercorn.readthedocs.io/en/latest/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Celery",
+    "category": "Python",
+    "aliases": [
+      "celery",
+      "celeryd",
+      "celerybeat",
+      "celery-beat"
+    ],
+    "source": "https://docs.celeryq.dev/en/stable/userguide/daemonizing.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "RQ",
+    "category": "Python",
+    "aliases": [
+      "rq",
+      "rqworker",
+      "rq-worker"
+    ],
+    "source": "https://python-rq.org/docs/workers/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Flower",
+    "category": "Python",
+    "aliases": [
+      "flower",
+      "celery-flower"
+    ],
+    "source": "https://flower.readthedocs.io/en/latest/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Django",
+    "category": "Python",
+    "aliases": [
+      "django"
+    ],
+    "source": "https://docs.djangoproject.com/en/stable/howto/deployment/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Flask",
+    "category": "Python",
+    "aliases": [
+      "flask"
+    ],
+    "source": "https://flask.palletsprojects.com/en/stable/deploying/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "FastAPI",
+    "category": "Python",
+    "aliases": [
+      "fastapi"
+    ],
+    "source": "https://fastapi.tiangolo.com/deployment/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Jupyter",
+    "category": "Python",
+    "aliases": [
+      "jupyter",
+      "jupyter-lab",
+      "jupyterlab",
+      "jupyter-notebook",
+      "jupyterhub"
+    ],
+    "source": "https://jupyter-server.readthedocs.io/en/latest/operators/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Supervisor",
+    "category": "Python",
+    "aliases": [
+      "supervisor",
+      "supervisord"
+    ],
+    "source": "https://supervisord.org/running.html",
+    "order": 4
+  },
+  {
+    "name": "Home Assistant",
+    "category": "Python",
+    "aliases": [
+      "home-assistant",
+      "homeassistant",
+      "hass"
+    ],
+    "source": "https://www.home-assistant.io/installation/",
+    "order": 4
+  },
+  {
+    "name": "Ruby",
+    "category": "Ruby",
+    "aliases": [
+      "ruby"
+    ],
+    "source": "https://www.ruby-lang.org/en/documentation/",
+    "order": 4,
+    "unit_patterns": [
+      "^ruby[0-9]+(?:\\.[0-9]+)*$"
+    ],
+    "instances": true
+  },
+  {
+    "name": "Puma",
+    "category": "Ruby",
+    "aliases": [
+      "puma"
+    ],
+    "source": "https://puma.io/puma/file.systemd.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Unicorn",
+    "category": "Ruby",
+    "aliases": [
+      "unicorn"
+    ],
+    "source": "https://yhbt.net/unicorn/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Passenger",
+    "category": "Ruby",
+    "aliases": [
+      "passenger"
+    ],
+    "source": "https://www.phusionpassenger.com/docs/",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Sidekiq",
+    "category": "Ruby",
+    "aliases": [
+      "sidekiq"
+    ],
+    "source": "https://github.com/sidekiq/sidekiq/wiki/Deployment",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Rails",
+    "category": "Ruby",
+    "aliases": [
+      "rails",
+      "rubyonrails"
+    ],
+    "source": "https://guides.rubyonrails.org/getting_started.html",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "PHP",
+    "category": "PHP",
+    "aliases": [
+      "php"
+    ],
+    "source": "https://www.php.net/manual/en/",
+    "order": 4,
+    "unit_patterns": [
+      "^php[0-9]+(?:\\.[0-9]+)*$"
+    ],
+    "instances": true
+  },
+  {
+    "name": "PHP-FPM",
+    "category": "PHP",
+    "aliases": [
+      "php-fpm",
+      "php_fpm"
+    ],
+    "source": "https://www.php.net/manual/en/install.fpm.php",
+    "order": 4,
+    "unit_patterns": [
+      "^php[0-9]+(?:\\.[0-9]+)*-fpm$",
+      "^php-fpm[0-9]+(?:\\.[0-9]+)*$"
+    ]
+  },
+  {
+    "name": "FrankenPHP",
+    "category": "PHP",
+    "aliases": [
+      "frankenphp"
+    ],
+    "source": "https://frankenphp.dev/docs/",
+    "order": 4,
+    "instances": true,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "RoadRunner",
+    "category": "PHP",
+    "aliases": [
+      "roadrunner"
+    ],
+    "source": "https://docs.roadrunner.dev/",
+    "order": 4,
+    "instances": true,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Swoole",
+    "category": "PHP",
+    "aliases": [
+      "swoole",
+      "openswoole"
+    ],
+    "source": "https://openswoole.com/docs",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": "Laravel Octane",
+    "category": "PHP",
+    "aliases": [
+      "laravel-octane",
+      "octane"
+    ],
+    "source": "https://laravel.com/docs/octane",
+    "order": 4,
+    "instances": true
+  },
+  {
+    "name": ".NET / ASP.NET Core",
+    "category": ".NET",
+    "aliases": [
+      "dotnet",
+      "aspnetcore"
+    ],
+    "source": "https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/linux-nginx",
+    "order": 4,
+    "instances": true,
+    "images": [
+      "mcr.microsoft.com/dotnet/aspnet",
+      "mcr.microsoft.com/dotnet/runtime"
+    ]
+  },
+  {
+    "name": "MySQL",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "mysql",
+      "mysqld"
+    ],
+    "source": "https://dev.mysql.com/doc/refman/en/using-systemd.html",
+    "order": 3
+  },
+  {
+    "name": "MariaDB",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "mariadb",
+      "mariadbd"
+    ],
+    "source": "https://mariadb.com/kb/en/systemd/",
+    "order": 3
+  },
+  {
+    "name": "PostgreSQL",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "postgres",
+      "postgresql"
+    ],
+    "source": "https://www.postgresql.org/docs/current/server-start.html",
+    "order": 3,
+    "unit_patterns": [
+      "^postgresql-?[0-9]+(?:\\.[0-9]+)*$"
+    ]
+  },
+  {
+    "name": "Redis",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "redis",
+      "redis-server"
+    ],
+    "source": "https://redis.io/docs/latest/operate/oss_and_stack/",
+    "order": 3
+  },
+  {
+    "name": "Valkey",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "valkey",
+      "valkey-server"
+    ],
+    "source": "https://valkey.io/topics/",
+    "order": 3
+  },
+  {
+    "name": "MongoDB",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "mongo",
+      "mongod",
+      "mongodb"
+    ],
+    "source": "https://www.mongodb.com/docs/manual/administration/install-on-linux/",
+    "order": 3
+  },
+  {
+    "name": "Memcached",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "memcached"
+    ],
+    "source": "https://docs.memcached.org/",
+    "order": 3
+  },
+  {
+    "name": "ClickHouse",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "clickhouse",
+      "clickhouse-server"
+    ],
+    "source": "https://clickhouse.com/docs/install",
+    "order": 3
+  },
+  {
+    "name": "InfluxDB",
+    "category": "数据库 / 缓存",
+    "aliases": [
+      "influxdb",
+      "influxd"
+    ],
+    "source": "https://docs.influxdata.com/",
+    "order": 3
+  },
+  {
+    "name": "RabbitMQ",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "rabbitmq",
+      "rabbitmq-server"
+    ],
+    "source": "https://www.rabbitmq.com/docs/install-systemd",
+    "order": 4
+  },
+  {
+    "name": "Kafka",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "kafka"
+    ],
+    "source": "https://kafka.apache.org/documentation/",
+    "order": 4
+  },
+  {
+    "name": "ActiveMQ",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "activemq",
+      "artemis"
+    ],
+    "source": "https://activemq.apache.org/components/artemis/documentation/latest/using-server.html",
+    "order": 4
+  },
+  {
+    "name": "NATS",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "nats",
+      "nats-server"
+    ],
+    "source": "https://docs.nats.io/running-a-nats-service/introduction/installation",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Mosquitto",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "mosquitto",
+      "eclipse-mosquitto"
+    ],
+    "source": "https://mosquitto.org/documentation/",
+    "order": 4
+  },
+  {
+    "name": "Redpanda",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "redpanda"
+    ],
+    "source": "https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/",
+    "order": 4
+  },
+  {
+    "name": "Elasticsearch",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "elasticsearch"
+    ],
+    "source": "https://www.elastic.co/docs/deploy-manage/deploy/self-managed/install-elasticsearch-with-debian-package",
+    "order": 4
+  },
+  {
+    "name": "OpenSearch",
+    "category": "消息 / 搜索",
+    "aliases": [
+      "opensearch"
+    ],
+    "source": "https://docs.opensearch.org/latest/install-and-configure/",
+    "order": 4
+  },
+  {
+    "name": "etcd",
+    "category": "Go 常见应用",
+    "aliases": [
+      "etcd"
+    ],
+    "source": "https://etcd.io/docs/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Consul",
+    "category": "Go 常见应用",
+    "aliases": [
+      "consul"
+    ],
+    "source": "https://developer.hashicorp.com/consul/docs",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Vault",
+    "category": "Go 常见应用",
+    "aliases": [
+      "vault"
+    ],
+    "source": "https://developer.hashicorp.com/vault/docs",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Prometheus",
+    "category": "监控",
+    "aliases": [
+      "prometheus"
+    ],
+    "source": "https://prometheus.io/docs/prometheus/latest/installation/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Grafana",
+    "category": "监控",
+    "aliases": [
+      "grafana",
+      "grafana-server"
+    ],
+    "source": "https://grafana.com/docs/grafana/latest/setup-grafana/start-restart-grafana/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Loki",
+    "category": "监控",
+    "aliases": [
+      "loki"
+    ],
+    "source": "https://grafana.com/docs/loki/latest/setup/install/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Alertmanager",
+    "category": "监控",
+    "aliases": [
+      "alertmanager",
+      "prometheus-alertmanager"
+    ],
+    "source": "https://prometheus.io/docs/alerting/latest/alertmanager/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "VictoriaMetrics",
+    "category": "监控",
+    "aliases": [
+      "victoriametrics",
+      "victoria-metrics"
+    ],
+    "source": "https://docs.victoriametrics.com/victoriametrics/quick-start/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "FRP 服务端",
+    "category": "网络 / 穿透",
+    "aliases": [
+      "frps"
+    ],
+    "source": "https://gofrp.org/en/docs/",
+    "order": 2,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "FRP 客户端",
+    "category": "网络 / 穿透",
+    "aliases": [
+      "frpc"
+    ],
+    "source": "https://gofrp.org/en/docs/",
+    "order": 2,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Cloudflare Tunnel",
+    "category": "网络 / 穿透",
+    "aliases": [
+      "cloudflared"
+    ],
+    "source": "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/",
+    "order": 2,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Tailscale",
+    "category": "网络 / 穿透",
+    "aliases": [
+      "tailscale",
+      "tailscaled"
+    ],
+    "source": "https://tailscale.com/kb/",
+    "order": 2,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "ZeroTier",
+    "category": "网络 / 穿透",
+    "aliases": [
+      "zerotier",
+      "zerotier-one"
+    ],
+    "source": "https://docs.zerotier.com/",
+    "order": 2
+  },
+  {
+    "name": "MinIO",
+    "category": "常见自托管应用",
+    "aliases": [
+      "minio"
+    ],
+    "source": "https://github.com/minio/minio",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Syncthing",
+    "category": "常见自托管应用",
+    "aliases": [
+      "syncthing"
+    ],
+    "source": "https://docs.syncthing.net/users/autostart.html",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Gitea",
+    "category": "常见自托管应用",
+    "aliases": [
+      "gitea"
+    ],
+    "source": "https://docs.gitea.com/installation/linux-service",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Forgejo",
+    "category": "常见自托管应用",
+    "aliases": [
+      "forgejo"
+    ],
+    "source": "https://forgejo.org/docs/latest/admin/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Vaultwarden",
+    "category": "常见自托管应用",
+    "aliases": [
+      "vaultwarden"
+    ],
+    "source": "https://github.com/dani-garcia/vaultwarden",
+    "order": 4
+  },
+  {
+    "name": "Nextcloud",
+    "category": "常见自托管应用",
+    "aliases": [
+      "nextcloud"
+    ],
+    "source": "https://docs.nextcloud.com/server/latest/admin_manual/",
+    "order": 4
+  },
+  {
+    "name": "Immich",
+    "category": "常见自托管应用",
+    "aliases": [
+      "immich",
+      "immich-server"
+    ],
+    "source": "https://docs.immich.app/install/docker-compose/",
+    "order": 4
+  },
+  {
+    "name": "Jellyfin",
+    "category": "常见自托管应用",
+    "aliases": [
+      "jellyfin"
+    ],
+    "source": "https://jellyfin.org/docs/general/installation/",
+    "order": 4
+  },
+  {
+    "name": "Alist",
+    "category": "常见自托管应用",
+    "aliases": [
+      "alist"
+    ],
+    "source": "https://github.com/AlistGo/alist",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "File Browser",
+    "category": "常见自托管应用",
+    "aliases": [
+      "filebrowser",
+      "file-browser"
+    ],
+    "source": "https://filebrowser.org/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Portainer",
+    "category": "常见自托管应用",
+    "aliases": [
+      "portainer"
+    ],
+    "source": "https://docs.portainer.io/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "1Panel",
+    "category": "常见自托管应用",
+    "aliases": [
+      "1panel",
+      "1panel-core",
+      "1panel-agent"
+    ],
+    "source": "https://1panel.cn/",
+    "order": 4,
+    "stacks": [
+      "Go"
+    ]
+  },
+  {
+    "name": "Sub-Store",
+    "category": "常见自托管应用",
+    "aliases": [
+      "substore",
+      "sub-store"
+    ],
+    "source": "https://github.com/sub-store-org/Sub-Store",
+    "order": 0
+  }
+]
