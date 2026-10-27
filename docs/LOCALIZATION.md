@@ -28,7 +28,7 @@ preview_qa 的 TestInternationalizationSnapshotsWithoutWindows 生成英文主�
 
 ## 来源
 
-MyGo v0.5.5，revision 4d8673cd2658a2c6e86b26c44751e57bf8174f91。
+MyGo v0.7.1，revision 76dd068b72cc15526cda19db84d70a63c7a8843a。
 
 - 官方语言文档：https://mygo.egoist.dev/docs/i18n
-- 固定版本：https://github.com/egoist/mygo/releases/tag/v0.5.5
+- 固定版本：https://github.com/egoist/mygo/releases/tag/v0.7.1

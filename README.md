@@ -1,156 +1,68 @@
 # SmallSSH
 
-独立 SSH 客户端的开发预览。使用 Go、MyGo 原生界面和 MyGo 官方 Ghostty 终端插件，覆盖 macOS、Windows、Linux 桌面和 CLI。无账号、会员或外部凭据托管服务。
+A cross-platform SSH workbench: terminal, SFTP file management, server metrics, Docker/Compose, and an AI/CLI proxy where every request needs the owner's approval. Native Go + MyGo UI, no account, no hosted credentials. Developer preview, not released.
 
-应用图标采用单层终端标记。界面语言在「设置 → 工作区 → 界面语言」选择简体中文、English 或跟随系统，菜单与 MyGo 控件同步切换；连接名称、路径和终端内容保持原样。实现与新增文案方法见 [国际化说明](docs/LOCALIZATION.md)。
+**English** | [简体中文](README.zh-CN.md)
 
-应用顶栏直接切换「工作台、授权中心、设置」三个完整页面。工作台采用「终端优先」布局。三个页面共用固定在顶栏左端的侧栏开关，在完整侧栏与 48px 图标栏之间切换，共用并保存同一个展开状态；任一页收窄或展开后，另外两页同步沿用。展开和收窄共用相同图标 / 头像，普通条目统一 40px 高、4px 间距，图标与文字额外留 6px；仅切换侧栏宽度及文字显示，保留选择与滚动位置。连接侧栏按分组排列本地生成的稳定头像；授权的待处理 / 活动 / 历史和设置分类均保留可点击图标，悬停显示名称。顶栏保持一行，工具开关只在工作台显示，任务与锁定入口常驻。切页保留终端连接、文件位置和分栏。左侧是可收窄的服务器分组与搜索，右侧默认终端在上、工具面板在下；终端栏只保留标签与终端分组操作。文件、常用命令和服务器状态在工具面板切换，可收起、停靠底部或右侧，位置和比例在退出后保留。文件窗口默认跟随当前终端的服务器，按服务器记住上次目录；主动选择本机或其他服务器后固定，选择“跟随当前终端”恢复。左侧单击只选择连接，每次双击都新建独立终端；切换终端标签保留侧栏选择与滚动位置。当前仍是开发预览，完整对照与剩余功能见 [功能进度](docs/FEATURES.md)。
+![Workbench](docs/docker-work-terminal.png)
 
-文件区默认一套目录树＋列表。每个文件窗口的「⋮」集中管理向右 / 向下拆分、添加本机窗口、左右 / 上下 / 网格排列，以及关闭或仅保留当前窗口；工具选项卡右侧不再显示含义模糊的加号。各窗口独立保留服务器、目录、选择与跟随设置，最多同时显示 8 个；新增本机窗口恢复本机缓存目录，即使此前该窗格切换过服务器，也不会改动其他窗口来源。多窗口之间的本机 / 服务器拖拽沿用原传输确认。排列变化只调整文件区，不自动放大或覆盖终端。新建文件、文件夹、重命名、权限与删除保留在目录 / 文件右键菜单。
+- **Terminal** — Ghostty encoding and rendering (libghostty-vt), tabs and two panes, 32 MiB scrollback
+- **Files** — several tree + list windows, local ↔ server drag and drop, resumable transfers that never overwrite
+- **Monitoring** — CPU, memory, network and disk, processes, enabled services, Docker and Compose updates
+- **Authority** — every AI/CLI access is approved by a human; delegated sessions are time-boxed and audited
+- **Vault** — master-password encrypted, with Touch ID (Secure Enclave) unlock on macOS
+- **Platforms** — macOS, Windows and Linux, plus a CLI over the same broker
 
-工具面板的「⋮ → 停靠侧」第一个重叠窗口图标可把文件、命令和服务器状态移到独立系统窗口，也可用“视图 → 工具面板独立窗口”。新窗口可自由移动、缩放，主窗口将工具区域交还终端；选择底部或右侧图标可停靠回去。文件数据、选择、分栏和跟随状态保持，服务器状态继续跟随当前终端。关闭工具窗口只收起工具，SSH 保持连接，主窗口工具按钮可重新打开；锁定或退出会关闭独立窗口。工具操作的确认框与命令编辑框在发起窗口显示，停靠回去或关闭时保留尚未提交的表单。不会在启动、后台刷新或恢复布局时自动弹出独立窗口。
-
-终端采用代码编辑器式的左右两组，各组独立保留标签和当前终端。标签可在组内拖动排序、跨组移动；拖到工作区右侧创建第二组，右键也可移到另一组。顶部「终端分栏」可新建独立终端到另一组，或合并全部分组；最后一个标签移走或关闭后自动收回空组。下面仍共用一套工具面板：服务器状态、命令和跟随文件窗口切到当前操作的终端，固定的文件位置保持不变。移动、合并保留连接与记录；同机多终端有序号，重连只替换指定终端。文件编辑标签也可在两组间移动，保留未保存的内容。
-
-## 使用桌面端
-
-macOS 本机构建位于 `build/darwin-arm64/SmallSSH.app`。首次打开创建保险库。
-
-1. 左侧「＋」新建连接，填写名称、服务器地址、用户名和登录方式。连接 ID 自动生成；端口默认 22，直接显示在地址旁；分组可选择已有名称，也可输入新名称随连接保存。同一窗口支持新建、编辑及保留 / 更换登录凭据。
-2. 密码方式填写服务器密码；私钥可以选择文件，也可以粘贴本机完整路径，支持 OpenSSH / PEM。本地检查格式和私钥口令，保存前再检查一次；代理方式读取公开身份并明确选定其中一把。已有密码和私钥不会在编辑时回显，修改名称等信息默认保留凭据；需要时勾选「更换登录凭据」。导入后原文件保留；以后登录使用加密库中的副本，不依赖原文件位置。取消会清理输入并取消检查；有未保存内容时，切页或切换服务器会先确认。
-3. 首次保存先读取服务器指纹，**不会发送登录凭据，也不会自动信任**。首次身份确认使用独立页面，通过云控制台或已有可信连接核对后，点击「信任并连接」或「信任并保存」；改变地址或端口会重新要求确认。同一次解锁期间，保存和直接连接复用进程内已解密的会话密钥，不再重复索要主密码。只保存后也可双击服务器连接。手动终端持续到关闭、锁定或退出；每次双击服务器都会新建独立终端标签，同一服务器可同时打开多个终端，右键也可新建终端标签，断线后可在原标签重新连接。外部 CLI / AI 需要独立授权；单次请求最长 15 分钟，也可申请有期限的客户端会话，在批准范围内复用授权。成功后自动关闭表单并进入终端；保存成功但登录失败时会分别说明结果并保留可修正的表单。服务器指纹变化时先拒绝登录，使用「重新核对服务器身份」读取候选指纹，再独立核对并确认；不会自动替换已信任记录。右键连接可编辑或删除；修改及删除只撤销该服务器会话。
-4. 「文件」默认只有一套目录树和文件列表。「＋」增加第二窗口，「×」关闭并保留位置；每个窗口可选择本机或已保存服务器。进入文件窗口自动读取目录，输入路径按 Enter 跳转；点击树节点 / 双击文件夹进入。刷新按钮或 F5 更新目录，失败处可直接重试。文件列表和左侧目录树均可右键重命名 / 移动、权限 / 属性及删除，目录菜单还可新建文件夹 / 文本、刷新、返回上级或恢复跟随终端；目录只删除空目录。「权限 / 属性」用所有者 / 用户组 / 其他用户三行勾选读、写、执行，实时显示权限值；所属用户和组可选已有名称或输入数字 UID/GID。保存只作用于该目标，不递归；没有服务器权限会显示实际错误，不自动提权。根目录、符号链接和特殊文件仅查看属性。
-5. 本机与服务器间可拖放普通文件，Cmd / Ctrl 多选、Shift 连选；也可右键上传 / 下载。核对目标后进入「传输」队列，支持暂停与断点续传；本机界面使用当前解锁会话签发精确操作证明，不再次索要主密码。已有文件不会覆盖，完成后已载入的目标列表自动更新。服务器互传、整目录传输尚未接通。
-6. 「命令」中点「＋」保存加密常用命令，双击填入当前终端的待执行内容，按「执行」核对目标后才发送。命令管理收在右键。主终端不再常驻额外输入栏。
-7. 「服务器状态」随终端连接自动更新，收起面板仍继续采集。概览只显示 CPU、内存、网络、磁盘 I/O 四张卡片和系统摘要，按可用宽度自动排列 1～4 列，底部较浅时切换紧凑卡片；点击卡片在原面板内查看详情，终端大小保持不变；固定在上方的“返回概览”保留原滚动位置。趋势支持最近 1 / 5 / 15 分钟与悬停数值，同一采集源共用最多 451 个紧凑样本和一份当前状态；关闭一个标签不影响其他标签，最后一个订阅离开后停止采集。断开的标签保留最后状态，退出或锁定后释放。详情包括各核心、用户态 / 系统态 / I/O 等待、内存与 Swap、各网卡速率与累计计数、块设备读写 / IOPS / 忙碌率以及文件系统容量。进程支持搜索和点击各列表头排序（进程名、PID、CPU、内存、账户、状态、运行时间）；自启服务也可按服务名、状态和启用方式排序，重复点击切换升降序并显示箭头。排序在搜索、自动刷新和标签切换后保留。系统信息和自启服务独立成页。资源每两秒更新，系统、型号和服务每 60 秒刷新；缺样本或计数重置显示等待，不画成零，断开后注明最后状态。Linux 状态接口不支持时明确说明，读取失败不影响终端；不安装额外服务器服务。进程 CPU 是 ps 的运行期间平均值，清单合并 CPU / 内存各前 32 项；非 Linux 状态接口未适配。
-8. 编辑器内 Cmd / Ctrl+S 保存，未修改或正在保存时不会重复提交；每个终端 / 编辑标签旁都有独立的「×」关闭按钮；关闭有修改的编辑标签时先确认。工具面板「⋯」选择底部 / 右侧、主动放大或恢复分栏；放大时顶部也会显示“恢复分栏”按钮。面板右上角「×」完全收起；应用顶栏的工具显示按钮可恢复。快捷键为 Cmd / Ctrl + Shift + J。布局文件只存位置与尺寸，不存连接资料或命令内容。
-9. 顶部导航进入完整的授权中心和设置页。设置使用左侧分类、右侧独立滚动内容：「工作区」管理连接侧栏、工具显示、停靠位置与恢复默认布局；「安全与解锁」管理系统验证。顶栏锁形按钮和系统「安全」菜单均可锁定。锁定会撤销授权、断开会话并清除界面中的文件内容。系统验证适配与实机范围见安全文档。删除连接清除本机资料并撤销授权，不删除服务器数据。
-
-Docker 在「服务器状态 → Docker」中管理：容器右键 /「⋯」统一提供日志与详情、容器终端、启动、停止和重启。点击卡片名称或双击列表可查看日志；日志留在原工具区，支持搜索、复制、暂停接收及跟随最新，返回不改变终端大小。容器终端默认 sh，也可选择 bash，打开普通终端标签；文件区仍通过 SSH 浏览宿主机，会标明「跟随宿主机」。
-
-Compose 一张卡代表一个项目，汇总运行状态、总 CPU / 内存并预览各容器状态；点击查看项目容器，详情右上角「⋯」提供启动、停止、重启与更新；启动 / 停止 / 重启先确认整项目服务范围，更新先选择服务并检查计划，再开始更新。默认选择正在运行的服务；沿用服务器配置里的镜像标签或摘要，不替换为 latest。下载镜像后再次核对配置，随后重建所选服务并检查运行 / 健康状态；不删除数据卷、旧镜像或其他容器。更新在后台执行，右上「任务中心 → 服务器操作」查看阶段、输出与结果，任务不会自动弹出面板。中断等待时需核对远端实际状态；数据库数据不提供自动回滚。适用范围及 CLI 用法见 [Docker 与 Compose 流程](docs/SERVER-MANAGEMENT.md#docker-日志容器终端与-compose-更新)。
-
-终端沿用 Ghostty 编码和渲染，支持 32 MiB 输出回滚缓冲、应用光标模式、备用屏幕、分段 UTF-8、组合字符及程序请求的括号粘贴。方向键与 Ctrl+R 交给远端 Shell 使用它已有的历史记录；不会修改远端启动文件或把历史文件伪装成以前的屏幕输出。菜单在 Windows / Linux 使用 Ctrl+Shift+C / V / A 和 Ctrl+Shift+W，不抢终端 Ctrl+C、Ctrl+R、Ctrl+W、Ctrl+Z 等控制键。macOS 使用 Command 复制 / 粘贴，Option 作为终端 Alt。
-
-参考：[Bash 历史快捷键](https://www.gnu.org/s/bash/manual/html_node/Commands-For-History.html)、[Ghostty Shell Integration](https://ghostty.org/docs/features/shell-integration)、[systemctl 的启用与运行状态](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html)。此项目使用 libghostty-vt，并不自动拥有 Ghostty 完整应用的远程 Shell 集成。
-
-外部 CLI / AI 的单次请求、首次会话批准及续期仍需所有者通过主密码或系统验证确认；获批会话内的子操作按批准范围签发，不逐条要求验证；本机桌面明确发起的连接、文件操作和传输使用已解锁会话，只签发本次具体操作，锁定或退出后失效。取消或验证失败不会放行，也不会静默降级。没有相应硬件的终端可使用主密码。创建正式保险库要求主密码至少 12 字节；`123123` 仅用于单独的开发测试库，创建策略没有为测试降低。
-
-测试预览目录 `ssh-client-workbench-preview-qa` 会明确标为测试保险库；连接表单仅允许本机测试地址，避免把真实服务器凭据填进弱口令测试库。独立可复用的凭据库与密钥生成尚未实现；现有密码 / 私钥保存在各自加密连接中，添加连接无需先完成另一套凭据创建流程。
-
-服务器右键「备注…」或“连接 → 服务器备注”可记录用途与维护事项，手写内容和自动概览分开加密保存。点「检测服务和域名」按需读取当前账户可见的运行服务、Docker / Compose 容器、监听地址与常见静态站点配置，并对发现的域名做本机解析核验。概览仅列出应用服务和关联域名：正常运行不重复标注，只标出已知停止、异常或解析地址不同的项目。系统服务、端口、IP、配置路径和检测范围放进默认折叠的「检测详情」；老版本清单和用途摘要也可直接在本地整理显示。服务识别使用独立维护的[常见应用清单](docs/SERVICE-CATALOG.md)，覆盖 Web、Java、Node.js、Python、Ruby、PHP、Go 常见产品等；支持版本和实例变体，只在本地匹配，不增加服务器请求。服务名根据已知应用、容器和自定义服务配置来源整理；未识别的发行版服务留在详情，避免把磁盘工具、系统认证等组件当成业务。手动检测时仅增加一次批量服务路径读取，不逐个请求，不读取启动参数或环境变量，不据此推断网站内容、代理路由、证书续期或公网可访问。生成后可检查并点击「保存备注」，不会覆盖手写内容。检测有超时和数量上限，不读取容器环境变量、不展开自定义 include 或容器内配置；解析核验不是反向域名枚举，CDN / 代理可能显示地址未匹配，也不代表网站不可访问。连接目标变化会标记旧概览，锁定会关闭备注并取消检测；备注不进入公共 AI 连接清单。
-
-自动概览不轮询，同一连接目标每分钟最多手动启动一次（取消、关闭再打开也保留冷却），总超时 25 秒；最多发现 32 个域名，解析并发最多 4 个，每个最长 2 秒。服务器状态复用已授权的 SSH 连接，同一保存连接、SSH 用户、实际地址与已核对主机指纹共用一套采集、最新快照和趋势缓存：常规采集间隔为基础资源 2 秒、Docker 资源 10 秒、系统与容器清单 60 秒，从上一轮完成后计算；采集中断后的接替也保留 2 秒冷却。多开终端订阅同一份结果，新标签先读取缓存；当前采集连接关闭时由其他已授权连接接替，不额外登录。最后一个订阅离开、锁定或退出后停止。不同保存连接条目和账号的数据保持隔离；全局采样限额仍限制重复地址配置的请求总量。采样不重叠，等待可以取消；Docker 不可用时每分钟再试，其他状态失败按 10、20、40、60 秒退避，不影响终端输入。
-
-## CLI 和 AI 使用
-
-从源代码构建：
+## Quick start
 
 ```sh
-go build -o build/bin/smallssh ./cmd/ssh-client
+go run ./tools build -platform darwin/arm64   # or linux/amd64, windows/amd64
+open build/darwin-arm64/SmallSSH.app          # first launch creates the vault (master password, 12+ bytes)
 ```
 
-桌面端解锁后，CLI 直接连接同一个本地代理，使用相同数据目录。
+1. `＋` in the sidebar creates a connection: host, user, password or key. The first save **only reads the host fingerprint; no credentials are sent**
+2. Verify the fingerprint, then *Trust and connect*. Double-clicking a connection opens a new terminal every time
+3. *Files* follows the active terminal; *Server status* starts collecting on connect
+4. *Approvals* handles AI/CLI requests; *Settings → Security & unlock* enables system verification
+
+Detailed usage: [docs/USAGE.md](docs/USAGE.md). Build, artifacts and CI: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+## Data
+
+The data directory defaults to `ssh-client-workbench` under the system configuration directory (`~/Library/Application Support/` on macOS, `~/.config/` on Linux, `%AppData%\` on Windows); the desktop app and the CLI both accept `--data-dir` to point at one private directory. `vault.json` is the encrypted connection store, and `audit.jsonl` records only the applicant, server, operation and result — never commands, paths, passwords or output. The full list is in [docs/USAGE.md](docs/USAGE.md#数据位置).
+
+## CLI
+
+Once the desktop app unlocks the vault, the CLI talks to the same local broker with the same data directory:
 
 ```sh
 smallssh hosts
-smallssh --client '我的 AI 助手' exec server-id 'uname -a'
-smallssh --client '我的 AI 助手' ls server-id /srv
+smallssh exec server-id 'uname -a'
 smallssh get server-id /srv/config.txt ./config.txt
-smallssh put server-id ./new.txt /srv/new.txt
-smallssh shell server-id
-smallssh monitor server-id
-smallssh transfer list
-smallssh transfer resume TRANSFER_ID
-smallssh host group server-id '生产环境'
-smallssh biometric status
-smallssh biometric enable
-smallssh --biometric approve REQUEST_ID
+smallssh pending && smallssh approve REQUEST_ID
 ```
 
-可一次批准指定客户端的有期限会话，再由代理自动签发受限的一次性子授权：
+Without a desktop session, `smallssh agent` starts the broker in one terminal and approvals happen in another. The full command set, delegated sessions and the authorization model are in [docs/CLI.md](docs/CLI.md).
 
-```sh
-smallssh --client '我的 AI 助手' session request server-id my-ai.json read 2h 15m
-smallssh --session my-ai.json ls server-id /srv
-smallssh session status my-ai.json
-smallssh session revoke my-ai.json
-```
+## Documentation
 
-首次批准需要核对申请端和所有者界面的配对码、服务器、权限与期限。默认只读；`full` 提供读写能力，仍受每台服务器的 AI 访问和关键路径策略限制。默认保护模式不开放任意命令或终端；所有者明确关闭保护并确认风险后才开放该 SSH 账号完整能力。会话文件只存于代理私有目录；它代表该客户端的委托权限，不含 SSH 凭据。父授权最长 8 小时，子操作最多 5 分钟，锁定 / 退出 / 撤销后失效。详情见 [客户端会话与子授权](docs/DELEGATION.md)。
+The docs are written in Chinese for now.
 
-默认关键路径保护会直接拒绝任意命令和终端；关闭保护后的普通命令会申请授权并等待，所有者批准后才连接服务器。使用 `--session` 时由代理核对既有范围并签发短期票据。申请方标签是调用方自报信息，**不代表经过验证的进程身份**。
+| Document | Contents |
+|---|---|
+| [USAGE](docs/USAGE.md) | Interface, first run, files/terminal/monitoring, data locations |
+| [CLI](docs/CLI.md) | Commands, delegated sessions, approvals |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | Layers, threading, IPC, native interop |
+| [COMPONENTS](docs/COMPONENTS.md) | UI components and interaction rules |
+| [SECURITY](docs/SECURITY.md) | Trust boundaries for keys, system unlock, approvals and audit |
+| [DELEGATION](docs/DELEGATION.md) | Sub-authorization, renewal, revocation |
+| [FEATURES](docs/FEATURES.md) | What is implemented and what is not |
+| [SERVER-MANAGEMENT](docs/SERVER-MANAGEMENT.md) | Metrics, processes, services, Docker workflows |
+| [SERVICE-CATALOG](docs/SERVICE-CATALOG.md) | How services are recognized and presented |
+| [LOCALIZATION](docs/LOCALIZATION.md) | Strings and language switching |
+| [DEVELOPMENT](docs/DEVELOPMENT.md) | Task entry points, artifacts, dependency upgrades, CI |
+| [VERIFICATION](docs/VERIFICATION.md) | Evidence and known limits, appended per round |
 
-无桌面时，由用户在本地终端启动代理，在另一终端处理授权：
+## Status
 
-```sh
-smallssh init
-smallssh host add
-smallssh agent
-```
-
-```sh
-smallssh pending
-smallssh approve REQUEST_ID
-smallssh deny REQUEST_ID
-smallssh revoke REQUEST_ID
-```
-
-主密码只从人类使用的控制终端读取，不接受密码参数、环境变量或管道输入。`host add` 的离线编辑需要先退出代理；桌面保存连接通过代理完成并撤销旧授权。
-
-覆盖保存需要提供读取时的原文件 SHA256：
-
-```sh
-smallssh replace server-id ./edited.txt /srv/config.txt ORIGINAL_SHA256
-```
-
-复制旧文件、检查冲突后，程序使用服务器的原子重命名扩展提交。成功时输出旧文件副本路径。SFTP 不具备原子的内容比较交换，外部程序仍可能与最后一次检查竞争；文件属主、ACL 等扩展元数据也不会完整复制。详见 [安全与边界](docs/SECURITY.md)。
-
-## 数据位置
-
-为兼容已有资料，默认继续使用当前用户系统配置目录下的 `ssh-client-workbench`：macOS 为 `~/Library/Application Support/ssh-client-workbench`，Linux 通常为 `~/.config/ssh-client-workbench`，Windows 为 `%AppData%\ssh-client-workbench`。桌面和 CLI 均支持 `--data-dir` 指定同一个私有目录。
-
-`vault.json` 保存加密连接和每台服务器的自动化策略；连接右键“AI 访问…”可禁止 AI / CLI 或配置关键路径保护。禁止访问时不弹审批，只记录拒绝；已有授权随策略更改失效。授权中心“历史”读取持久记录，包含申请方、服务器、操作、结果和拒绝原因，支持分页与重启保留；`audit.jsonl` 不含命令、路径、口令、私钥或输出，单文件8 MiB并保留一个归档。`device-unlock.json` 保存系统保护的设备解锁材料，不保存主密码或明文保险库密钥。Unix 使用私有目录及套接字；Windows 使用限制到当前用户 SID 的命名管道。代理不监听 TCP 端口，不向服务器安装组件。
-
-`transfers/` 保存任务元数据（包含本地/远程路径、摘要和进度，无凭据或授权票据），采用私有目录。部分文件保留在目标目录，校验完成后无覆盖提交。每次续传重新申请授权，前缀或源文件改变会报错。
-
-## 构建和测试
-
-开发时使用静默重启入口：
-
-```sh
-go run ./tools/dev run       # 监听修改并自动重编译，每次重启均隐藏
-go run ./tools/dev status    # 只读取就绪、可见、焦点和激活次数
-go run ./tools/dev show      # 只有明确要求查看时才执行，显示已有开发窗口
-go run ./tools/dev stop      # 正常退出开发进程和监听器
-```
-
-开发进程默认使用正式数据目录下独立的 `development/`，不会自动解锁或读取正式凭据。可用 `go run ./tools/dev -data-dir /完整/测试目录 run` 指定开发目录，后续 `status / show / stop` 使用同一个目录。后台模式在启动原生事件循环前使用 accessory 策略，主窗口以 Hidden 创建；不先显示再隐藏、不恢复上次的可见状态。尚未明确显示时，授权请求只留在队列中，不创建授权弹窗。显示窗口不会解锁或批准 SSH 权限。
-
-普通 Go 开发构建默认静默，`mygo dev` 经上述入口将静默环境传给每一轮重启；正式打包版本手动打开时仍正常显示。需要后台运行打包版本时可加 `--background`。不要为验收直接反复启动普通桌面包；界面检查优先使用无窗口测试和离线快照。
-
-需要 Go 1.27.2 或更新的兼容版本；构建 macOS 系统认证组件还需 macOS 上的 Swift 编译器。已固定 MyGo 0.5.5。仓库包含 vendored 依赖及一处 macOS 密码框辅助功能缓存修复，普通构建自动使用 `vendor/`；**不要使用 `-mod=mod` 构建桌面端绕过修复**。
-
-```sh
-go test -race -timeout 90s ./...
-go vet ./...
-go run ./tools/build -platform darwin/arm64,linux/amd64,windows/amd64
-go test -race -tags terminal_integration -run TestGhostty ./internal/desktop
-```
-
-最后一个集成测试需要先准备相应平台的 Ghostty 库，MyGo 构建会从其官方发布下载并核对固定 SHA256。二进制构建不等于三个系统上都完成了人工验收；本轮实际桌面验收环境是 macOS ARM64。
-
-打包入口同时生成并附带匹配平台的 `smallssh` CLI：macOS 在应用的 `Contents/Resources/cli/smallssh`，Windows/Linux 在程序旁的 `cli/` 子目录中。原位置继续附带同内容的 `ssh-client` 兼容入口。暂未自动加入 PATH。macOS 包含 `biometric-helper`，构建入口先编译并签名 helper，再将校验值编入桌面和 CLI；缺失或不匹配时拒绝系统解锁。构建默认不上传或发布。
-
-macOS 系统验证请使用完整构建附带的 CLI；单独运行 `go build` 不会编译或复制 Swift helper。
-
-更新依赖后如果重新生成 vendor，需重新应用补丁并复测：
-
-```sh
-go mod vendor
-patch -p1 < patches/mygo-macos-password-accessibility.patch
-```
-
-[架构](docs/ARCHITECTURE.md) · [安全与边界](docs/SECURITY.md) · [功能进度](docs/FEATURES.md) · [本轮验收](docs/VERIFICATION.md)
-
-项目名称为 SmallSSH；顶层许可证与发布仓库尚未确定，当前未推送或发布。依赖的原有许可证保留在 vendor 中。
+Developer preview, not fully validated on real hardware; the top-level license is not decided yet. Third-party licenses stay in `vendor/`, and the bundle ships a summary at `resources/THIRD_PARTY_NOTICES.txt`.

@@ -1046,3 +1046,148 @@ native wire 新增7类 errorCode 与 nativeDomain / numeric nativeCode，未输�
 - 最终原生隐藏 QA 日志 /private/tmp/smallssh-startup-fix-native-qa-20261026.log；标准 macOS arm64 打包通过 /private/tmp/smallssh-startup-fix-package-20261026.log。严格深度签名校验通过，包内 biometric-helper 与 libsmallssh-auth.dylib 的 SHA256 均匹配构建清单。
 
 本轮未重启或激活用户运行窗口，没有试图用自动化代替本人指纹。以上测试证明修复的实现与边界，不能证明已复现或消除了原始现场首轮失败；须由下一次本人启动验证，并在仍失败时使用保留的原生原因继续定位。
+
+## 仓库入库、自动验证入口修复、构建整理与 MyGo 0.6.4 · 2026-10-26
+
+目录此前没有 `.git`，本轮首次建立仓库（首提交 1857 个文件，`build/`、`.mygo/`、`resources/*-*/` 与保险库 / 审计 / 传输运行数据均不入库），后续改动因此有了真实 diff 基线。
+
+自动验证入口的三处缺口与实现：
+
+- 审批弹窗与授权中心缺少应用激活门控：窗口已是 key window 而应用尚未 active 时仍会发起原生 evaluate，重现上一轮在启动页修掉的首次失败。自动队列现共用 `authReadiness`，`OnDidBecomeActive` 同时补一次 `queueInlineApproval`。
+- 审批侧加入与启动页同一 `retryAutomatic` 策略的 `notReady` 单次重试；指纹拒绝、设备锁定 / 不可用、主动取消都不重试，主动取消不再显示为授权错误。
+- `queueAutomatic` 的四个相邻 bool 换成 `authReadiness` 结构，避免 ready / visible / focused 传错顺序静默失效。
+- 原生图标占位时只有存在活会话或 anchor 仍可能出现才请求下一帧：此前 Touch ID 未启用时 anchor 永远为空，锁屏页与授权页会以 33ms 周期无限重绘。
+- 解锁页与审批页两份相同的定位实现合并为 `placeAuthenticationFrame`；`systemauth.Status` 改按 `readRecord` 判定 Enabled，坏记录不再显示"已启用"却每次解锁都失败，设置页同时显示记录本身的原因并可重新启用自愈；`Enroll` 不再静默丢弃旧记录读取错误，并说明无法解析的旧记录可能残留 Linux 钥匙串条目；内嵌组件加载失败保留 `Dlopen` / `Dlsym` 原生原因。
+
+构建与测试入口整理：
+
+- `go run ./tools/test [-race|-short|-pkg]` 成为唯一检查入口，依次跑 `go vet` 与 `go test`，完整输出写入 `build/logs/test-<时间>[-race].log`，不再依赖 `/private/tmp` 里的临时日志。
+- `go run ./tools/build` 每个目标先删除 `resources/<goos>-<goarch>/` 再整目录重建，旧二进制不会混进包；两次生成文件只在内容变化时改写，新增的 `-check` 只校验不写入。`resources/*-*/` 整体加入忽略，源码资源仍在 `resources/` 顶层。
+- MyGo 版本只在 `go.mod` 声明，`tools/build` 与 `tools/dev` 都从那里读取（此前两处硬编码 v0.5.5，升级需三处同步），`tools/internal/project` 负责定位模块根目录，三个工具可从任意子目录运行。
+
+MyGo v0.5.5 → v0.6.4：`go.mod` 直接依赖补上此前误标 indirect 的 purego，新增 `golang.org/x/net`，`go 1.27.3`。vendor 重新生成后重新应用 `mygo-macos-password-accessibility.patch`（3 个 hunk，偏移 1 / 3 行），并因 0.6.4 新增 AX 写入路径 `setAccessibilitySelectedText:` 而扩展补丁：控件本体仍收到文本，AppKit 基类不得缓存明文，与 `setAccessibilityValue:` 同一规则。`AXStringForRange` / `AXAttributedStringForRange` 不需补丁：MyGo 对密码框不填 `node.Value`，范围读取本身返回空。补丁已用"干净 0.6.4 文件 + 补丁 = 当前 vendor 文件"的往返比对确认，`patches/vendor-integrity.json` 更新为新哈希。
+
+一处测试期望随之调整：滚动连接列表后，最新 MyGo 会把指针所在行保持为 hover（0.5.5 在滚动后丢失 hover），该行按设计淡出 6%，触发了"头像像素完全相同"的断言。测试改为滚动后把指针移出列表再比对；同一用例在 0.5.5 与 0.6.4 上均通过，静态渲染快照（展开 / 窄栏各一张）在两个版本间逐字节一致。
+
+验证证据：
+
+- `go build ./...`、`go vet ./internal/... ./tools/...` 通过。
+- `go run ./tools/test` 全模块通过，日志 `build/logs/test-20261026-210703.log`；`-race` 定向 `internal/systemauth`（17s）与 `internal/desktop`（217s）通过，日志 `build/logs/test-20261026-210801-race.log`、`build/logs/test-20261026-210819-race.log`。
+- `go run ./tools/build -platform darwin/arm64` 在 0.6.4 下打包成功，`build/darwin-arm64/SmallSSH.app` 内 `libsmallssh-auth.dylib` 与 `biometric-helper` 的 SHA256 与 `internal/systemauth/native-hashes.json` 一致，ad-hoc 签名生效；`go run ./tools/build -check` 报告生成文件均为最新。
+- 原生组件两次独立构建产出的哈希一致，`-check` 因此可判断"是否需要提交"。
+
+本轮没有启动、显示或激活任何窗口，没有触发真实 Touch ID，没有做真实辅助功能客户端回归（新增的 `setAccessibilitySelectedText:` 规则须由本人实机核对），只打包了 macOS arm64；Windows / Linux 未打包，仅确认 `internal/systemauth` 交叉编译与平台文件未受影响。
+
+## 任务入口统一为 `go run ./tools` · 2026-10-26
+
+Go 没有 npm scripts，`go generate` 官方限定为代码生成，所以任务入口用 `tools/` 下的 Go 命令并收成一个前门：
+
+- `go run ./tools` 列出全部任务（build / check / dev / test）；`go run ./tools <任务>` 与 `go run ./tools/<任务>` 等价。未知任务给出明确提示并列出可用任务，不再让不带参数的 `go run ./tools/build` 直接打全量包。
+- 新增 `check`：`gofmt -l`（只报告不写入）、`go vet`、`go test` 一次跑完，CI 与本机同一条命令；`test` 保留为只跑 vet + test。两者的 flag 与 pipeline 共用，日志分别写入 `build/logs/check-<时间>.log`、`test-<时间>[-race].log`。
+- 三个任务实现移入 `tools/internal/tasks`，`tools/{build,check,dev,test}/main.go` 只是 `tasks.Main("<name>")` 的三行壳；参数改用各自的 `FlagSet`，不再读全局 `flag.CommandLine`，避免跨任务串参。
+- `gofmt` 通过 `go env GOROOT` 定位，不依赖 PATH 里是否有同一套工具链；`project` 包继续负责定位模块根目录。
+- 规则写进 `AGENTS.md`：不要再加 shell 脚本、Makefile 或散落的 `go test`；CI 必须调用同一批入口；第三方开发工具应在 `go.mod` 用 `tool` 指令钉版本，而不是在脚本里写版本号。
+
+验证：`go run ./tools` 列出四个任务；`go run ./tools check`（gofmt 313 个文件 + vet + 全模块测试）通过，日志 `build/logs/check-20261026-212529.log`；`go run ./tools/build -check` 与 `go run ./tools/dev status` 行为不变。
+
+当前没有第三方开发工具，`go.mod` 里的 `tool` 块因此为空——等引入 linter 等工具时再加，避免只为一处占位写一个空块。
+
+## CI 与产物路径说明 · 2026-10-26
+
+上一轮只在文档里写了"CI 应该调同一批命令"，实际没有工作流文件，构建产物与忽略规则也只散在正文里。本轮补齐：
+
+- 新增 `.github/workflows/ci.yml`，只有两个 job，都调用本地同一批入口，不复制命令逻辑：
+  - `check`（macos-14）：`go run ./tools check`；仅在失败时把 `build/logs/` 作为 artifact 上传，保留 3 天；
+  - `cross-build`（ubuntu）：`linux/amd64`、`linux/arm64`、`windows/amd64`、`darwin/arm64` 各跑一次 `go build -mod=vendor ./...`。
+  Go 与 MyGo 版本都从 `go.mod` 读取，CI 不再出现第三处版本号。
+- 打包不进 CI：`tools build` 需要 macOS 的 swiftc / codesign，且不同 Xcode 版本产出的签名二进制哈希可能不同，`build -check` 放进 CI 会变成假失败；它仍是发布前的本机步骤。工作流文件里写了这个理由，避免以后有人"顺手加上"。
+- `check` 增加一项确定性校验：`patches/vendor-integrity.json` 的 SHA256。重新 vendor 却丢掉 macOS 密码框补丁时，CI 会直接失败，不必等到打包或实机才发现。
+- `.gitignore` 重写为两组（构建产物、运行数据）并写明理由，与 docs/DEVELOPMENT.md 的路径表一一对应：`build/`、`resources/<goos>-<goarch>/`、`.mygo/` 全部忽略；只有 `internal/systemauth/native-hashes.json` 与 `resources/THIRD_PARTY_NOTICES.txt` 两个生成文件提交进仓库。
+
+验证证据：
+
+- `go run ./tools check` 通过：补丁校验 + gofmt 315 个文件 + vet + 全模块测试，日志 `build/logs/check-20261026-213245.log`。
+- `go run ./tools build` 默认三目标打包成功（darwin/arm64 的 `.app`、linux/amd64 的 deb 与 tar.gz、windows/amd64 的 exe），构建前后 `git status` 均为空（除本轮源码改动），`git status --ignored` 列出被忽略的正是文档里那几项。
+- 为验证"不残留旧产物"，构建前手动删掉上一轮遗留的 `resources/{darwin-amd64,linux-amd64,windows-amd64}`，重新构建后三目标均重新生成。
+
+CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮只能说工作流文件与本地等价命令一致，不能说 CI 已经绿；第一次推送后需要核对 runner 上的 Go 版本解析、macos-14 上的无窗口 UI 测试与 artifact 上传是否如预期。
+
+## 文档按模块拆分 · 2026-10-26
+
+此前构建、测试、CI、产物边界、依赖升级被塞进 README 的「构建和测试」一节，同样的规则又在 `.gitignore` 注释、`resources/README.md`、`AGENTS.md` 与本节各写一遍，AI 维护的文档因此变得又长又互相矛盾。
+
+- 新增 `docs/DEVELOPMENT.md` 作为唯一权威：前置条件、任务入口表、产物与提交边界表、依赖与原生补丁升级、CI、发布前检查。README 只保留一句话指引。
+- README 从 197 行缩到 142 行，只留用法（桌面端、CLI / AI、数据位置）与一张文档索引表；原先塞在里面的任务表、产物表、CI 说明、Ghostty 测试与补丁升级步骤全部移走。
+- README 再缩到 64 行，只做入口：一句话定位、一张截图、六条能力、快速开始四步、数据位置、CLI 四行、文档索引。原先堆在 README 里的界面细节、九步操作、Docker / Compose、终端行为、授权边界、备注与采样节奏按主题拆到新的 `docs/USAGE.md`（63 行，9 节）与 `docs/CLI.md`（69 行）。
+- `AGENTS.md` 改为只写约束（不复制命令）：把"任务入口只有一个、CI 调同一批、产物只有两处、版本只写 go.mod、补丁不许绕过、每轮追加验收记录"写成规则，命令细节指向 docs/DEVELOPMENT.md。
+- `.gitignore` 与 `resources/README.md` 只留各自那句结论并指向 docs/DEVELOPMENT.md，不再复述整张表。
+- 拆分后逐条校验相对链接（README / AGENTS / DEVELOPMENT / USAGE / CLI / resources）无死链，`SERVER-MANAGEMENT.md#docker-日志容器终端与-compose-更新` 等锚点仍有效。
+- 修正 README 结尾"当前未推送或发布"这句已经过时的说明。
+
+验证：`go run ./tools check` 通过（`build/logs/check-20261026-220757.log`）；文档改动不涉及代码，未重跑打包。
+
+## CI 运行时与 action 版本修正、README 双语 · 2026-10-26
+
+首次在 GitHub 上跑 CI 后暴露的问题：
+
+- 所有 job 打印 `Node.js 20 is deprecated`：`actions/checkout@v4` 与 `actions/setup-go@v5` 仍声明 Node 20 运行时。已升到 `actions/checkout@v7`、`actions/setup-go@v7`、`actions/upload-artifact@v7`（三者 `action.yml` 均为 `node24`，逐个核对过）。
+- `ubuntu-latest` 提示即将迁移到 Ubuntu 26。改为写死 `ubuntu-24.04`；macOS job 从已标记 deprecated 的 `macos-14` 改为 `macos-26`（arm64，最接近本项目验证机的系统版本）。
+- 按所有者要求明确边界：**CI 只做检查，绝不发版**。工作流没有任何 tag / release 触发，不打包、不签名、不发布；`workflow_dispatch` 只用于手动重跑检查。发版仍是本机手动步骤，已写进 `docs/DEVELOPMENT.md` 的「发布前检查」标题。
+- README 改为双语：`README.md` 为英文并作为默认，`README.zh-CN.md` 保留中文，两版顶部互相跳转；正文只做入口（定位、截图、能力、快速开始、数据位置、CLI、文档索引）。文档本身仍是中文，英文 README 里已注明这一点。
+
+验证：`go run ./tools check` 通过，日志 `build/logs/check-20261026-*.log`；两版 README 的相对链接与锚点均有效。CI 的改动要等下一次推送才能真正验证（本轮只核对了 action 的运行时声明与 runner 标签）。
+
+## CI 按职责拆分 · 2026-10-26
+
+此前所有自动任务都塞在一个叫 `CI` 的工作流里：检查、跨平台编译混在一起，打包与发版的边界只写在注释里。按"一件事一个工作流"重写：
+
+| 工作流 | 触发 | 作用 | 阻断 PR |
+|---|---|---|---|
+| `checks.yml` / `Checks` | push main、PR、手动 | `go run ./tools check` | 是 |
+| `cross-build.yml` / `Cross build` | push main、PR、手动 | 四个目标 `go build`，只编译 | 是 |
+| `publisher.yml` / `Publisher` | 仅 `workflow_dispatch` | 打开发布物 + 上传 tar artifact（7 天） | 否 |
+
+- 三个文件各自头部写明职责、触发条件和"不做什么"，并在 `docs/DEVELOPMENT.md` 里给出分支保护该 required 哪些 job。
+- `Publisher` 只产出 artifact：不建 Release、不打 tag、不推送任何平台。产物先打成 tar 再上传，避免 upload-artifact 丢权限位或符号链接导致 `.app` 无法直接运行。
+- 保留上一轮的修正：action 全部 `@v7`（Node 24）、runner 写死 `macos-26` / `ubuntu-24.04`。
+
+验证：YAML 结构本地检查通过；`go run ./tools check` 通过。三个工作流要等推送后在 GitHub 上真跑一轮才算验证——尤其 `publisher.yml` 只在手动点击时执行，本轮没有触发过。
+
+## MyGo v0.6.4 → v0.7.1 · 2026-10-27
+
+- 逐条比对 `ui` 包的导出 API：0.6.4 与 0.7.1 都是 218 个导出函数，新增 0 个、移除 0 个，桌面代码无需改动即编译通过。
+- 重新 vendor：mygo 自身约 208 个源文件变化（新增 nowplaying、menuicon、schemehost、ui/cache 等内部包），`go.mod` 只改 MyGo 版本号，`purego` / `x/net` 等间接依赖未变。
+- `internal/darwin/access.go` 与 0.6.4 逐字节相同，macOS 密码框补丁的落点与文件哈希都不变（`2b7ca21f…`），`patches/vendor-integrity.json` 无需改动；`go run ./tools build -check` 报告 `native-hashes.json` 与 `THIRD_PARTY_NOTICES.txt` 均为最新。
+- `patches/README.md` 与 `docs/LOCALIZATION.md` 的来源版本随之更新到 v0.7.1（revision `76dd068b…`）；mygo 的 `internal/l10n` 在 0.6.4 → 0.7.1 之间没有变化。
+- 验证：`go run ./tools check` 全绿（日志 `build/logs/check-20261027-122427.log`）；`go run ./tools build -platform darwin/arm64` 打包成功，包内 `biometric-helper` 与 `libsmallssh-auth.dylib` 的 SHA256 与清单一致。
+
+未做：没有启动或显示窗口（`tools dev run` 走的 `mygo dev` 路径本轮未实跑）；没有真实 Touch ID 与辅助功能回归；Windows / Linux 未打包，只有交叉编译与测试覆盖。
+
+## 自动验证门控改用后端激活状态、原生视图只在 anchor 变化时追帧 · 2026-10-27
+
+升到 MyGo v0.7.x 后有两点可以替代我们自己的实现，顺带修掉一处持续重绘：
+
+- `a.applicationActive` 改为查询 `mygo.App.IsActive()`（`a.isActive()`）。此前是我们自己按 `OnDidBecomeActive` / `OnDidResignActive` 记的标志，和系统真实激活态可能短暂不一致；现在激活态由后端回答，读取点仍是解锁页与审批页的 `authReadiness`。`App.IsReady()` 为假时（无窗口测试）回退到记录值，测试路径不变。
+- 锁屏页与授权页的 33 ms 追帧循环改成由 `anchorTracker.follow` 决定：只有"还没有可用 anchor"或"anchor 相对上一帧移动过"时才请求下一帧。此前只要原生认证进行中（`nativeIcon`）就整窗重建，等于认证期间每秒重建 30 次视图；现在 anchor 稳定就不再请求，窗口缩放照旧会触发渲染并补一帧。`Element.Cache` 与 `Painter.AnimationFrameRate` 评估后未采用：前者对我们这些含输入控件的子树会失效或冻结动画，后者是"只重绘不重建"，而起因恰恰是必须重建才能重新放置原生视图。
+
+验证：`go run ./tools check` 通过（`build/logs/check-20261027-130125.log`）；`go run ./tools/test -race -pkg ./internal/desktop` 通过（135 s，`build/logs/test-20261027-130226-race.log`）；新增 `TestNativeViewFollowsOnlyAMovingAnchor` 覆盖"首次放置不追帧、稳定 anchor 不追帧、移动后只追一帧、无原生视图且未启用系统验证时不追帧"。
+
+未做：没有可见窗口，因此帧率与耗电的实际变化未测量；上一节列出的 `FitContent`（授权弹窗按内容自适应）、菜单图标、`Context.SetZoom` 三项未动。
+
+## 主窗口界面缩放（`Context.SetZoom`）· 2026-10-27
+
+升到 MyGo v0.7.x 后新可用的组件中，只有界面缩放真正适合本项目，另外两项评估后未采用：
+
+- 新增「视图 → 放大 / 缩小 / 实际大小」：在固定档位 `50% / 67% / 80% / 90% / 100% / 110% / 125% / 150% / 175% / 200% / 250% / 300%` 上步进，两端停住；放大再缩小回到经过的同一档位，不是 ±10% 的漂移。实现调用 `Context.SetZoom`，MyGo 以 1/z 的窗口重新布局、按 z 倍分辨率绘制，文字与图标保持清晰而不是放大位图。
+- 快捷键按平台分开：macOS `Cmd++` / `Cmd+-` / `Cmd+0`；Windows / Linux `Ctrl+Shift++` / `Ctrl+Shift+-` / `Ctrl+Shift+0`。既有测试 `TestAppMenuDoesNotReserveBareTerminalControlShortcuts` 要求非 macOS 的菜单快捷键不得占用裸 Ctrl，这条约束因此保持成立。
+- 比例随布局保存：`layout.json` 升到 v3，新增 `zoom`（省略时为 100%）；v1 / v2 旧布局照常读取、默认 100%，不写回时也不会伪造缩放。只存比例，不含连接资料。
+- 新增测试 `TestZoomWalksTheLadderAndStopsAtBothEnds`、`TestZoomClampsStoredValuesAndPersists` 覆盖档位步进、两端钳制、越界值回落到 100%、v3 往返与 v2 旧文件兼容。
+
+评估后未采用：
+
+- `WindowOptions.FitContent` 只对 **webview 页面**按内容自适应（`bridge.FitContent` 走页面尺寸），本项目的授权弹窗是原生 UI，套不上；继续保留固定 540 高度。
+- `MenuItem.Icon` / `NewMenuIcon` 要求 PNG 图像（`png.DecodeConfig` 校验），本项目的图标是 SVG 路径，要做菜单图标得另外生成一组位图并逐项目视核对，本轮没有可用的可见窗口，因此不做。
+
+验证：`go run ./tools check` 通过（`build/logs/check-20261027-133343.log`）；`go run ./tools test -race -pkg ./internal/desktop` 通过（`build/logs/test-20261027-133443-race.log`）。
+
+未做：没有可见窗口，因此缩放后的实际观感、各页面在 150% / 300% 下的排版未目视确认；只验证了状态、快捷键约束与持久化。
