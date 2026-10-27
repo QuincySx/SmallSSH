@@ -28,6 +28,10 @@ type monitorSubscription struct {
 	cancel  context.CancelFunc
 	client  *sshconn.Client
 	updates chan monitorUpdate
+	// active is whether the client still shows these samples. The collector
+	// probes only while at least one subscriber does, so a collapsed panel or an
+	// inactive terminal costs nothing on the server.
+	active bool
 }
 
 type monitorCollector struct {
@@ -40,6 +44,7 @@ type monitorCollector struct {
 	stopProbes   context.CancelFunc
 	mu           sync.Mutex
 	subscribers  []*monitorSubscription
+	wake         chan struct{}
 	nextProvider int
 	latest       *monitorUpdate
 	inventory    *monitor.Inventory
@@ -97,11 +102,11 @@ func (s *Server) subscribeMonitor(ctx context.Context, client *sshconn.Client, p
 		}
 		lifetime, cancel := context.WithCancel(parent)
 		probes, stopProbes := context.WithCancel(lifetime)
-		collector = &monitorCollector{server: s, target: target, sourceID: vault.ShortID(), ctx: lifetime, cancel: cancel, probes: probes, stopProbes: stopProbes}
+		collector = &monitorCollector{server: s, target: target, sourceID: vault.ShortID(), ctx: lifetime, cancel: cancel, probes: probes, stopProbes: stopProbes, wake: make(chan struct{})}
 		s.monitors[target] = collector
 	}
 	lifetime, cancel := context.WithCancel(ctx)
-	sub := &monitorSubscription{ctx: lifetime, cancel: cancel, client: client, updates: make(chan monitorUpdate, 1)}
+	sub := &monitorSubscription{ctx: lifetime, cancel: cancel, client: client, updates: make(chan monitorUpdate, 1), active: true}
 	collector.mu.Lock()
 	collector.subscribers = append(collector.subscribers, sub)
 	if collector.latest != nil {
@@ -123,6 +128,65 @@ func (s *Server) subscribeMonitor(ctx context.Context, client *sshconn.Client, p
 		s.monitorWG.Go(collector.runDocker)
 	}
 	return collector, sub, nil
+}
+
+// activateMonitor records whether a reader still shows what this collector sends.
+// Nothing else distinguishes "the user collapsed the panel" from "the client went
+// away", and the probes stop in the first case without ending the terminal.
+func (s *Server) activateMonitor(collector *monitorCollector, sub *monitorSubscription, active bool) {
+	if collector == nil || sub == nil {
+		return
+	}
+	collector.mu.Lock()
+	defer collector.mu.Unlock()
+	wasActive := collector.anyActiveLocked()
+	sub.active = active
+	nowActive := collector.anyActiveLocked()
+	if wasActive == nowActive {
+		return
+	}
+	// Wake the probe loops, which wait on this channel while nothing is shown.
+	close(collector.wake)
+	collector.wake = make(chan struct{})
+	if nowActive && collector.latest != nil {
+		// A panel that comes back shows the last sample at once instead of an
+		// empty page while the first fresh round runs.
+		select {
+		case <-sub.updates:
+		default:
+		}
+		select {
+		case sub.updates <- *collector.latest:
+		default:
+		}
+	}
+}
+
+func (c *monitorCollector) anyActiveLocked() bool {
+	for _, sub := range c.subscribers {
+		if sub.active && sub.ctx.Err() == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// awaitActive blocks while no subscriber shows the samples, and reports whether
+// probing may continue.
+func (c *monitorCollector) awaitActive(ctx context.Context) bool {
+	for {
+		c.mu.Lock()
+		active, wake := c.anyActiveLocked(), c.wake
+		c.mu.Unlock()
+		if active {
+			return ctx.Err() == nil
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-wake:
+		}
+	}
 }
 
 func (s *Server) unsubscribeMonitor(collector *monitorCollector, sub *monitorSubscription) {
@@ -172,9 +236,18 @@ func (s *Server) stopMonitorCollectors() {
 }
 
 func (s *Server) streamSharedMonitor(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, w *localipc.Wire) error {
+	return s.streamSharedMonitorWith(ctx, client, profileID, fingerprint, w, nil)
+}
+
+// streamSharedMonitorWith hands the subscription to register, so a session that
+// owns the transport can later report whether the samples are still on screen.
+func (s *Server) streamSharedMonitorWith(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, w *localipc.Wire, register func(*monitorCollector, *monitorSubscription)) error {
 	collector, sub, err := s.subscribeMonitor(ctx, client, profileID, fingerprint)
 	if err != nil {
 		return err
+	}
+	if register != nil {
+		register(collector, sub)
 	}
 	defer s.unsubscribeMonitor(collector, sub)
 	for {
@@ -280,6 +353,9 @@ func (c *monitorCollector) runCounters() {
 	var previous *monitor.Stats
 	retryDelay := 10 * time.Second
 	for c.probes.Err() == nil {
+		if !c.awaitActive(c.probes) {
+			return
+		}
 		result, err := c.execute(monitor.Command, 6*time.Second)
 		if c.probes.Err() != nil {
 			return
@@ -319,6 +395,9 @@ func (c *monitorCollector) runCounters() {
 
 func (c *monitorCollector) runInventory() {
 	for c.probes.Err() == nil {
+		if !c.awaitActive(c.probes) {
+			return
+		}
 		started := time.Now().UTC()
 		result, err := c.execute(monitor.InventoryCommand, 6*time.Second)
 		if c.probes.Err() != nil {
@@ -346,6 +425,9 @@ func (c *monitorCollector) runInventory() {
 
 func (c *monitorCollector) runDocker() {
 	for c.probes.Err() == nil {
+		if !c.awaitActive(c.probes) {
+			return
+		}
 		result, err := c.execute(monitor.DockerStatsCommand, 4*time.Second)
 		if c.probes.Err() != nil {
 			return

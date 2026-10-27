@@ -598,3 +598,96 @@ func TestMonitorBudgetCancelledPacingWaiterPreservesNext(t *testing.T) {
 		t.Fatal("canceled pacing waiter changed the previous rate limit", err, budget.next.Sub(next))
 	}
 }
+
+// A hidden panel must stop the remote work, and showing it again must resume it
+// without dropping the session or reconnecting.
+func TestSharedMonitorProbesPauseWhileNothingShowsThem(t *testing.T) {
+	var counters atomic.Int32
+	fixture := testserver.NewWithExec(t, func(command string) (string, string, int) {
+		switch command {
+		case monitor.Command:
+			return sharedCounterFixture(counters.Add(1)), "", 0
+		case monitor.InventoryCommand:
+			return "@@OS\nShared Linux\n", "", 0
+		case monitor.DockerStatsCommand:
+			return "@@DOCKER_STATUS\nmissing\n", "", 0
+		}
+		return "", "", 1
+	})
+	server := newSharedMonitorTestServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	client, err := sshconn.Dial(ctx, fixture.Profile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { client.Close() })
+	collector, sub, err := server.subscribeMonitor(ctx, client, fixture.Profile().ID, fixture.Profile().Fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedMonitorUpdate(t, sub)
+	sharedMonitorUpdate(t, sub)
+
+	server.activateMonitor(collector, sub, false)
+	settled := counters.Load()
+	time.Sleep(monitorCounterInterval + 600*time.Millisecond)
+	if got := counters.Load(); got != settled {
+		t.Fatalf("a hidden panel kept probing: %d -> %d rounds", settled, got)
+	}
+
+	server.activateMonitor(collector, sub, true)
+	deadline := time.Now().Add(3 * time.Second)
+	for counters.Load() == settled {
+		if time.Now().After(deadline) {
+			t.Fatal("showing the panel again did not resume probing")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// One terminal may hide status while another on the same server still shows it:
+// the shared collector must keep the one round that is displayed.
+func TestSharedMonitorKeepsProbingWhileAnotherSubscriberShowsIt(t *testing.T) {
+	var counters atomic.Int32
+	fixture := testserver.NewWithExec(t, func(command string) (string, string, int) {
+		switch command {
+		case monitor.Command:
+			return sharedCounterFixture(counters.Add(1)), "", 0
+		case monitor.InventoryCommand:
+			return "@@OS\nShared Linux\n", "", 0
+		case monitor.DockerStatsCommand:
+			return "@@DOCKER_STATUS\nmissing\n", "", 0
+		}
+		return "", "", 1
+	})
+	server := newSharedMonitorTestServer(t)
+	var subs []*monitorSubscription
+	var collectors []*monitorCollector
+	for range 2 {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		client, err := sshconn.Dial(ctx, fixture.Profile())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { client.Close() })
+		collector, sub, err := server.subscribeMonitor(ctx, client, fixture.Profile().ID, fixture.Profile().Fingerprint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		collectors, subs = append(collectors, collector), append(subs, sub)
+	}
+	sharedMonitorUpdate(t, subs[1])
+	server.activateMonitor(collectors[1], subs[1], false)
+
+	before := counters.Load()
+	select {
+	case <-subs[0].updates:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the visible subscriber stopped receiving samples")
+	}
+	if counters.Load() == before && before == 0 {
+		t.Fatal("no round ran with one subscriber still visible")
+	}
+}

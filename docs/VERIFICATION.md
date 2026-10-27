@@ -1191,3 +1191,21 @@ CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮
 验证：`go run ./tools check` 通过（`build/logs/check-20261027-133343.log`）；`go run ./tools test -race -pkg ./internal/desktop` 通过（`build/logs/test-20261027-133443-race.log`）。
 
 未做：没有可见窗口，因此缩放后的实际观感、各页面在 150% / 300% 下的排版未目视确认；只验证了状态、快捷键约束与持久化。
+
+## 服务器状态只在显示时采集，多条终端共用一个采集器 · 2026-10-27
+
+所有者提出的性能问题：底下工具面板的文件 / Docker / 服务器状态都要向服务器取数据，应当"不显示就不拿"，而且多条终端连同一台服务器时只留一份采集。核查后分两种情况：
+
+- **同一台服务器只取一次：原来就已经是共享的**。`internal/broker/monitor_shared.go` 按 `monitorTarget`（保存连接 + SSH 用户 + 实际地址 + 已核对指纹）复用 `monitorCollector`，订阅者共享同一份计数器 / Docker / 清单结果；只有最后一个订阅者离开才停止。既有测试 `TestSharedMonitorFanoutCacheProviderHandoffAndCleanup`、`TestSharedMonitorSlowDockerDoesNotMultiplyWork` 已覆盖，本轮未改这部分语义。
+- **"不显示就不拿"原来没有**：采集在终端会话建立时就启动，面板收起、切到别的工具页或换到别的标签都照旧每 2 秒执行一次远端命令。现在补上：会话通过 `{"action":"monitor","monitorActive":bool}` 报告自己是否仍在显示状态，collector 只有存在 active 订阅者时才探测；全部暂停时三个采集循环（计数器 2 秒、Docker 10 秒、清单 60 秒）一起挂起，恢复时立即给出一份新样本，同时先回放缓存样本避免面板空白。暂停不会关闭会话或 SSH 传输，所以恢复不需要重连。
+- 可见性判定在桌面侧：工作台页 + 工具面板展开 + 当前工具页是「服务器状态」+ 该终端是当前终端；主窗口隐藏时暂停，工具面板独立成窗时以独立窗口为准（`serverStateSession`）。判定集中在 `monitorWanted`，每个渲染帧末尾 `syncMonitorVisibility` 只对状态发生变化的会话发消息，窗口显示 / 隐藏事件也会触发一次。
+
+文件区本来就不做周期性读取：只在进入目录、切换目标、手动刷新 / F5 时读取一次，面板切换不会重新拉取，因此本轮没有改动。
+
+验证：
+
+- `go test ./internal/broker -run 'TestSharedMonitor'` 全部通过；新增 `TestSharedMonitorProbesPauseWhileNothingShowsThem`（全部暂停后 2 秒内远端命令次数不再增长，恢复后继续）与 `TestSharedMonitorKeepsProbingWhileAnotherSubscriberShowsIt`（一个隐藏、一个显示时仍采样）。
+- 新增 `TestMonitorVisibilityFollowsTheStatusPanel` 覆盖面板展开、其它工具页、其它页面、未登录、无会话五种情形。
+- `go run ./tools check` 通过（日志 `build/logs/check-20261027-*.log`）。
+
+未做：没有实机观察暂停后服务器负载与 UI 恢复速度；Docker 页独立于状态概览的暂停粒度（当前与状态面板同进退）未单独区分。

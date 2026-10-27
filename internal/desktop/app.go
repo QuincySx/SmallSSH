@@ -40,12 +40,16 @@ type session struct {
 	name          string
 	containerName string
 	term          *terminal.Terminal
+	stream        *client.Stream
 	requestID     string
 	draft         string
 	stats         *monitor.Stats
 	history       statusHistory
 	statusSource  *serverStatusState
 	monitorStatus string
+	// monitorActive mirrors what the broker was last told: whether this
+	// session's server status is on screen.
+	monitorActive bool
 	closed        bool
 	management    *serverManagementUI
 	target        approval.Operation
@@ -226,8 +230,8 @@ func RunWithOptions(dir string, opts Options) error {
 		a.win.OnClosed(func() { a.shutdown() })
 		a.win.OnReadyToShow(func() { a.mainWindowReady = true; a.queueInlineApproval(); a.queueUnlockAuthentication() })
 		a.win.OnFocus(func() { a.queueInlineApproval(); a.queueUnlockAuthentication() })
-		a.win.OnShow(func() { a.queueInlineApproval(); a.queueUnlockAuthentication() })
-		a.win.OnHide(func() { a.hideApprovalAuthentication(); a.cancelUnlockAttempt() })
+		a.win.OnShow(func() { a.queueInlineApproval(); a.queueUnlockAuthentication(); a.syncMonitorVisibility() })
+		a.win.OnHide(func() { a.hideApprovalAuthentication(); a.cancelUnlockAttempt(); a.syncMonitorVisibility() })
 		mygo.Power.OnLockScreen(func() { a.lock() })
 		mygo.Power.OnSuspend(func() { a.lock() })
 		a.auth = systemauth.New(a.win.NativeHandle())
@@ -560,6 +564,9 @@ func wipe(b []byte) {
 }
 
 func (a *app) view(c *ui.Context) {
+	// What this frame shows decides whether the broker keeps sampling servers
+	// nobody is looking at.
+	defer a.syncMonitorVisibility()
 	// Browser-like content zoom: MyGo lays the view out in a window 1/z its size
 	// and draws it z times larger, so text and glyphs stay sharp.
 	c.SetZoom(a.viewZoom())
@@ -811,7 +818,9 @@ func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish c
 		a.notified = map[string]bool{}
 	}
 	a.notified[stream.RequestID] = true
-	sess := &session{group: targetGroup, host: host, target: stream.Operation, requestID: stream.RequestID, monitorStatus: "正在读取服务器状态…"}
+	// The broker starts collecting as soon as the session subscribes; the first
+	// frame decides whether anything shows it.
+	sess := &session{group: targetGroup, host: host, target: stream.Operation, requestID: stream.RequestID, monitorStatus: "正在读取服务器状态…", stream: stream, monitorActive: true}
 	conn := &client.TerminalConn{
 		Stream:         stream,
 		OnStats:        func(stats *monitor.Stats) { a.updateServerStatus(sess, gen, stats, "自动更新") },

@@ -130,6 +130,14 @@ func (s *Stream) Write(p []byte) (int, error) {
 	return n, nil
 }
 func (s *Stream) End() error { return s.wire.Send(broker.Message{Action: "end"}) }
+
+// SetMonitorActive tells the broker whether this session's server status is still
+// on screen. The broker probes only while some subscriber shows it, so a
+// collapsed panel or an inactive tab costs nothing on the server.
+func (s *Stream) SetMonitorActive(active bool) error {
+	return s.wire.Send(broker.Message{Action: "monitor", MonitorActive: active})
+}
+
 func (s *Stream) Resize(cols, rows int) error {
 	return s.wire.Send(broker.Message{Action: "resize", Cols: cols, Rows: rows})
 }

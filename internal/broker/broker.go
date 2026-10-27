@@ -41,28 +41,31 @@ type Message struct {
 	ProfileChange *vault.ProfileChange          `json:"profileChange,omitempty"`
 	Port          int                           `json:"port,omitempty"`
 	MonitorError  string                        `json:"monitorError,omitempty"`
-	Transfer      *sshconn.TransferMeta         `json:"transfer,omitempty"`
-	Stats         *monitor.Stats                `json:"stats,omitempty"`
-	Action        string                        `json:"action,omitempty"`
-	Operation     approval.Operation            `json:"operation,omitempty"`
-	TTL           int                           `json:"ttl,omitempty"`
-	ID            string                        `json:"id,omitempty"`
-	Ticket        string                        `json:"ticket,omitempty"`
-	Allow         bool                          `json:"allow,omitempty"`
-	Proof         []byte                        `json:"proof,omitempty"`
-	Request       *approval.Request             `json:"request,omitempty"`
-	Requests      []approval.Request            `json:"requests,omitempty"`
-	Hosts         []string                      `json:"hosts,omitempty"`
-	Files         []sshconn.File                `json:"files,omitempty"`
-	Data          []byte                        `json:"data,omitempty"`
-	Cols          int                           `json:"cols,omitempty"`
-	Rows          int                           `json:"rows,omitempty"`
-	ExitCode      int                           `json:"exitCode,omitempty"`
-	Error         string                        `json:"error,omitempty"`
-	Profile       *vault.Profile                `json:"profile,omitempty"`
-	Connections   []vault.Summary               `json:"connections,omitempty"`
-	Details       *vault.Summary                `json:"details,omitempty"`
-	Target        string                        `json:"target,omitempty"`
+	// MonitorActive is whether the client still shows this session's server
+	// status. The broker samples a server only while some subscriber shows it.
+	MonitorActive bool                  `json:"monitorActive,omitempty"`
+	Transfer      *sshconn.TransferMeta `json:"transfer,omitempty"`
+	Stats         *monitor.Stats        `json:"stats,omitempty"`
+	Action        string                `json:"action,omitempty"`
+	Operation     approval.Operation    `json:"operation,omitempty"`
+	TTL           int                   `json:"ttl,omitempty"`
+	ID            string                `json:"id,omitempty"`
+	Ticket        string                `json:"ticket,omitempty"`
+	Allow         bool                  `json:"allow,omitempty"`
+	Proof         []byte                `json:"proof,omitempty"`
+	Request       *approval.Request     `json:"request,omitempty"`
+	Requests      []approval.Request    `json:"requests,omitempty"`
+	Hosts         []string              `json:"hosts,omitempty"`
+	Files         []sshconn.File        `json:"files,omitempty"`
+	Data          []byte                `json:"data,omitempty"`
+	Cols          int                   `json:"cols,omitempty"`
+	Rows          int                   `json:"rows,omitempty"`
+	ExitCode      int                   `json:"exitCode,omitempty"`
+	Error         string                `json:"error,omitempty"`
+	Profile       *vault.Profile        `json:"profile,omitempty"`
+	Connections   []vault.Summary       `json:"connections,omitempty"`
+	Details       *vault.Summary        `json:"details,omitempty"`
+	Target        string                `json:"target,omitempty"`
 }
 
 type Server struct {
@@ -833,12 +836,26 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 	case "shell", "docker-terminal":
 		sh := shell
 		finishStatus := func() {}
+		setStatusActive := func(bool) {}
 		if op.ServerStatus {
 			statusCtx, stopStatus := context.WithCancel(ctx)
 			statusDone := make(chan struct{})
+			var statusMu sync.Mutex
+			var statusCollector *monitorCollector
+			var statusSub *monitorSubscription
+			ready := make(chan struct{})
+			var markReady sync.Once
 			go func() {
 				defer close(statusDone)
-				_ = s.streamSharedMonitor(statusCtx, c, p.ID, p.Fingerprint, w)
+				_ = s.streamSharedMonitorWith(statusCtx, c, p.ID, p.Fingerprint, w, func(coll *monitorCollector, sub *monitorSubscription) {
+					statusMu.Lock()
+					statusCollector, statusSub = coll, sub
+					statusMu.Unlock()
+					markReady.Do(func() { close(ready) })
+				})
+				// A subscription that failed before registering must not leave the
+				// reader below waiting on it.
+				markReady.Do(func() { close(ready) })
 			}()
 			finishStatus = sync.OnceFunc(func() {
 				stopStatus()
@@ -847,6 +864,16 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 				<-statusDone
 			})
 			defer finishStatus()
+			// "monitor": tell the broker whether this session's status is still on
+			// screen. Without that the collector would keep probing a server nobody
+			// is looking at.
+			setStatusActive = func(active bool) {
+				<-ready
+				statusMu.Lock()
+				coll, sub := statusCollector, statusSub
+				statusMu.Unlock()
+				s.activateMonitor(coll, sub, active)
+			}
 		}
 		go func() {
 			defer cancel()
@@ -864,6 +891,8 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 					if sh.Resize(m.Cols, m.Rows) != nil {
 						return
 					}
+				case "monitor":
+					setStatusActive(m.MonitorActive)
 				default:
 					return
 				}
