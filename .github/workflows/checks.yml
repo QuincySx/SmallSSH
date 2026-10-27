@@ -1,0 +1,39 @@
+# The merge gate. Branch protection should require this job ("checks") for PRs.
+#
+# It is the same command a developer runs locally, so a green CI and a green
+# working copy mean the same thing: vendor-patch checksum, gofmt, go vet and the
+# whole test suite.
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: # re-run by hand; this never releases anything
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: checks
+    runs-on: macos-26 # closest pinned image to the machine this is verified on
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod # the version lives in go.mod only
+          cache: true
+      - run: go run ./tools check
+      # Logs diagnose failures; a green run uploads nothing.
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: check-log
+          path: build/logs/
+          if-no-files-found: ignore
+          retention-days: 3

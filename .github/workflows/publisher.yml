@@ -1,0 +1,52 @@
+# Manual publishing preparation: builds the release artifacts for the chosen
+# targets. Runs only when the owner starts it from the Actions page; there is no
+# push, tag or release trigger.
+#
+# It still never publishes by itself - no tag, no GitHub Release, no upload
+# anywhere. The result is a workflow artifact (a tarball, so permissions and
+# symlinks survive) kept for 7 days, for a human to inspect and ship.
+#
+# Why this is not part of Checks: packaging needs the macOS Xcode toolchain and a
+# signing identity, and ad-hoc signatures differ between Xcode versions, so
+# `tools build -check` (which compares committed component hashes) can only be a
+# local step. Releasing stays a manual local step.
+name: Publisher
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Comma-separated targets
+        default: darwin/arm64
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go run ./tools build
+        run: go run ./tools build -platform "${{ inputs.platform }}"
+      - name: Collect the output as one tarball
+        run: |
+          mkdir -p dist
+          for dir in build/*/; do
+            name=$(basename "$dir")
+            [ "$name" = logs ] && continue
+            tar -czf "dist/smallssh-$name.tar.gz" -C "$dir" .
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: smallssh-dist
+          path: dist/*.tar.gz
+          retention-days: 7
