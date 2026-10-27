@@ -42,7 +42,7 @@ const (
 // runBuild stages and packages the app.
 func runBuild(args []string) error {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
-	platforms := fs.String("platform", "darwin/arm64,linux/amd64,windows/amd64", "comma-separated desktop targets")
+	platforms := fs.String("platform", "darwin/arm64,linux/amd64,windows/amd64", `comma-separated desktop targets, or "all"`)
 	check := fs.Bool("check", false, "只校验已提交的生成文件是否为最新，不写入任何内容")
 	if e := parse(fs, args); e != nil {
 		return e
@@ -106,7 +106,14 @@ func build(platforms string, check bool) error {
 	return nil
 }
 
+// everyTarget is the release list: every desktop the project ships. `-platform
+// all` expands to it, so the workflow and a workstation build the same set.
+const everyTarget = "darwin/arm64,darwin/amd64,linux/amd64,linux/arm64,windows/amd64"
+
 func parseTargets(list string) ([]target, error) {
+	if strings.TrimSpace(list) == "all" {
+		list = everyTarget
+	}
 	var targets []target
 	for _, item := range strings.Split(list, ",") {
 		item = strings.TrimSpace(item)

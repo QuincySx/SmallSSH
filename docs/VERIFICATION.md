@@ -1209,3 +1209,15 @@ CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮
 - `go run ./tools check` 通过（日志 `build/logs/check-20261027-*.log`）。
 
 未做：没有实机观察暂停后服务器负载与 UI 恢复速度；Docker 页独立于状态概览的暂停粒度（当前与状态面板同进退）未单独区分。
+
+## Publisher 一次打出全部平台 · 2026-10-27
+
+此前手动工作流的默认输入只有 `darwin/arm64`，等于每次发版要点一次名字还只出一个平台。改正：
+
+- `tools build` 新增 `-platform all`，展开为本项目发布的五个桌面目标：`darwin/arm64`、`darwin/amd64`、`linux/amd64`、`linux/arm64`、`windows/amd64`。`Publisher` 的默认输入就是 `all`，仍可手动填单个目标。发布清单只在这一个常量里，工作流不重复写目标列表。
+- `Cross build` 的 PR 编译矩阵同步补齐到这五个目标，不再漏掉 darwin/amd64 与 linux/arm64。
+- 打包收集从 `build/*/` 改为 `build/*-amd64/`、`build/*-arm64/`，避免把遗留的 `linux-qa`、`native-downloads` 之类的目录也打进 artifact。
+- 本机用 `-platform all` 完整打包一次验证：84 秒产出两个 `.app`、linux amd64/arm64 的 deb 与 tar.gz、windows exe，五个目录各自打 tar。
+- x86_64 原生组件的哈希随本轮重建更新（`internal/systemauth/native-hashes.json` 的 darwin/amd64 两项），因为签名产物随 Xcode 版本变化；`go run ./tools build -check -platform all` 现在报告生成文件均为最新。这也再次说明为什么打包不能放进自动检查。
+
+未做：`Publisher` 仍只在手动点击时运行，本轮也没有在 GitHub 上真正触发过；多平台打包只在本机验证。

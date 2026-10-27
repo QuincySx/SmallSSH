@@ -86,10 +86,10 @@ go run ./tools check                                                  # 含补�
 | 工作流 | 触发 | 作用 | 是否阻断 PR |
 |---|---|---|---|
 | `checks.yml` → `Checks` | push main、PR、手动 | `go run ./tools check`（补丁校验 + gofmt + vet + 全量测试） | **是**，分支保护里设为 required |
-| `cross-build.yml` → `Cross build` | push main、PR、手动 | 四个目标各 `go build -mod=vendor ./...`，只编译 | **是**，另一个平台编译坏了也不该合并 |
-| `publisher.yml` → `Publisher` | **仅手动** `workflow_dispatch` | 打开发布物并上传 tar 包作为 artifact | 否，不参与合并 |
+| `cross-build.yml` → `Cross build` | push main、PR、手动 | 五个目标（darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64）各 `go build -mod=vendor ./...`，只编译 | **是**，另一个平台编译坏了也不该合并 |
+| `publisher.yml` → `Publisher` | **仅手动** `workflow_dispatch` | 一次打出全部五个平台的发布物（`-platform all`），按平台上传 tar 包作为 artifact | 否，不参与合并 |
 
-建议的分支保护设置：`main` 要求 `checks` 与 `build linux/amd64`、`build linux/arm64`、`build windows/amd64`、`build darwin/arm64` 全部通过。
+建议的分支保护设置：`main` 要求 `checks` 与全部五个 `build <goos>/<goarch>` 通过。
 
 CI 只做检查，从不发版：没有 tag 或 release 触发；`Publisher` 也只产出 artifact（保留 7 天），不建 Release、不推任何平台，真正的发布仍由人看过产物后手动完成。发版仍由所有者在自己的机器上手动完成。runner 与 action 版本写死（`macos-26`、`ubuntu-24.04`、`actions/*@v7`，均为 Node 24 运行时），避免 `-latest` 迁移或运行时弃用悄悄改变结果。
 

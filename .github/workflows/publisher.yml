@@ -1,6 +1,6 @@
-# Manual publishing preparation: builds the release artifacts for the chosen
-# targets. Runs only when the owner starts it from the Actions page; there is no
-# push, tag or release trigger.
+# Manual publishing preparation: builds every desktop target in one run, the same
+# way `go run ./tools build` does on a workstation. Runs only when the owner starts
+# it from the Actions page; there is no push, tag or release trigger.
 #
 # It still never publishes by itself - no tag, no GitHub Release, no upload
 # anywhere. The result is a workflow artifact (a tarball, so permissions and
@@ -16,8 +16,8 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: Comma-separated targets
-        default: darwin/arm64
+        description: Comma-separated targets, or "all" for every desktop
+        default: all
         required: true
         type: string
 
@@ -36,12 +36,14 @@ jobs:
           cache: true
       - name: go run ./tools build
         run: go run ./tools build -platform "${{ inputs.platform }}"
-      - name: Collect the output as one tarball
+      - name: One tarball per platform
         run: |
           mkdir -p dist
-          for dir in build/*/; do
+          # Only the targets tools build produces: arch names, never a stray
+          # directory a previous step left in build/.
+          for dir in build/*-amd64/ build/*-arm64/; do
+            [ -d "$dir" ] || continue
             name=$(basename "$dir")
-            [ "$name" = logs ] && continue
             tar -czf "dist/smallssh-$name.tar.gz" -C "$dir" .
           done
           ls -l dist
