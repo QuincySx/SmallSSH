@@ -80,11 +80,11 @@ func TestApprovalAuthenticationReturnsToUIGateBeforeSubmitting(t *testing.T) {
 	for _, system := range []bool{false, true} {
 		h := newApprovalAuthHarness(t)
 		h.state.passwordMode, h.state.password = true, "offline-synthetic-password"
-		h.state.start(h.request, true, system)
+		h.state.start(h.request, true, system, false)
 		if got := awaitApprovalValue(t, h.started); got != system {
 			t.Fatal("authentication used the wrong method")
 		}
-		h.state.start(h.request, true, system)
+		h.state.start(h.request, true, system, false)
 		select {
 		case <-h.started:
 			t.Fatal("busy state started duplicate authentication")
@@ -106,7 +106,7 @@ func TestApprovalAuthenticationReturnsToUIGateBeforeSubmitting(t *testing.T) {
 		if !h.state.submitting || !h.state.busy {
 			t.Fatal("method switch interrupted an RPC already being submitted")
 		}
-		h.state.start(h.request, true, system)
+		h.state.start(h.request, true, system, false)
 		got := awaitApprovalValue(t, h.submitted)
 		if got.ID != h.request.ID || got.Nonce != h.request.Nonce {
 			t.Fatal("decision changed the reviewed request generation")
@@ -128,7 +128,7 @@ func TestApprovalLateAuthenticationCannotApproveAfterCancellationOrReplacement(t
 				defer cancel()
 				h.state.flow.context = ctx
 				h.state.password = "offline-synthetic-password"
-				h.state.start(h.request, true, system)
+				h.state.start(h.request, true, system, false)
 				awaitApprovalValue(t, h.started)
 				switch change {
 				case "password":
@@ -166,20 +166,33 @@ func TestApprovalLateAuthenticationCannotApproveAfterCancellationOrReplacement(t
 	}
 }
 
-func TestApprovalAutomaticAttemptRequiresNativeVisibilityAndDoesNotRetry(t *testing.T) {
+// approvalReady is a request that may authenticate right now.
+func approvalReady() authReadiness {
+	return authReadiness{windowReady: true, visible: true, focused: true, active: true, systemReady: true}
+}
+
+func TestApprovalAutomaticAttemptRequiresActivationAndDoesNotRetryFailures(t *testing.T) {
 	h := newApprovalAuthHarness(t)
 	post := func(fn func()) { h.ui <- fn }
 	current := func() bool { return h.current }
-	for _, flags := range [][4]bool{{false, true, true, true}, {true, false, true, true}, {true, true, false, true}, {true, true, true, false}} {
-		h.state.queueAutomatic(h.request, flags[0], flags[1], flags[2], flags[3], post, current)
+	for _, readiness := range []authReadiness{
+		{windowReady: false, visible: true, focused: true, active: true, systemReady: true},
+		{windowReady: true, visible: false, focused: true, active: true, systemReady: true},
+		{windowReady: true, visible: true, focused: false, active: true, systemReady: true},
+		{windowReady: true, visible: true, focused: true, active: false, systemReady: true},
+		{windowReady: true, visible: true, focused: true, active: true, systemReady: false},
+	} {
+		h.state.queueAutomatic(h.request, readiness, time.Now, post, current)
 	}
 	select {
 	case <-h.ui:
-		t.Fatal("hidden, unfocused, unready or unavailable authentication was queued")
+		// A window that is key while the application is not active is the
+		// reported start-up failure: the native view cannot evaluate yet.
+		t.Fatal("hidden, unfocused, inactive, unready or unavailable authentication was queued")
 	default:
 	}
-	h.state.queueAutomatic(h.request, true, true, true, true, post, current)
-	h.state.queueAutomatic(h.request, true, true, true, true, post, current)
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
 	awaitApprovalValue(t, h.ui)()
 	if !awaitApprovalValue(t, h.started) || !h.state.autoAttempted {
 		t.Fatal("visible focused request did not start its single automatic attempt")
@@ -190,7 +203,7 @@ func TestApprovalAutomaticAttemptRequiresNativeVisibilityAndDoesNotRetry(t *test
 		t.Fatal("failure did not settle the request")
 	}
 	for range 4 {
-		h.state.queueAutomatic(h.request, true, true, true, true, post, current)
+		h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
 	}
 	select {
 	case <-h.ui:
@@ -199,10 +212,59 @@ func TestApprovalAutomaticAttemptRequiresNativeVisibilityAndDoesNotRetry(t *test
 	}
 }
 
+func TestApprovalAutomaticReadinessInterruptionRetriesOnce(t *testing.T) {
+	h := newApprovalAuthHarness(t)
+	post := func(fn func()) { h.ui <- fn }
+	current := func() bool { return h.current }
+	notReady := &systemauth.EmbeddedError{Code: "notReady", Message: "窗口内指纹验证区域尚未就绪"}
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
+	awaitApprovalValue(t, h.ui)()
+	awaitApprovalValue(t, h.started)
+	h.results <- approvalAuthResult{err: notReady}
+	awaitApprovalValue(t, h.ui)()
+	if h.state.busy || h.state.status != "" || !h.state.autoRetryUsed || h.state.autoAttempted || h.state.autoRetryAt.IsZero() {
+		t.Fatal("a system readiness interruption was reported as a failure instead of being retried")
+	}
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
+	select {
+	case <-h.ui:
+		t.Fatal("authentication restarted before the readiness window elapsed")
+	default:
+	}
+	retryAt := h.state.autoRetryAt
+	h.state.queueAutomatic(h.request, approvalReady(), func() time.Time { return retryAt }, post, current)
+	awaitApprovalValue(t, h.ui)()
+	awaitApprovalValue(t, h.started)
+	h.results <- approvalAuthResult{err: notReady}
+	awaitApprovalValue(t, h.ui)()
+	if h.state.status == "" {
+		t.Fatal("the second readiness interruption was retried or hidden")
+	}
+	h.state.queueAutomatic(h.request, approvalReady(), func() time.Time { return retryAt.Add(time.Hour) }, post, current)
+	select {
+	case <-h.ui:
+		t.Fatal("a readiness interruption retried more than once")
+	default:
+	}
+}
+
+func TestApprovalAutomaticCancellationStaysSilent(t *testing.T) {
+	h := newApprovalAuthHarness(t)
+	post := func(fn func()) { h.ui <- fn }
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, func() bool { return true })
+	awaitApprovalValue(t, h.ui)()
+	awaitApprovalValue(t, h.started)
+	h.results <- approvalAuthResult{err: context.Canceled}
+	awaitApprovalValue(t, h.ui)()
+	if h.state.status != "" || h.state.autoRetryUsed || h.state.busy {
+		t.Fatal("cancellation was reported as an authority failure or retried")
+	}
+}
+
 func TestApprovalQueuedAuthenticationRechecksFocusAndPasswordChoice(t *testing.T) {
 	for _, change := range []string{"focus", "password", "close"} {
 		h := newApprovalAuthHarness(t)
-		h.state.queueAutomatic(h.request, true, true, true, true, func(fn func()) { h.ui <- fn }, func() bool { return h.current })
+		h.state.queueAutomatic(h.request, approvalReady(), time.Now, func(fn func()) { h.ui <- fn }, func() bool { return h.current })
 		switch change {
 		case "focus":
 			h.current = false
@@ -279,9 +341,9 @@ func TestApprovalBusyRejectionCancelsAuthenticationInOneAction(t *testing.T) {
 	}
 	r = h.request
 	tt := ui.NewTester(func(c *ui.Context) {
-		a.approvalPrompt(c, r, h.state, func(allow, system bool) { h.state.start(r, allow, system) }, func() {})
+		a.approvalPrompt(c, r, h.state, func(allow, system bool) { h.state.start(r, allow, system, false) }, func() {})
 	}, 380, 540)
-	h.state.start(r, true, true)
+	h.state.start(r, true, true, false)
 	awaitApprovalValue(t, h.started)
 	tt.Frame()
 	if err := tt.Click("不允许"); err != nil {
@@ -336,7 +398,7 @@ func TestApprovalAutomaticWaitsForEmbeddedAnchorWithoutSpendingAttempt(t *testin
 	h.state.presentation = systemauth.NewEmbeddedPresentation(func(fn func()) { fn() })
 	post := func(fn func()) { h.ui <- fn }
 	current := func() bool { return true }
-	h.state.queueAutomatic(h.request, true, true, true, true, post, current)
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
 	if h.state.autoQueued || h.state.autoAttempted {
 		t.Fatal("an unlaid-out native anchor spent the automatic attempt")
 	}
@@ -346,7 +408,7 @@ func TestApprovalAutomaticWaitsForEmbeddedAnchorWithoutSpendingAttempt(t *testin
 	default:
 	}
 	h.state.presentation.SetFrame(1, systemauth.EmbeddedRect{X: 8, Y: 12, Width: 24, Height: 24})
-	h.state.queueAutomatic(h.request, true, true, true, true, post, current)
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
 	callback := awaitApprovalValue(t, h.ui)
 	// A page can disappear after queueing but before the callback executes.
 	h.state.presentation.SetFrame(0, systemauth.EmbeddedRect{})
@@ -355,7 +417,7 @@ func TestApprovalAutomaticWaitsForEmbeddedAnchorWithoutSpendingAttempt(t *testin
 		t.Fatal("detached native anchor began authentication")
 	}
 	h.state.presentation.SetFrame(1, systemauth.EmbeddedRect{X: 8, Y: 12, Width: 24, Height: 24})
-	h.state.queueAutomatic(h.request, true, true, true, true, post, current)
+	h.state.queueAutomatic(h.request, approvalReady(), time.Now, post, current)
 	awaitApprovalValue(t, h.ui)()
 	awaitApprovalValue(t, h.started)
 	if !h.state.autoAttempted || !h.state.systemAttempt {

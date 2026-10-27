@@ -108,7 +108,10 @@ func (a *app) lockedView(c *ui.Context) {
 				})
 				if state.presentation != nil {
 					a.placeUnlockAuthentication(anchor)
-					if !state.presentation.Ready() || nativeIcon {
+					// Ask for one more frame only while no usable anchor exists yet
+					// or right after the anchor moved; a stable anchor during an
+					// authentication asked for 30 rebuilds a second before.
+					if state.anchor.follow(anchor, state.presentation.Ready(), nativeIcon, systemReady) {
 						c.After(33 * time.Millisecond)
 					}
 				}

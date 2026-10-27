@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -61,7 +62,9 @@ func loadEmbeddedBridge() (embeddedBridge, error) {
 		}
 		handle, err := purego.Dlopen(library, purego.RTLD_NOW|purego.RTLD_LOCAL)
 		if err != nil {
-			embeddedLibrary.err = errors.New("窗口内指纹验证组件无法加载")
+			// The loader's reason (missing architecture, broken signature) is the
+			// only way to diagnose a field failure, and it carries no secret.
+			embeddedLibrary.err = fmt.Errorf("窗口内指纹验证组件无法加载: %w", err)
 			return
 		}
 		bridge := &nativeEmbeddedBridge{}
@@ -78,7 +81,7 @@ func loadEmbeddedBridge() (embeddedBridge, error) {
 			symbol, err := purego.Dlsym(handle, binding.name)
 			if err != nil {
 				_ = purego.Dlclose(handle)
-				embeddedLibrary.err = errors.New("窗口内指纹验证组件接口不完整")
+				embeddedLibrary.err = fmt.Errorf("窗口内指纹验证组件接口不完整: 缺少 %s", binding.name)
 				return
 			}
 			purego.RegisterFunc(binding.fn, symbol)

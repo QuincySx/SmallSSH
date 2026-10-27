@@ -21,6 +21,7 @@ type unlockState struct {
 	sequence                          uint64
 	cancel                            context.CancelFunc
 	presentation                      *systemauth.EmbeddedPresentation
+	anchor                            anchorTracker
 	attempt                           *unlockAttempt
 	// Isolated tests substitute authentication and broker creation, never an
 	// authentication-success flag. Both paths still transfer a real vault.
@@ -132,28 +133,18 @@ func (a *app) expandUnlockPassword() {
 }
 
 func (a *app) placeUnlockAuthentication(bounds ui.Rect) {
-	s := a.ensureUnlockState()
-	if s.presentation == nil {
-		return
-	}
-	if a.win == nil || a.win.IsDestroyed() || !a.win.IsVisible() || bounds.W <= 0 || bounds.H <= 0 {
-		s.presentation.SetFrame(0, systemauth.EmbeddedRect{})
-		return
-	}
-	s.presentation.SetFrame(a.win.NativeHandle(), systemauth.EmbeddedRect{X: float64(bounds.X), Y: float64(bounds.Y), Width: float64(bounds.W), Height: float64(bounds.H)})
+	placeAuthenticationFrame(a.win, a.ensureUnlockState().presentation, bounds)
 }
 
-type unlockReadiness struct {
-	windowReady, visible, focused, active, systemReady bool
+// readyForAutomaticUnlock keeps the landing page's own state out of the shared
+// readiness check: a page already in password mode or already trying must not
+// start another authentication.
+func (s *unlockState) readyForAutomaticUnlock(now time.Time, r authReadiness) bool {
+	return !s.closed && !s.busy && !s.passwordMode &&
+		r.ready(now, s.autoAttempted, s.autoRetryAt, s.presentation)
 }
 
-func (s *unlockState) readyForAutomaticUnlock(now time.Time, r unlockReadiness) bool {
-	return r.windowReady && r.visible && r.focused && r.active && r.systemReady &&
-		!s.closed && !s.busy && !s.passwordMode && !s.autoAttempted && !now.Before(s.autoRetryAt) &&
-		(s.presentation == nil || s.presentation.Ready())
-}
-
-func (s *unlockState) queueAutomaticUnlock(r unlockReadiness, now func() time.Time, post func(func()), current func() (unlockReadiness, bool), start func()) {
+func (s *unlockState) queueAutomaticUnlock(r authReadiness, now func() time.Time, post func(func()), current func() (authReadiness, bool), start func()) {
 	if s.autoQueued || !s.readyForAutomaticUnlock(now(), r) {
 		return
 	}
@@ -170,13 +161,13 @@ func (s *unlockState) queueAutomaticUnlock(r unlockReadiness, now func() time.Ti
 }
 
 func (s *unlockState) retryAutomaticUnlock(err error, automatic bool, now time.Time) bool {
-	if !automatic || s.autoRetryUsed || !systemauth.IsAuthenticationNotReady(err) {
+	at, retry := retryAutomatic(err, automatic, s.autoRetryUsed, now)
+	if !retry {
 		return false
 	}
 	// Retry only a system readiness interruption, once. A rejected fingerprint
 	// or an explicit cancellation must never trigger another authentication.
-	s.autoRetryUsed, s.autoAttempted = true, false
-	s.autoRetryAt = now.Add(500 * time.Millisecond)
+	s.autoRetryUsed, s.autoAttempted, s.autoRetryAt = true, false, at
 	return true
 }
 
@@ -185,10 +176,10 @@ func (a *app) queueUnlockAuthentication() {
 	if s == nil || win == nil || win.IsDestroyed() || a.online || a.create || a.busy {
 		return
 	}
-	readiness := func() unlockReadiness {
-		return unlockReadiness{windowReady: a.mainWindowReady, visible: win.IsVisible(), focused: win.IsFocused(), active: a.applicationActive, systemReady: a.unlockSystemReady()}
+	readiness := func() authReadiness {
+		return authReadiness{windowReady: a.mainWindowReady, visible: win.IsVisible(), focused: win.IsFocused(), active: a.isActive(), systemReady: a.unlockSystemReady()}
 	}
-	s.queueAutomaticUnlock(readiness(), time.Now, win.Update, func() (unlockReadiness, bool) {
+	s.queueAutomaticUnlock(readiness(), time.Now, win.Update, func() (authReadiness, bool) {
 		return readiness(), a.unlockState == s && !win.IsDestroyed() && !a.online && !a.create && !a.busy
 	}, func() { a.beginVaultUnlockAttempt(true, true) })
 }
@@ -204,7 +195,11 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 		return
 	}
 	s := a.ensureUnlockState()
-	if system && (!a.unlockSystemReady() || a.auth == nil && s.authenticate == nil || s.presentation != nil && !s.presentation.Ready()) || !system && a.pass == "" {
+	if system {
+		if !a.unlockSystemReady() || a.auth == nil && s.authenticate == nil || s.presentation != nil && !s.presentation.Ready() {
+			return
+		}
+	} else if a.pass == "" {
 		return
 	}
 	base := a.operationContext()
@@ -224,6 +219,9 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 	if authenticate == nil {
 		authenticate = func(ctx context.Context, pass []byte, system bool) (*vault.Session, error) {
 			if system {
+				if auth == nil {
+					return nil, errors.New(tr(nil, "系统验证不可用"))
+				}
 				if presentation != nil {
 					return auth.OpenEmbedded(ctx, dir, tr(nil, "解锁 SmallSSH 保险库"), presentation)
 				}

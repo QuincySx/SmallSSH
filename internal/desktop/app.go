@@ -209,7 +209,11 @@ func RunWithOptions(dir string, opts Options) error {
 	mygo.App.OnDidBecomeActive(func() {
 		a.startup.activations++
 		a.applicationActive = true
+		// Both automatic surfaces wait for activation, so both are re-queued
+		// here. The approval prompt is parented to the main window and becomes
+		// key before the application is active.
 		a.queueUnlockAuthentication()
+		a.queueInlineApproval()
 	})
 	mygo.App.OnDidResignActive(func() { a.applicationActive = false })
 	offLocale := mygo.App.OnLocaleChanged(func(string) { a.refreshLanguage() })
@@ -289,6 +293,17 @@ func (a *app) shutdown() {
 		}
 	}
 }
+
+// isActive reports whether this application is the one in front. The backend is
+// asked directly once it runs, so activation cannot drift from our own record of
+// the events it sent. Before App.Run (headless tests) the events are all there is.
+func (a *app) isActive() bool {
+	if !mygo.App.IsReady() {
+		return a.applicationActive
+	}
+	return mygo.App.IsActive()
+}
+
 func (a *app) lock() {
 	a.disposeUnlockState()
 	a.closeApprovalAuthentication()

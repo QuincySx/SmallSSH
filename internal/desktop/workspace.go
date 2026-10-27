@@ -113,7 +113,7 @@ func (a *app) securityView(c *ui.Context) {
 			}
 			ui.Text(c, state).FontSize(12).TextColor(c.Theme().TextMuted).Shrink(0)
 		})
-		if !a.authStatus.Available && a.authStatus.Reason != "" {
+		if (!a.authStatus.Available || !a.authStatus.Enabled) && a.authStatus.Reason != "" {
 			ui.Column(c).FillWidth().Label(tr(c, "系统验证可用性")).Children(func() {
 				ui.Text(c, a.authStatus.Reason).FillWidth().FontSize(12)
 			})

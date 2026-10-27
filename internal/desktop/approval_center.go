@@ -174,7 +174,7 @@ func (a *app) approvalView(c *ui.Context) {
 						}
 						state := a.inlineApproval
 						a.approvalActions(c, chosen, state, func(allow, system bool) {
-							state.start(chosen, allow, system)
+							state.start(chosen, allow, system, false)
 						}, func() { a.clearInlineApproval(); a.page = 1 })
 						a.ownerPass, a.approvalPasswordMode = state.password, state.passwordMode
 					} else if chosen.Status == "running" || chosen.Status == "approved" {

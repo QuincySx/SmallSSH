@@ -31,6 +31,11 @@ type Backend interface {
 }
 type Service struct{ backend Backend }
 
+// recordRemover is implemented by the backends that keep the wrapped key in a
+// system keychain entry, which has to be deleted when the record is replaced or
+// removed. Linux stores the device key in secret-tool; the macOS Secure Enclave
+// envelope and the Windows DPAPI blob carry their own protected key, so there is
+// nothing beside device-unlock.json to clean up.
 type recordRemover interface {
 	Remove(context.Context, json.RawMessage) error
 }
@@ -45,22 +50,35 @@ type record struct {
 
 func path(dir string) string { return filepath.Join(dir, "device-unlock.json") }
 func (s *Service) Status(ctx context.Context, dir string) Status {
-	st := Status{Name: s.backend.Name()}
-	_, e := os.Stat(path(dir))
-	st.Enabled = e == nil
+	var st Status
+	// Enabled means the record is usable, not that a file exists. readRecord
+	// rejects what Open would also reject, so the settings cannot offer system
+	// unlock that every attempt would then fail to perform.
+	if _, e := readRecord(dir); e == nil {
+		st.Enabled = true
+	} else if !os.IsNotExist(e) {
+		st.Reason = e.Error()
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	e = s.backend.Probe(ctx)
-	st.Name = s.backend.Name()
-	st.Available = e == nil
-	if e != nil {
+	e := s.backend.Probe(ctx)
+	st.Name = s.backend.Name() // Probing is what learns whether it is really Touch ID.
+	if e == nil {
+		st.Available = true
+	} else if st.Reason == "" {
 		st.Reason = e.Error()
 	}
 	return st
 }
 func (s *Service) Enroll(ctx context.Context, dir string, pass []byte) error {
-	var previous record
-	previous, _ = readRecord(dir)
+	// A previous record that no longer parses cannot name the system entry it
+	// owns, so re-enrolling over it may leave that entry behind. Refusing instead
+	// would trap the user: Open and Disable reject the same record, and the only
+	// way out is re-enrolling.
+	previous, previousErr := readRecord(dir)
+	if previousErr != nil {
+		previous = record{}
+	}
 	v, e := vault.Read(filepath.Join(dir, "vault.json"), pass)
 	if e != nil {
 		return e

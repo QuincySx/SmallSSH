@@ -23,6 +23,9 @@ type approvalPromptState struct {
 	flow                  *approvalAuthFlow
 	host                  *mygo.Window
 	presentation          *systemauth.EmbeddedPresentation
+	anchor                anchorTracker
+	autoRetryUsed         bool
+	autoRetryAt           time.Time
 	systemAttempt         bool
 }
 
@@ -62,6 +65,13 @@ func (a *app) approvalSystemReady() bool {
 }
 
 func (a *app) approvalActions(c *ui.Context, r approval.Request, state *approvalPromptState, decide func(bool, bool), close func()) {
+	// The single retry after a system-readiness interruption waits on a timer;
+	// nothing else would redraw this surface on its own.
+	if !state.autoRetryAt.IsZero() {
+		if delay := time.Until(state.autoRetryAt); delay > 0 {
+			c.After(delay)
+		}
+	}
 	systemReady := a.approvalSystemReady()
 	usePassword := state.passwordMode || !systemReady
 	if state.status != "" {
@@ -113,9 +123,11 @@ func (a *app) approvalActions(c *ui.Context, r approval.Request, state *approval
 	}
 	if state.presentation != nil {
 		state.placeAuthentication(anchor.Bounds())
-		// Bounds belong to the committed frame. Schedule the initial anchor
-		// and one follow-up frame when layout changes during authentication.
-		if !state.presentation.Ready() || nativeIcon {
+		// Bounds belong to the committed frame: ask for the initial anchor and for
+		// one follow-up frame after it moves, but not for a stable one, so neither
+		// a device without Touch ID nor a running authentication repaints this
+		// surface forever.
+		if state.anchor.follow(anchor.Bounds(), state.presentation.Ready(), nativeIcon, systemReady) {
 			c.After(33 * time.Millisecond)
 		}
 	}
@@ -175,13 +187,14 @@ func (a *app) showApproval(r approval.Request) {
 		if win == nil {
 			return
 		}
-		state.queueAutomatic(r, ready, win.IsVisible(), win.IsFocused(), a.approvalSystemReady(), win.Update, func() bool {
-			return current() && win.IsVisible() && win.IsFocused() && a.approvalSystemReady()
+		readiness := authReadiness{windowReady: ready, visible: win.IsVisible(), focused: win.IsFocused(), active: a.isActive(), systemReady: a.approvalSystemReady()}
+		state.queueAutomatic(r, readiness, time.Now, win.Update, func() bool {
+			return current() && win.IsVisible() && win.IsFocused() && a.isActive() && a.approvalSystemReady()
 		})
 	}
 	win = mygo.NewWindow(mygo.WindowOptions{Title: tr(nil, "访问授权"), Width: 420, Height: approvalWindowHeight, UseContentSize: true, MinWidth: 380, MinHeight: 540,
 		Parent: a.win, DisableMinimize: true, DisableMaximize: true, DisableFullScreen: true, Content: ui.View(func(c *ui.Context) {
-			a.approvalPrompt(c, r, state, func(allow, system bool) { state.start(r, allow, system) }, func() { win.Close() })
+			a.approvalPrompt(c, r, state, func(allow, system bool) { state.start(r, allow, system, false) }, func() { win.Close() })
 			queue()
 		})})
 	state.host = win

@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -53,14 +54,7 @@ func (s *approvalPromptState) dispose() {
 }
 
 func (s *approvalPromptState) placeAuthentication(bounds ui.Rect) {
-	if s.presentation == nil {
-		return
-	}
-	if s.host == nil || s.host.IsDestroyed() || !s.host.IsVisible() || bounds.W <= 0 || bounds.H <= 0 {
-		s.presentation.SetFrame(0, systemauth.EmbeddedRect{})
-		return
-	}
-	s.presentation.SetFrame(s.host.NativeHandle(), systemauth.EmbeddedRect{X: float64(bounds.X), Y: float64(bounds.Y), Width: float64(bounds.W), Height: float64(bounds.H)})
+	placeAuthenticationFrame(s.host, s.presentation, bounds)
 }
 
 func (s *approvalPromptState) expandPassword() {
@@ -72,7 +66,7 @@ func (s *approvalPromptState) expandPassword() {
 	s.status = ""
 }
 
-func (s *approvalPromptState) start(r approval.Request, allow, system bool) {
+func (s *approvalPromptState) start(r approval.Request, allow, system, automatic bool) {
 	f := s.flow
 	if f == nil || s.closed || s.busy || s.requestKey != approvalRequestKey(r) || f.context.Err() != nil || !f.current() || !allow && f.denyOwner == nil || allow && !system && s.password == "" {
 		return
@@ -94,11 +88,22 @@ func (s *approvalPromptState) start(r approval.Request, allow, system bool) {
 		}
 		s.busy, s.submitting, s.systemAttempt, s.cancel = false, false, false, nil
 		cancel()
-		if err != nil {
-			s.status = err.Error()
+		if err == nil {
+			f.done()
 			return
 		}
-		f.done()
+		// An explicit cancellation stays silent, and a system-readiness
+		// interruption is retried once, as on the landing page. Both are
+		// outcomes the applicant did not cause and cannot act on.
+		if systemauth.IsAuthenticationCancelled(err) {
+			s.status = ""
+			return
+		}
+		if at, retry := retryAutomatic(err, automatic, s.autoRetryUsed, time.Now()); retry {
+			s.autoRetryUsed, s.autoAttempted, s.autoRetryAt, s.status = true, false, at, ""
+			return
+		}
+		s.status = err.Error()
 	}
 	if !allow {
 		wipe(pass)
@@ -188,22 +193,29 @@ func (a *app) bindApprovalFlow(r approval.Request, state *approvalPromptState, p
 
 // Only native lifecycle code supplies readiness and visibility. Offline
 // rendering has no window and never queues an OS authentication dialog.
-func (s *approvalPromptState) queueAutomatic(r approval.Request, ready, visible, focused, systemReady bool, post func(func()), current func() bool) {
-	if !ready || !visible || !focused || !systemReady || s.closed || s.passwordMode || s.busy || s.autoAttempted || s.autoQueued || !current() || s.presentation != nil && !s.presentation.Ready() {
+// queueAutomatic starts the one automatic attempt, on the same readiness and
+// with the same single retry the landing page uses. A native view that cannot
+// appear yet must not consume the attempt.
+func (s *approvalPromptState) queueAutomatic(r approval.Request, ready authReadiness, now func() time.Time, post func(func()), current func() bool) {
+	if !s.queueable(ready, now) || s.autoQueued || !current() {
 		return
 	}
 	s.autoQueued = true
 	post(func() {
 		s.autoQueued = false
-		if s.closed || s.passwordMode || s.busy || s.autoAttempted || !current() || s.presentation != nil && !s.presentation.Ready() {
+		if !s.queueable(ready, now) || !current() {
 			return
 		}
 		s.autoAttempted = true
 		if s.flow != nil && s.flow.claimAuto != nil && !s.flow.claimAuto() {
 			return
 		}
-		s.start(r, true, true)
+		s.start(r, true, true, true)
 	})
+}
+
+func (s *approvalPromptState) queueable(ready authReadiness, now func() time.Time) bool {
+	return !s.closed && !s.passwordMode && !s.busy && ready.ready(now(), s.autoAttempted, s.autoRetryAt, s.presentation)
 }
 
 func (a *app) pendingApproval(r approval.Request) bool {
@@ -235,8 +247,8 @@ func (a *app) queueInlineApproval() {
 	}
 	for _, r := range a.requests {
 		if approvalRequestKey(r) == state.requestKey {
-			state.queueAutomatic(r, a.mainWindowReady, win.IsVisible(), win.IsFocused(), a.approvalSystemReady(), win.Update, func() bool {
-				return a.inlineApproval == state && state.flow.current() && !win.IsDestroyed() && win.IsVisible() && win.IsFocused() && a.approvalSystemReady()
+			state.queueAutomatic(r, authReadiness{windowReady: a.mainWindowReady, visible: win.IsVisible(), focused: win.IsFocused(), active: a.isActive(), systemReady: a.approvalSystemReady()}, time.Now, win.Update, func() bool {
+				return a.inlineApproval == state && state.flow.current() && !win.IsDestroyed() && win.IsVisible() && win.IsFocused() && a.isActive() && a.approvalSystemReady()
 			})
 			return
 		}

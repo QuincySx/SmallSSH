@@ -219,11 +219,11 @@ func TestVaultUnlockAutomaticWaitsForActiveAppAndRechecksQueuedReadiness(t *test
 	s := &unlockState{}
 	now := time.Now()
 	clock := func() time.Time { return now }
-	ready := unlockReadiness{windowReady: true, visible: true, focused: true, active: true, systemReady: true}
+	ready := authReadiness{windowReady: true, visible: true, focused: true, active: true, systemReady: true}
 	var queued []func()
 	starts := 0
 	post := func(fn func()) { queued = append(queued, fn) }
-	current := func() (unlockReadiness, bool) { return ready, true }
+	current := func() (authReadiness, bool) { return ready, true }
 	start := func() { starts++ }
 	for _, missing := range []string{"window", "visible", "focus", "active", "system"} {
 		r := ready
@@ -275,11 +275,11 @@ func TestVaultUnlockTransientAutomaticInterruptionRetriesOnceWithoutError(t *tes
 	if h.a.unlockError != "" || h.state.passwordMode || h.a.busy || h.state.autoAttempted || !h.state.autoRetryUsed {
 		t.Fatal("temporary startup interruption forced password mode or showed a false failure")
 	}
-	ready := unlockReadiness{windowReady: true, visible: true, focused: true, active: true, systemReady: true}
+	ready := authReadiness{windowReady: true, visible: true, focused: true, active: true, systemReady: true}
 	clockNow := h.state.autoRetryAt.Add(-time.Nanosecond)
 	clock := func() time.Time { return clockNow }
 	post := func(fn func()) { h.ui <- fn }
-	current := func() (unlockReadiness, bool) { return ready, true }
+	current := func() (authReadiness, bool) { return ready, true }
 	start := func() { h.a.beginVaultUnlockAttempt(true, true) }
 	h.state.queueAutomaticUnlock(ready, clock, post, current, start)
 	if h.state.autoQueued {
