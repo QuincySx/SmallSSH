@@ -15,6 +15,14 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 		// Whatever the event changes, the next frame builds anew.
 		rt.redraw = false
 	}
+	switch ev.Kind {
+	case platform.SurfaceFrame, platform.SurfaceResize, platform.SurfaceShown:
+	default:
+		// Input, which the next frame builds even out of sight.
+		rt.input = true
+	}
+	// The window's DIPs, zoomed, are the content's.
+	rt.fromWindow(&ev)
 	x, y := float32(ev.X), float32(ev.Y)
 	if ev.Kind == platform.PointerDown || ev.Kind == platform.WebViewPress {
 		// A press is of no element until countPress finds it one.
@@ -24,7 +32,7 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 		return true
 	}
 	switch ev.Kind {
-	case platform.PointerMove, platform.PointerDown, platform.PointerUp, platform.PointerScroll:
+	case platform.PointerMove, platform.PointerDown, platform.PointerUp, platform.PointerScroll, platform.PointerZoom:
 		rt.mods = Modifiers(ev.Mods)
 	}
 	switch ev.Kind {
@@ -58,7 +66,10 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 		}
 	case platform.PointerScroll:
 		rt.pointerMove(x, y)
-		rt.scroll(float32(ev.DX), float32(ev.DY), Modifiers(ev.Mods), ev.Precise)
+		rt.scroll(float32(ev.DX), float32(ev.DY), Modifiers(ev.Mods), ev.Precise, ev.Momentum)
+	case platform.PointerZoom:
+		rt.pointerMove(x, y)
+		rt.zoom(float32(ev.Scale), Modifiers(ev.Mods))
 	case platform.KeyPressed:
 		rt.modsChanged(Modifiers(ev.Mods))
 		taken = rt.keyDownPhysical(Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey), ev.Repeat)
@@ -165,20 +176,49 @@ func (rt *engine) setHover(chain []uint64) bool {
 		return false
 	}
 	// Only elements that look at their hover need a frame.
-	need := false
-	for _, list := range [][]uint64{chain, rt.hover} {
-		for _, id := range list {
-			if s := rt.states[id]; s != nil && s.flags&(flagHover|flagTrackPointer) != 0 {
-				need = true
-			}
-		}
-	}
+	need := rt.watchHover(chain) || rt.watchHover(rt.hover)
 	rt.hover = chain
 	if need {
 		rt.requestFrame()
 	}
 	rt.updateCursor()
 	return true
+}
+
+// watchHover reports whether an element of chain looks at its hover.
+func (rt *engine) watchHover(chain []uint64) bool {
+	for _, id := range chain {
+		if s := rt.states[id]; s != nil && s.flags&(flagHover|flagTrackPointer) != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// rehover makes the elements under the pointer hover after a frame built
+// and laid them out anew, as the row taking the place of one removed: a
+// pointer standing still sends no event that would. It asks for the frame
+// that shows them hovering, which a frame being built cannot.
+func (rt *engine) rehover() {
+	if rt.pressed != nil || rt.scrollDrag.st != nil {
+		// The hover holds the elements under the pointer as the press
+		// began (Hovered).
+		return
+	}
+	chain := rt.chain[:0]
+	if rt.pointerIn {
+		chain = rt.appendHitChain(chain, rt.pointerX, rt.pointerY)
+	}
+	old := rt.hover
+	if !rt.setHover(chain) {
+		rt.chain = chain[:0]
+		return
+	}
+	rt.chain = old[:0]
+	if rt.watchHover(chain) {
+		rt.redraw, rt.repaintDue = false, time.Time{}
+		rt.host.requestFrame()
+	}
 }
 
 func (rt *engine) pointerMove(x, y float32) {
@@ -229,6 +269,8 @@ func (rt *engine) pointerMove(x, y float32) {
 			rt.chain = old[:0]
 		} else {
 			rt.chain = chain[:0]
+			// The pointer may have gone onto a scroll bar, or off it.
+			rt.updateCursor()
 		}
 	}
 	if moved {
@@ -255,6 +297,8 @@ func (rt *engine) pointerMove(x, y float32) {
 const interactive = flagClickable | flagFocusable | flagEditable | flagSelectable | flagDragWindow | flagDraggable | flagTrackPointer
 
 func (rt *engine) pointerDown(x, y float32, button int, mods Modifiers, clicks int) {
+	rt.downing++
+	defer rt.endDown()
 	chain := rt.hitChain(x, y)
 	rt.setHover(chain)
 	rt.pressDragger = 0
@@ -344,6 +388,19 @@ func (rt *engine) pointerDown(x, y float32, button int, mods Modifiers, clicks i
 	}
 }
 
+// endDown applies the releases that came while pointerDown handled a
+// press.
+func (rt *engine) endDown() {
+	if rt.downing--; rt.downing > 0 {
+		return
+	}
+	for len(rt.ups) > 0 {
+		up := rt.ups[0]
+		rt.ups = rt.ups[1:]
+		rt.pointerUp(up[0], up[1])
+	}
+}
+
 // countPress counts the backend's n-th quick press from the first on the
 // element pressed: the innermost of the target and the handler, so that
 // two handlers in one focusable element, or two buttons in one handler,
@@ -365,11 +422,18 @@ func (rt *engine) countPress(chain []uint64, target, h *state, n int) int {
 }
 
 func (rt *engine) pointerUp(button, clicks int) {
+	if rt.downing > 0 {
+		rt.ups = append(rt.ups, [2]int{button, clicks})
+		return
+	}
 	if button == rt.pressButton {
 		clicks = rt.pressClicks // the engine's, which may have started over
 	}
 	if rt.scrollDrag.st != nil {
 		rt.scrollDrag.st = nil
+		// The pointer may have left the bar, over what the hover missed.
+		rt.setHover(rt.hitChain(rt.pointerX, rt.pointerY))
+		rt.updateCursor()
 		rt.requestFrame()
 		return
 	}
@@ -420,10 +484,10 @@ func (rt *engine) pointerUp(button, clicks int) {
 	rt.requestFrame()
 }
 
-func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise bool) {
+func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise, momentum bool) {
 	chain := rt.appendHitChain(rt.chain[:0], rt.pointerX, rt.pointerY)
 	rt.chain = chain[:0]
-	if h := rt.handler(chain); h != nil && rt.deliver(h, InputEvent{Kind: InputScroll, DX: dx, DY: dy, Mods: mods, Precise: precise}) {
+	if h := rt.handler(chain); h != nil && rt.deliver(h, InputEvent{Kind: InputScroll, DX: dx, DY: dy, Mods: mods, Precise: precise, Momentum: momentum}) {
 		return
 	}
 	// Shift turns the wheel sideways: down is toward the end, which is
@@ -432,6 +496,9 @@ func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise bool) {
 	if sideways {
 		dx, dy = dy, 0
 	}
+	// A wheel's notches glide, as browsers scroll them; a touchpad's
+	// small moves already follow the fingers.
+	glide := !precise && !rt.preferences().ReduceMotion
 	for _, id := range chain {
 		s := rt.states[id]
 		if s == nil {
@@ -441,11 +508,30 @@ func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise bool) {
 		if sideways && s.rtl {
 			sx = -sx
 		}
+		if glide {
+			if wheelMoves(s, sx, sy) {
+				rt.wheelScroll(s, sx, sy)
+				return
+			}
+			continue
+		}
+		s.wheel = nil
 		if scrollBy(s, sx, sy) {
 			rt.requestFrame()
 			return
 		}
 	}
+}
+
+// zoom gives a pinch to the element under the pointer that handles its
+// input; no element zooms of its own.
+func (rt *engine) zoom(scale float32, mods Modifiers) {
+	if scale <= 0 || scale == 1 {
+		return
+	}
+	chain := rt.appendHitChain(rt.chain[:0], rt.pointerX, rt.pointerY)
+	rt.chain = chain[:0]
+	rt.deliver(rt.handler(chain), InputEvent{Kind: InputZoom, Scale: scale, Mods: mods})
 }
 
 // dragTo returns the offset of content whose thumb moved by moved DIPs
@@ -634,7 +720,9 @@ func (rt *engine) keyDownPhysical(mods Modifiers, key, physical Key, repeat bool
 		s.editor.queue = append(s.editor.queue, editEvent{kind: editKey, mods: mods, key: key})
 		rt.blinkStart = rt.now()
 		rt.requestFrame()
-		return false
+		// Taken: the menu item of the key, as Edit › Paste's Ctrl+V on
+		// Windows, leaves it rather than pasting a second time.
+		return true
 	}
 	if s := rt.states[rt.focused]; s != nil && s.flags&flagTypeSelect != 0 && !rt.claimed(k) {
 		// The first letters of a row of a list: they add up while typed
@@ -927,13 +1015,13 @@ func (rt *engine) updateTextInput() {
 			t.Caret = bounds
 		} else {
 			r := transformRect(s.world, Rect{X: s.x, Y: s.y, W: 1, H: s.h})
-			t.Caret = platform.RectF{X: float64(r.X), Y: float64(r.Y), W: float64(r.W), H: float64(r.H)}
+			t.Caret = rt.toWindow(platform.RectF{X: float64(r.X), Y: float64(r.Y), W: float64(r.W), H: float64(r.H)})
 		}
 	} else if s != nil && s.editor == nil && s.input != nil && s.takesText && rt.windowFocus() {
 		// An element taking text itself: no text around the caret.
 		t.Active, t.NoInputMethod = true, s.noIME
 		r := transformRect(s.world, Rect{s.x + s.caret.X, s.y + s.caret.Y, s.caret.W, s.caret.H})
-		t.Caret = platform.RectF{X: float64(r.X), Y: float64(r.Y), W: float64(r.W), H: float64(r.H)}
+		t.Caret = rt.toWindow(platform.RectF{X: float64(r.X), Y: float64(r.Y), W: float64(r.W), H: float64(r.H)})
 	}
 	if t != rt.ime.state {
 		if t.Client != rt.ime.state.Client {
@@ -1101,8 +1189,12 @@ func (e *node) Pressed() bool {
 	return true
 }
 
-// Focused reports whether the element has the keyboard focus.
+// Focused reports whether the element has the keyboard focus: for a field
+// around an input, as SearchField's, whether its input has it.
 func (e *node) Focused() bool {
+	if e != nil && e.focusTo != nil {
+		return e.focusTo.Focused()
+	}
 	return e.hasState() && e.c.rt.focused == e.id && e.c.rt.windowFocus()
 }
 
@@ -1129,8 +1221,13 @@ func (e *node) FocusWithin() bool {
 }
 
 // Focus gives the element the keyboard focus. Called in every frame, it
-// keeps it there; AutoFocus gives it once.
+// keeps it there; AutoFocus gives it once. A field around an input, as
+// SearchField's, gives it to its input, where typing goes.
 func (e *node) Focus() *node {
+	if e != nil && e.focusTo != nil {
+		e.focusTo.Focus()
+		return e
+	}
 	if !e.hasState() {
 		return e
 	}
@@ -1343,11 +1440,15 @@ func (e *node) Dismissed() bool { return e.dismissed }
 
 // scrollbarPress starts dragging the thumb of the scroll container under
 // the pointer when the press is on its scroll bar, or pages toward the
-// press on the bar's track.
+// press on the bar's track. Hidden bars take no press, as AppKit's
+// overlay scrollers: it goes through to the content under them, as a
+// click on a table's last row under its horizontal bar. The hover this
+// press set does not show them yet, so they are those the last frame
+// painted (barsShown).
 func (rt *engine) scrollbarPress(chain []uint64, x, y float32) bool {
 	for _, id := range chain {
 		s := rt.states[id]
-		if s == nil || s.flags&(flagScrollX|flagScrollY) == 0 {
+		if s == nil || s.flags&(flagScrollX|flagScrollY) == 0 || !s.barsShown {
 			continue
 		}
 		lx, ly := s.local(x, y)
@@ -1356,6 +1457,7 @@ func (rt *engine) scrollbarPress(chain []uint64, x, y float32) bool {
 		g := scrollBars(Rect{s.x, s.y, s.w, s.h}, s.barInset, float32(s.contentW), float32(s.contentH), float32(s.scrollX), float32(s.scrollY), s.flags, rt.c.theme.scrollbarWidth(), s.rtl)
 		d := &rt.scrollDrag
 		w, h := float64(s.w), float64(s.h)
+		s.wheel = nil
 		switch {
 		case g.vertical && g.vTrack.Contains(lx, ly):
 			switch {

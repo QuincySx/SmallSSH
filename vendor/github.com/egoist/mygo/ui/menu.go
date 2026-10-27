@@ -318,6 +318,9 @@ func (rt *engine) menuPress(chain []uint64, x, y float32) bool {
 	if s == nil {
 		return false
 	}
+	if rt.listMenu != nil {
+		rt.listMenu(rt, chain, x, y)
+	}
 	if s.flags&flagSelectable != 0 && s.editor == nil {
 		if p := rt.textSelectionAt(s.id, x, y); p.id != 0 {
 			s = rt.states[p.id]
@@ -447,7 +450,8 @@ func (rt *engine) showMenu() {
 		return
 	}
 	rt.menu.pending = nil
-	rt.host.popupMenu(p.menu, p.x, p.y, func(id int) { rt.menuChosen(p, id) })
+	z := rt.zoomFactor()
+	rt.host.popupMenu(p.menu, p.x*z, p.y*z, func(id int) { rt.menuChosen(p, id) })
 }
 
 // menuChosen takes the item id chosen from the menu p: the next frame

@@ -226,9 +226,12 @@ type app struct{}
 
 func (app) SetActivationPolicy(string)                        {}
 func (app) Activate()                                         {}
+func (app) AllowForeground()                                  {}
+func (app) WithActivationToken(_ string, fn func())           { fn() }
 func (app) Hide()                                             {}
 func (app) Unhide()                                           {}
 func (app) IsHidden() bool                                    { return js.Global().Get("document").Get("hidden").Bool() }
+func (app) IsActive() bool                                    { return js.Global().Get("document").Call("hasFocus").Bool() }
 func (app) SetBadge(string)                                   {}
 func (app) Badge() string                                     { return "" }
 func (app) Bounce(bool) int                                   { return 0 }

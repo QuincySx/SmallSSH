@@ -339,6 +339,11 @@ func TestConnectionSidebarModeChangesPreserveAvatarGeometryAndScroll(t *testing.
 	checkToggle()
 	checkToggle()
 	tt.Scroll(24, 190, 0, 1100)
+	// Park the pointer off the list: a hovered row is faded and tinted on purpose,
+	// and MyGo keeps the row under the pointer hovered after a scroll instead of
+	// dropping the hover the way v0.5.5 did. The pixel check below is about the
+	// avatar slot, not about hover.
+	tt.Move(560, 20)
 	checkToggle()
 	checkToggle()
 	a.connectionRailList.ScrollToEnd()

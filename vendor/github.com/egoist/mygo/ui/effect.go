@@ -47,12 +47,26 @@ func (e *node) Effect(fx Effect) *node { e.effect = fx; return e }
 // which every GPU renderer's textures allow.
 const maxEffectLayer = 8192
 
+// effectLayerStep is the multiple of pixels an effect's bitmap is made
+// in, as Chromium makes the textures of its render passes: one made a
+// little larger than the content holds it as the element's edges cross
+// pixels on the way of an animation, or as its text grows, rather than a
+// texture made for each size. A bitmap two steps larger than the content
+// is made smaller again.
+const effectLayerStep = 64
+
+// layerSide is the side of an effect's bitmap holding n pixels: n rounded
+// up to a step.
+func layerSide(n int) int {
+	return min((n+effectLayerStep-1)/effectLayerStep*effectLayerStep, maxEffectLayer)
+}
+
 // paintEffect paints e through its effect, or blurred (Blur), and reports
 // whether it did: e's subtree rendered into its state's canvas, then the
 // effect over its box, or the canvas blurred. It paints nothing of e
 // outside p's clip.
 func (p *Painter) paintEffect(e *node) bool {
-	if e.effect == nil && e.blur <= 0 || e.effecting {
+	if e.effect == nil && e.blur <= 0 && e.cache == nil || e.effecting {
 		return false
 	}
 	// A blur reaches 3 sigma: as far as it shows.
@@ -62,28 +76,39 @@ func (p *Painter) paintEffect(e *node) bool {
 	}
 	m.X, m.Y = max(m.X, 0), max(m.Y, 0)
 	box := Rect{e.x, e.y, e.w, e.h}
-	if box.W <= 0 || box.H <= 0 || !p.visible(box, max(m.X, m.Y)+4) {
+	from := Rect{box.X - m.X, box.Y - m.Y, box.W + 2*m.X, box.H + 2*m.Y}
+	if e.cache != nil && e.effect == nil {
+		// What the element paints, blurred as far as the blur shows.
+		from = e.cache.area(e)
+		from = Rect{from.X - m.X, from.Y - m.Y, from.W + 2*m.X, from.H + 2*m.Y}
+	}
+	if box.W <= 0 || box.H <= 0 || !p.visible(from, 4) {
 		return true
 	}
 	s := p.scale
-	// The content's pixels, from the box grown by the margin, on the
-	// pixel grid.
-	x0 := float32(math.Floor(float64((box.X - m.X) * s)))
-	y0 := float32(math.Floor(float64((box.Y - m.Y) * s)))
-	x1 := float32(math.Ceil(float64((box.X + box.W + m.X) * s)))
-	y1 := float32(math.Ceil(float64((box.Y + box.H + m.Y) * s)))
+	// The content's pixels, from the box grown by the margin (or the
+	// area a kept layer takes), on the pixel grid.
+	x0 := float32(math.Floor(float64(from.X * s)))
+	y0 := float32(math.Floor(float64(from.Y * s)))
+	x1 := float32(math.Ceil(float64((from.X + from.W) * s)))
+	y1 := float32(math.Ceil(float64((from.Y + from.H) * s)))
 	w, h := int(x1-x0), int(y1-y0)
 	if w <= 0 || h <= 0 || w > maxEffectLayer || h > maxEffectLayer {
 		return false // too large to render apart: as it is
 	}
 	cv := e.st.effectLayer
-	if cv == nil || cv.img.W != w || cv.img.H != h {
-		cv = NewCanvas(w, h)
+	switch {
+	case cv == nil:
+		cv = NewCanvas(layerSide(w), layerSide(h))
 		e.st.effectLayer = cv
+	case cv.img.W < w || cv.img.H < h || cv.img.W-w >= 2*effectLayerStep || cv.img.H-h >= 2*effectLayerStep:
+		cv.resize(layerSide(w), layerSide(h))
 	}
+	// Drawn anew whenever it shows, unless kept (Cache).
+	cv.img.Transient = e.cache == nil
 	dx, dy := -x0/s, -y0/s
 	world := e.world
-	cv.draw(p, s, func(cp *Painter) {
+	render := func(cp *Painter) {
 		e.effecting = true
 		// The subtree in e's own space, moved to the bitmap's corner:
 		// positions shift, and the transforms of those transformed lose
@@ -98,12 +123,20 @@ func (p *Painter) paintEffect(e *node) bool {
 		}
 		shift(e, -dx, -dy)
 		e.effecting = false
-	})
+	}
+	if e.cache != nil {
+		e.cache.draw(cv, p, s, w, h, render)
+	} else {
+		cv.drawPart(p, s, w, h, render)
+	}
 	if e.effect != nil {
-		e.effect.PaintEffect(p, box, cv.Bitmap(), Point{box.X*s - x0, box.Y*s - y0})
+		// The content is the bitmap's top left w×h pixels: the effect
+		// draws over those, and reads it transparent beyond.
+		e.effect.PaintEffect(p, box, cv.region(w, h), Point{box.X*s - x0, box.Y*s - y0})
 		return true
 	}
-	// The canvas blurred, in its pixels, where it was drawn from.
+	// The canvas, blurred unless kept alone, in its pixels, where it was
+	// drawn from.
 	area := Rect{X: x0 / s, Y: y0 / s, W: float32(w) / s, H: float32(h) / s}
 	rect := p.snap(area)
 	if p.transform.Set {

@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/schemehost"
 )
 
 // ProtocolModule registers custom URL schemes served by Go.
@@ -194,27 +195,21 @@ func allowCORS(win *Window, header http.Header, r *http.Request) (preflight bool
 }
 
 // schemeHosts is set where the webview serves custom schemes at
-// http://<scheme>.localhost (WebView2). Elsewhere, such an origin is a
-// server on the loopback interface, not the app's.
+// http://[<host>.]<scheme>.localhost (WebView2). Elsewhere, such an origin
+// is a server on the loopback interface, not the app's.
 var schemeHosts = runtime.GOOS == "windows"
 
 // appOrigin maps the origin WebView2 gives pages of a custom scheme,
-// http://<scheme>.localhost, back to <scheme>://localhost, as the rest of
-// MyGo names it.
+// http://<scheme>.localhost or http://<host>.<scheme>.localhost, back to
+// <scheme>://localhost or <scheme>://<host>, as the rest of MyGo names it.
 func appOrigin(origin string) string {
 	if !schemeHosts {
 		return origin
 	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Scheme != "http" || u.Port() != "" {
-		return origin
-	}
-	scheme, ok := strings.CutSuffix(strings.ToLower(u.Hostname()), ".localhost")
-	if !ok || !(scheme == frontendScheme || Protocol.IsHandled(scheme)) {
-		return origin
-	}
-	return scheme + "://localhost"
+	return schemehost.AppOrigin(origin, isAppScheme)
 }
+
+func isAppScheme(scheme string) bool { return scheme == frontendScheme || Protocol.IsHandled(scheme) }
 
 // schemeWriter is the http.ResponseWriter for custom scheme requests. Body
 // bytes are buffered and handed to the main thread in chunks, or written
@@ -339,7 +334,9 @@ func (w *schemeWriter) finish() {
 
 // FileServer serves files from fsys and falls back to index.html for
 // unknown paths without an extension, so client side routers work. Files
-// are served with their content type and support range requests.
+// are served with their content type and support range requests. Pages
+// cannot play audio and video from a custom scheme on Linux: serve them
+// over loopback HTTP, with net/http and this handler (docs/frontend.md).
 func FileServer(fsys fs.FS) http.Handler {
 	files := http.FileServerFS(fsys)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

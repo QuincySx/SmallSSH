@@ -58,8 +58,34 @@ type window struct {
 	web      id
 	delegate id
 	ucc      id
-	effect   id
-	parent   *window
+	// effect is the material behind the content (Vibrancy): an
+	// NSVisualEffectView, or an NSGlassEffectView when glass is.
+	effect id
+	glass  bool
+	// radius is the corners the content view is cut to (Flyout.Radius,
+	// WindowOptions.CornerRadius), which the material follows.
+	radius int
+	// systemBacking tells that the content view of a rounded window has
+	// the system's window color, which a layer cannot follow: it is
+	// resolved again when the appearance changes (fillSystemBacking).
+	systemBacking bool
+	parent        *window
+	// hiddenWithParent tells that a child window was ordered out as its
+	// parent hid or miniaturized (hideChildren), at hiddenRank among its
+	// siblings, front to back, to show again with it; orderPending that
+	// orderChildrenLater posted the ordering of the window's children.
+	hiddenWithParent bool
+	hiddenRank       int
+	orderPending     bool
+	// onTop is what AlwaysOnTop asked for, which the window's level
+	// follows, or its parent's when higher (applyLevel). attached tells
+	// that a child window is an AppKit child window of its parent, which
+	// is in full screen, and childrenAttached that the window attaches its
+	// child windows, from entering full screen to leaving it
+	// (attachChildren).
+	onTop            bool
+	attached         bool
+	childrenAttached bool
 	// flyout is how a flyout (WindowOptions.Flyout) was placed last, at
 	// flyoutSize.
 	flyout     platform.Flyout
@@ -95,6 +121,9 @@ type window struct {
 	// accessParent is the element of the content showing a web view,
 	// which assistive technology finds its page in.
 	accessParent id
+	// observesAudio tells that the window observes its web view's
+	// _isPlayingAudio, which WebKit answers (IsAudible).
+	observesAudio bool
 }
 
 func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler) (platform.Window, error) {
@@ -154,7 +183,7 @@ func (w *window) create() {
 		send(w.win, "setTitlebarAppearsTransparent:", 1)
 		send(w.win, "setTitleVisibility:", 1) // NSWindowTitleHidden
 	}
-	if o.Frameless {
+	if o.Frameless || hiddenTitleBar && o.HideWindowButtons {
 		for i := uintptr(0); i < 3; i++ {
 			send(send(w.win, "standardWindowButton:", i), "setHidden:", 1)
 		}
@@ -187,10 +216,13 @@ func (w *window) create() {
 		send(w.win, "setHidesOnDeactivate:", 0)
 	}
 	send(w.win, "setCollectionBehavior:", uintptr(behavior))
-	if o.AlwaysOnTop {
-		send(w.win, "setLevel:", nsFloatingWindowLevel)
-	}
+	// A child window takes its parent's level when that is higher.
+	w.onTop = o.AlwaysOnTop
+	w.applyLevel()
 	w.fillWindow(content)
+	if o.Frameless {
+		w.roundContent(o.CornerRadius)
+	}
 
 	if o.Center {
 		send(w.win, "center")
@@ -243,8 +275,80 @@ func (w *window) createFlyout() {
 		send(w.win, "setLevel:", nsPopUpMenuWindowLevel)
 	}
 	w.fillWindow(content)
+	w.roundContent(w.flyout.Radius)
 	w.register()
 	w.PlaceFlyout(w.flyout, w.flyoutSize)
+}
+
+// roundContent cuts the content view, and the material in it, to corners
+// of radius, a flyout's (Flyout.Radius) or a frameless window's
+// (WindowOptions.CornerRadius). The window is made clear, its color moved
+// to the content view, which is cut to them, so that nothing fills the
+// corners, and its shadow, made from what it draws, follows them.
+func (w *window) roundContent(radius int) {
+	if radius <= 0 {
+		return
+	}
+	w.radius = radius
+	send(w.view, "setWantsLayer:", 1)
+	layer := send(w.view, "layer")
+	msgSetFloat(layer, sel("setCornerRadius:"), float64(radius))
+	send(layer, "setCornerCurve:", uintptr(nsString("continuous")))
+	send(layer, "setMasksToBounds:", 1)
+	if sendBool(w.win, "isOpaque") {
+		if w.opts.BackgroundColor == nil {
+			w.systemBacking = true
+			w.fillSystemBacking()
+		} else {
+			send(layer, "setBackgroundColor:", uintptr(send(send(w.win, "backgroundColor"), "CGColor")))
+		}
+		send(w.win, "setOpaque:", 0)
+		send(w.win, "setBackgroundColor:", uintptr(send(class("NSColor"), "clearColor")))
+	}
+	w.roundEffect()
+	send(w.win, "invalidateShadow")
+}
+
+// fillSystemBacking gives the content view of a rounded window without a
+// BackgroundColor the window color of the system, as the app's appearance
+// draws it. A layer's color is fixed once set, where the window's followed
+// the appearance: refreshSystemBackings sets it again when that changes.
+func (w *window) fillSystemBacking() {
+	withPool(func() {
+		appearance := class("NSAppearance")
+		prev := send(appearance, "currentAppearance")
+		send(appearance, "setCurrentAppearance:", uintptr(send(w.b.app, "effectiveAppearance")))
+		c := send(send(class("NSColor"), "windowBackgroundColor"), "CGColor")
+		send(send(w.view, "layer"), "setBackgroundColor:", uintptr(c))
+		send(appearance, "setCurrentAppearance:", uintptr(prev))
+	})
+}
+
+// refreshSystemBackings resolves the window color of rounded windows
+// anew, once the appearance or the system's colors changed.
+func (b *Backend) refreshSystemBackings() {
+	for _, w := range b.byNSWindow {
+		if w.systemBacking {
+			w.fillSystemBacking()
+		}
+	}
+}
+
+// roundEffect cuts the material to the content view's corners. The glass
+// draws its rim along its own corners, which it rounds itself.
+func (w *window) roundEffect() {
+	if w.effect == 0 || w.radius <= 0 {
+		return
+	}
+	if w.glass {
+		msgSetFloat(w.effect, sel("setCornerRadius:"), float64(w.radius))
+		return
+	}
+	send(w.effect, "setWantsLayer:", 1)
+	el := send(w.effect, "layer")
+	msgSetFloat(el, sel("setCornerRadius:"), float64(w.radius))
+	send(el, "setCornerCurve:", uintptr(nsString("continuous")))
+	send(el, "setMasksToBounds:", 1)
 }
 
 // fillWindow gives a new window its look and its web view or surface.
@@ -345,6 +449,12 @@ func (w *window) createWebView(content NSRect) {
 	if respondsTo(prefs, "setElementFullscreenEnabled:") {
 		send(prefs, "setElementFullscreenEnabled:", 1)
 	}
+	// Tab reaches buttons, links and the other controls too, as it does in
+	// Chrome, Electron and WebView2, whatever the system's keyboard
+	// navigation setting, unless the app asked for Safari's behavior.
+	if respondsTo(prefs, "setTabFocusesLinks:") {
+		send(prefs, "setTabFocusesLinks:", boolArg(o.TabFocusesLinks))
+	}
 
 	// Every window gets its own content controller so messages, scripts and
 	// the bridge configuration never leak between windows.
@@ -352,6 +462,18 @@ func (w *window) createWebView(content NSRect) {
 	send(w.ucc, "addScriptMessageHandler:name:", uintptr(w.delegate), uintptr(nsString("mygo")))
 	w.addUserScripts(o.Zoom)
 	send(cfg, "setUserContentController:", uintptr(w.ucc))
+
+	// WebKit appends the application name to the user agent of the web view,
+	// and window.open() hands us the configuration of the window that opens
+	// it: the options of the new window decide, as they do on Linux and
+	// Windows, where a window never inherits a suffix.
+	var appName id
+	if o.UserAgentSuffix != "" {
+		appName = nsString(o.UserAgentSuffix)
+	}
+	if o.UserAgentSuffix != "" || o.Native != 0 {
+		send(cfg, "setApplicationNameForUserAgent:", uintptr(appName))
+	}
 
 	w.web = msgInitRectID(send(class("MyGoWebView"), "alloc"), sel("initWithFrame:configuration:"), NSRect{Size: content.Size}, cfg)
 	release(cfg)
@@ -369,12 +491,31 @@ func (w *window) createWebView(content NSRect) {
 		send(w.web, "setInspectable:", boolArg(o.DevTools))
 	}
 	if o.UserAgent != "" {
-		send(w.web, "setCustomUserAgent:", uintptr(nsString(o.UserAgent)))
+		ua := o.UserAgent
+		if o.UserAgentSuffix != "" {
+			ua += " " + o.UserAgentSuffix
+		}
+		send(w.web, "setCustomUserAgent:", uintptr(nsString(ua)))
 	}
 	if o.Zoom > 0 && o.Zoom != 1 {
 		msgSetFloat(w.web, sel("setPageZoom:"), o.Zoom)
 	}
 	send(w.web, "addObserver:forKeyPath:options:context:", uintptr(w.delegate), uintptr(nsString("title")), 1, 0)
+	if respondsTo(w.web, "_isPlayingAudio") {
+		// WebKit tells its changes with willChangeValueForKey: and
+		// didChangeValueForKey:, as Safari's tabs' speaker icons hear.
+		w.observesAudio = true
+		send(w.web, "addObserver:forKeyPath:options:context:", uintptr(w.delegate), uintptr(nsString("_isPlayingAudio")), 0, 0)
+	}
+}
+
+// stopObserving removes the key-value observers createWebView added.
+func (w *window) stopObserving() {
+	send(w.web, "removeObserver:forKeyPath:", uintptr(w.delegate), uintptr(nsString("title")))
+	if w.observesAudio {
+		w.observesAudio = false
+		send(w.web, "removeObserver:forKeyPath:", uintptr(w.delegate), uintptr(nsString("_isPlayingAudio")))
+	}
 }
 
 func nsColor(c platform.Color) id {
@@ -389,8 +530,9 @@ func (w *window) cleanup() {
 	}
 	w.closeWebViews()
 	w.closed = true
+	w.releaseChildren()
 	b := w.b
-	send(w.web, "removeObserver:forKeyPath:", uintptr(w.delegate), uintptr(nsString("title")))
+	w.stopObserving()
 	if w.trafficLights != nil {
 		send(w.win, "removeObserver:forKeyPath:", uintptr(w.delegate), uintptr(nsString("effectiveAppearance")))
 	}
@@ -410,8 +552,7 @@ func (w *window) cleanup() {
 	delete(b.byDelegate, w.delegate)
 	delete(b.byWebView, w.web)
 	delete(b.byNSWindow, w.win)
-	release(w.lastMouseDown)
-	w.lastMouseDown = 0
+	w.forgetDrag()
 	release(w.ucc)
 	for _, j := range printJobs {
 		if j.w == w && j.cb != nil {
@@ -529,14 +670,28 @@ func (w *window) IsMaximizable() bool {
 }
 
 func (w *window) SetAlwaysOnTop(v bool) {
-	level := uintptr(nsNormalWindowLevel)
-	if v {
-		level = nsFloatingWindowLevel
+	w.onTop = v
+	if w.host != nil || w.opts.Flyout != nil {
+		level := uintptr(nsNormalWindowLevel)
+		if v {
+			level = nsFloatingWindowLevel
+		}
+		send(w.win, "setLevel:", level)
+		return
 	}
-	send(w.win, "setLevel:", level)
+	// Its child windows follow it to its level (applyLevel).
+	w.applyLevel()
+	if w.onScreen() {
+		w.orderChildrenLater()
+	}
 }
 
-func (w *window) IsAlwaysOnTop() bool { return sendInt(w.win, "level") != nsNormalWindowLevel }
+func (w *window) IsAlwaysOnTop() bool {
+	if w.isChild() {
+		return w.onTop // its level is its parent's when that is higher
+	}
+	return sendInt(w.win, "level") != nsNormalWindowLevel
+}
 
 func (w *window) Show() {
 	if w.popover != 0 {
@@ -552,10 +707,7 @@ func (w *window) Show() {
 		send(w.parent.win, "beginSheet:completionHandler:", uintptr(w.win), 0)
 		return
 	}
-	send(w.win, "makeKeyAndOrderFront:", 0)
-	if w.parent != nil && !w.parent.closed {
-		send(w.parent.win, "addChildWindow:ordered:", uintptr(w.win), 1)
-	}
+	w.showAboveParent(true)
 	if !w.opts.Panel {
 		send(w.b.app, "activateIgnoringOtherApps:", 1)
 	}
@@ -607,6 +759,12 @@ func (b *Backend) watchOutsideClicks() {
 		var open []*window
 		for _, w := range b.byNSWindow {
 			if w.opts.Flyout != nil && w.popover == 0 && w.flyout.Focusable && !w.closed && sendBool(w.win, "isVisible") {
+				// A press on its tray icon is left to the icon's click,
+				// which toggles it, rather than closing it for the click
+				// to open it again.
+				if t, ok := w.flyout.Tray.(*tray); ok && t.pressed() {
+					continue
+				}
 				open = append(open, w)
 			}
 		}
@@ -710,10 +868,7 @@ func (w *window) ShowInactive() {
 		w.showFlyout(false)
 		return
 	}
-	send(w.win, "orderFrontRegardless")
-	if w.parent != nil && !w.parent.closed {
-		send(w.parent.win, "addChildWindow:ordered:", uintptr(w.win), 1)
-	}
+	w.showAboveParent(false)
 }
 
 func (w *window) Hide() {
@@ -730,7 +885,11 @@ func (w *window) Hide() {
 		send(w.parent.win, "endSheet:", uintptr(w.win))
 		return
 	}
+	w.hiddenWithParent = false
+	// Attached, AppKit would show it again with its parent.
+	w.detach()
 	send(w.win, "orderOut:", 0)
+	w.hideChildren()
 }
 
 func (w *window) IsVisible() bool {
@@ -751,6 +910,7 @@ func (w *window) Focus() {
 		w.Show() // the key window only when it takes the keyboard
 		return
 	}
+	w.hiddenWithParent = false
 	send(w.win, "makeKeyAndOrderFront:", 0)
 	if !w.opts.Panel {
 		send(w.b.app, "activateIgnoringOtherApps:", 1)
@@ -795,10 +955,15 @@ func (w *window) Center()            { send(w.win, "center") }
 
 func (w *window) SetBackgroundColor(c platform.Color) {
 	withPool(func() {
-		if w.host != nil {
+		switch {
+		case w.host != nil:
 			// A web view's window is its host's.
 			w.clipBackground(c)
-		} else {
+		case w.radius > 0:
+			// The window stays clear, its corners cut off (roundContent).
+			w.systemBacking = false
+			send(send(w.view, "layer"), "setBackgroundColor:", uintptr(send(nsColor(c), "CGColor")))
+		default:
 			send(w.win, "setBackgroundColor:", uintptr(nsColor(c)))
 		}
 		send(w.web, "setValue:forKey:", uintptr(nsBool(false)), uintptr(nsString("drawsBackground")))
@@ -863,6 +1028,14 @@ func (w *window) SetContentProtection(v bool) {
 	send(w.win, "setSharingType:", sharing)
 }
 
+// glassStyles maps the Liquid Glass vibrancies to NSGlassEffectViewStyle,
+// and to the NSVisualEffectMaterial closest to each before macOS 26, which
+// has no NSGlassEffectView.
+var glassStyles = map[string]struct{ style, material uintptr }{
+	"glass":       {0, 6},  // regular; popover
+	"glass-clear": {1, 13}, // clear; HUD
+}
+
 // vibrancyMaterials maps mygo.Vibrancy values to NSVisualEffectMaterial.
 var vibrancyMaterials = map[string]uintptr{
 	"titlebar": 3, "selection": 4, "menu": 5, "popover": 6, "sidebar": 7, "header": 10,
@@ -875,40 +1048,76 @@ var vibrancyMaterials = map[string]uintptr{
 func (w *window) SetVibrancy(material string) {
 	withPool(func() {
 		m, ok := vibrancyMaterials[material]
-		if !ok {
+		g, isGlass := glassStyles[material]
+		glass := isGlass && hasClass("NSGlassEffectView")
+		if isGlass && !glass {
+			m, ok = g.material, true
+		}
+		if !ok && !glass {
 			if material != "" {
 				log.Printf("mygo: unknown vibrancy %q", material)
 			}
-			if w.effect != 0 {
-				send(w.effect, "removeFromSuperview")
-				release(w.effect)
-				w.effect = 0
-			}
+			w.removeEffect()
 			return
 		}
+		if w.effect != 0 && w.glass != glass {
+			w.removeEffect()
+		}
 		if w.effect == 0 {
-			w.effect = msgInitRect(send(class("NSVisualEffectView"), "alloc"), sel("initWithFrame:"), msgRect(w.view, sel("bounds")))
-			send(w.effect, "setBlendingMode:", 0) // NSVisualEffectBlendingModeBehindWindow
-			send(w.effect, "setState:", 1)        // NSVisualEffectStateActive
+			cls := "NSVisualEffectView"
+			if glass {
+				cls = "NSGlassEffectView"
+			}
+			w.effect = msgInitRect(send(class(cls), "alloc"), sel("initWithFrame:"), msgRect(w.view, sel("bounds")))
+			w.glass = glass
+			if !glass {
+				send(w.effect, "setBlendingMode:", 0) // NSVisualEffectBlendingModeBehindWindow
+				send(w.effect, "setState:", 1)        // NSVisualEffectStateActive
+			}
 			send(w.effect, "setAutoresizingMask:", nsViewWidthHeightSizable)
 			// Behind the page and a docked inspector.
 			send(w.view, "addSubview:positioned:relativeTo:", uintptr(w.effect), ^uintptr(0), 0) // NSWindowBelow
 			send(w.web, "setValue:forKey:", uintptr(nsBool(false)), uintptr(nsString("drawsBackground")))
+			w.roundEffect()
 		}
-		send(w.effect, "setMaterial:", m)
+		if glass {
+			send(w.effect, "setStyle:", g.style)
+		} else {
+			send(w.effect, "setMaterial:", m)
+		}
 	})
+}
+
+// SetActiveAppearance has the window drawn as the main window of the app
+// in front, whichever is, through AppKit's own, private
+// _setForceMainAppearance:. Without it, a window that is not draws its glass
+// frosted, the clear style too, as a panel floating over another app always
+// is. NSVisualEffectView has a public setting for it (its state, which
+// SetVibrancy sets); NSGlassEffectView has none.
+func (w *window) SetActiveAppearance(v bool) {
+	if respondsTo(w.win, "_setForceMainAppearance:") {
+		send(w.win, "_setForceMainAppearance:", boolArg(v))
+	}
+}
+
+// SetWindowButtonsTheme does nothing: the traffic lights look the same in
+// both appearances, and an appearance of the window's own would change its
+// page's too.
+func (w *window) SetWindowButtonsTheme(string) {}
+
+// removeEffect takes the material out of the window.
+func (w *window) removeEffect() {
+	if w.effect != 0 {
+		send(w.effect, "removeFromSuperview")
+		release(w.effect)
+		w.effect, w.glass = 0, false
+	}
 }
 
 func (w *window) SetMenu(*platform.Menu) {}
 
 // SetAutoHideMenu does nothing: the menu bar belongs to the application.
 func (w *window) SetAutoHideMenu(bool) {}
-
-func (w *window) StartDrag() {
-	if w.lastMouseDown != 0 {
-		send(w.win, "performWindowDragWithEvent:", uintptr(w.lastMouseDown))
-	}
-}
 
 // hiddenTitleBar reports a TitleBarStyle that hides the title bar but keeps
 // the traffic lights.
@@ -920,9 +1129,9 @@ func (w *window) hiddenTitleBar() bool {
 // TitleBar returns the room the traffic lights take, from the left edge to
 // the right edge of the zoom button, in the title bar, which is as tall as
 // the window's own or, with TrafficLightPosition, leaves as much room below
-// them as above. They hide in full screen.
+// them as above. They hide in full screen, and with HideWindowButtons.
 func (w *window) TitleBar() platform.TitleBar {
-	if !w.hiddenTitleBar() || w.closed || w.IsFullScreen() {
+	if !w.hiddenTitleBar() || w.closed || w.IsFullScreen() || w.opts.HideWindowButtons {
 		return platform.TitleBar{}
 	}
 	closeBtn := send(w.win, "standardWindowButton:", 0)
@@ -1129,8 +1338,13 @@ func (w *window) SetUserAgent(ua string) {
 	withPool(func() {
 		var s id
 		if ua != "" {
+			if suffix := w.opts.UserAgentSuffix; suffix != "" {
+				ua += " " + suffix
+			}
 			s = nsString(ua)
 		}
+		// An empty one restores the default user agent, which the
+		// configuration still appends its suffix to.
 		send(w.web, "setCustomUserAgent:", uintptr(s))
 	})
 }
@@ -1144,6 +1358,53 @@ func (w *window) UserAgent() string {
 		}
 	})
 	return s
+}
+
+// ProcessID returns the web content process of the page from WebKit's
+// private -[WKWebView _webProcessIdentifier] (a pid_t), 0 when WebKit
+// doesn't answer it or runs no process for the page yet.
+func (w *window) ProcessID() int {
+	if !respondsTo(w.web, "_webProcessIdentifier") {
+		return 0
+	}
+	return int(int32(send(w.web, "_webProcessIdentifier")))
+}
+
+// IsAudible reports WebKit's private -[WKWebView _isPlayingAudio]
+// (macOS 10.13.4+), false when WebKit doesn't answer it.
+func (w *window) IsAudible() bool {
+	return respondsTo(w.web, "_isPlayingAudio") && sendBool(w.web, "_isPlayingAudio")
+}
+
+// wkMediaAudioMuted is _WKMediaAudioMuted, the bit of _WKMediaMutedState
+// (WKWebViewPrivate.h) that mutes the page's sound; the others mute its
+// capture devices, and are kept as they are.
+const wkMediaAudioMuted = 1 << 0
+
+// canMute reports whether WebKit answers the private selectors that mute
+// a page, as Safari mutes a tab (macOS 10.13+).
+func (w *window) canMute() bool {
+	return respondsTo(w.web, "_mediaMutedState") && respondsTo(w.web, "_setPageMuted:")
+}
+
+// SetAudioMuted sets the _WKMediaAudioMuted bit of the page's
+// _mediaMutedState with _setPageMuted:, or does nothing when WebKit
+// doesn't answer them.
+func (w *window) SetAudioMuted(v bool) {
+	if !w.canMute() {
+		return
+	}
+	state := uintptr(send(w.web, "_mediaMutedState"))
+	if v {
+		state |= wkMediaAudioMuted
+	} else {
+		state &^= wkMediaAudioMuted
+	}
+	send(w.web, "_setPageMuted:", state)
+}
+
+func (w *window) IsAudioMuted() bool {
+	return w.canMute() && uintptr(send(w.web, "_mediaMutedState"))&wkMediaAudioMuted != 0
 }
 
 func (w *window) inspector() id {
@@ -1380,6 +1641,7 @@ func registerWindowClasses() {
 		}
 	}
 	classDef("MyGoWindow", "NSWindow", nil, []objc.MethodDef{
+		method("orderWindow:relativeTo:", orderWindowRelativeTo("MyGoWindow")),
 		method("canBecomeKeyWindow", func(self id, _ objc.SEL) bool { return true }),
 		method("canBecomeMainWindow", func(self id, _ objc.SEL) bool { return true }),
 		method("selectKeyViewFollowingView:", selectKeyView("MyGoWindow", false)),
@@ -1389,6 +1651,7 @@ func registerWindowClasses() {
 	// A panel (WindowOptions.Panel) takes the keyboard, without
 	// activating the app, and is never the main window.
 	classDef("MyGoPanel", "NSPanel", nil, []objc.MethodDef{
+		method("orderWindow:relativeTo:", orderWindowRelativeTo("MyGoPanel")),
 		method("canBecomeKeyWindow", func(self id, _ objc.SEL) bool { return true }),
 		method("canBecomeMainWindow", func(self id, _ objc.SEL) bool { return false }),
 		// NSPanel closes on an Escape its content leaves (cancelOperation:),
@@ -1419,9 +1682,7 @@ func registerWindowClasses() {
 					w.pressed(ev, 0)
 				}
 				// A web view's page drags the window it is in (StartDrag).
-				w = w.top()
-				release(w.lastMouseDown)
-				w.lastMouseDown = retain(ev)
+				w.top().pressedLeft(ev)
 			}
 			sendSuper(self, "MyGoWebView", cmd, uintptr(ev))
 		}),
@@ -1466,6 +1727,7 @@ func registerWindowClasses() {
 			}),
 			method("windowDidBecomeKey:", func(self id, _ objc.SEL, n id) {
 				if w := b().windowFor(self); w != nil {
+					w.orderChildrenLater()
 					w.h.Focused()
 					w.surfaceKeyChanged(true)
 				}
@@ -1499,6 +1761,13 @@ func registerWindowClasses() {
 				}
 				w.h.Resized()
 			}),
+			method("windowWillMove:", func(self id, _ objc.SEL, n id) {
+				// The window server begins to move the window: a drag
+				// region's press is its (window_drag.go).
+				if w := b().windowFor(self); w != nil {
+					theDrag.willMove(w.win)
+				}
+			}),
 			method("windowDidMove:", func(self id, _ objc.SEL, n id) {
 				if w := b().windowFor(self); w != nil {
 					w.h.Moved()
@@ -1511,11 +1780,13 @@ func registerWindowClasses() {
 			}),
 			method("windowDidMiniaturize:", func(self id, _ objc.SEL, n id) {
 				if w := b().windowFor(self); w != nil {
+					w.hideChildren()
 					w.h.Minimized()
 				}
 			}),
 			method("windowDidDeminiaturize:", func(self id, _ objc.SEL, n id) {
 				if w := b().windowFor(self); w != nil {
+					w.orderChildrenLater()
 					w.h.Restored()
 				}
 			}),
@@ -1529,6 +1800,19 @@ func registerWindowClasses() {
 				}
 				return proposed
 			}),
+			// The child windows follow their parent into its full-screen
+			// Space, and are left where they are as it comes out of it.
+			method("windowWillEnterFullScreen:", func(self id, _ objc.SEL, n id) {
+				if w := b().windowFor(self); w != nil {
+					w.childrenAttached = true
+					w.attachChildren()
+				}
+			}),
+			method("windowDidFailToEnterFullScreen:", func(self id, _ objc.SEL, win id) {
+				if w := b().windowFor(self); w != nil {
+					w.leftFullScreen()
+				}
+			}),
 			method("windowDidEnterFullScreen:", func(self id, _ objc.SEL, n id) {
 				if w := b().windowFor(self); w != nil {
 					w.h.EnteredFullScreen()
@@ -1539,6 +1823,7 @@ func registerWindowClasses() {
 			}),
 			method("windowDidExitFullScreen:", func(self id, _ objc.SEL, n id) {
 				if w := b().windowFor(self); w != nil {
+					w.leftFullScreen()
 					w.layoutTrafficLights()
 					w.h.LeftFullScreen()
 					if w.hiddenTitleBar() {
@@ -1575,6 +1860,8 @@ func registerWindowClasses() {
 				switch goString(keyPath) {
 				case "title":
 					w.h.TitleChanged(goString(send(w.web, "title")))
+				case "_isPlayingAudio":
+					w.h.AudibleChanged(w.IsAudible())
 				case "effectiveAppearance":
 					// AppKit lays the title bar out again after telling us.
 					b().post(w.layoutTrafficLights)
@@ -1596,7 +1883,7 @@ func registerWindowClasses() {
 					nav := platform.Navigation{
 						URL:           goString(send(send(send(action, "request"), "URL"), "absoluteString")),
 						IsMainFrame:   frame != 0 && sendBool(frame, "isMainFrame"),
-						UserInitiated: navType == 0 || navType == 1,
+						UserInitiated: userInitiated(action, navType),
 						Unasked:       navType == 2 || navType == 3,
 						Reload:        navType == 3,
 					}
@@ -1723,7 +2010,10 @@ func registerWindowClasses() {
 					Y:      num("y"),
 					Width:  num("width"),
 					Height: num("height"),
-					Native: uintptr(cfg),
+					// The action of the link, or of window.open(), whose
+					// WKNavigationType is "other".
+					UserInitiated: userInitiated(action, sendInt(action, "navigationType")),
+					Native:        uintptr(cfg),
 				}
 				child, ok := w.h.NewWindow(req).(*window)
 				if !ok || child == nil {
@@ -1753,6 +2043,18 @@ func registerWindowClasses() {
 				jsFileInput(w, params, handler)
 			}),
 		}...))
+}
+
+// userInitiated reports whether a user's gesture started a navigation
+// action. WebKit's private -[WKNavigationAction _isUserInitiated] knows,
+// a click whose handler navigates or calls window.open() included;
+// without it, the action's WKNavigationType says, a link or a form,
+// which misses those.
+func userInitiated(action id, navType int) bool {
+	if respondsTo(action, "_isUserInitiated") {
+		return sendBool(action, "_isUserInitiated")
+	}
+	return navType == 0 || navType == 1 // WKNavigationTypeLinkActivated, FormSubmitted
 }
 
 func (w *window) loadFailed(err id) {

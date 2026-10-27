@@ -69,6 +69,29 @@ func TestOnScreen(handle uintptr) bool {
 	return sendInt(id(handle), "occlusionState")&occlusionStateVisible != 0
 }
 
+// TestWindowOrder returns the app's windows on screen, panels too, front
+// to back.
+func TestWindowOrder() []uintptr {
+	var order []uintptr
+	withPool(func() {
+		for _, w := range theBackend.windowsFrontToBack() {
+			order = append(order, uintptr(w))
+		}
+	})
+	return order
+}
+
+// TestOnActiveSpace reports whether a window is on the Space that shows,
+// a full-screen window's own when it is in front.
+func TestOnActiveSpace(handle uintptr) bool {
+	return sendBool(id(handle), "isOnActiveSpace")
+}
+
+// TestWindowLevel returns a window's level.
+func TestWindowLevel(handle uintptr) int {
+	return sendInt(id(handle), "level")
+}
+
 // TestEndSheet ends the sheet attached to a window as if its first button
 // was clicked, and reports whether there was one.
 func TestEndSheet(handle uintptr) bool {
@@ -191,6 +214,51 @@ func TestDrag(handle uintptr, points [][2]float64) {
 	})
 }
 
+// TestMouseStep is a press (Down), drag or release of the left button at
+// a point of the screen, in MyGo's coordinates (top-left origin).
+type TestMouseStep struct {
+	Down, Up bool // neither is a drag
+	X, Y     float64
+}
+
+// TestAppMouseAt posts steps of the left button in a window through the
+// application's queue, where event monitors see them as they see the
+// user's, and handles them before it returns. Each step is placed in the
+// window where it is when the step is made, so a step keeps its place on
+// the screen when the window moves.
+func TestAppMouseAt(handle uintptr, steps ...TestMouseStep) {
+	withPool(func() {
+		win := id(handle)
+		number := sendInt(win, "windowNumber")
+		screen := primaryScreenHeight()
+		for _, st := range steps {
+			typ := uint(6) // NSEventTypeLeftMouseDragged
+			switch {
+			case st.Down:
+				typ = 1 // NSEventTypeLeftMouseDown
+			case st.Up:
+				typ = 2 // NSEventTypeLeftMouseUp
+			}
+			f := msgRect(win, sel("frame"))
+			loc := NSPoint{st.X - f.Origin.X, screen - st.Y - f.Origin.Y}
+			ev := msgMouseEvent(class("NSEvent"), sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+				typ, loc, 0, 0, number, 0, 0, 1, 1)
+			send(theBackend.app, "postEvent:atStart:", uintptr(ev), 0)
+		}
+	})
+	handlePosted()
+}
+
+// TestWindowDrag tells where the press stands in moving a window
+// (StartDrag): "idle", "pressed", "native", "manual" or "server"; "idle"
+// for a window no press is down in.
+func TestWindowDrag(handle uintptr) string {
+	if theDrag.win != id(handle) {
+		return dragIdle.String()
+	}
+	return theDrag.phase.String()
+}
+
 // TestControlClick Control-clicks (x, y), in points from the top-left
 // corner of a window's content.
 func TestControlClick(handle uintptr, x, y float64) {
@@ -246,6 +314,107 @@ func TestSideButton(handle uintptr, back bool) bool {
 	return true
 }
 
+var (
+	testPinchOnce              sync.Once
+	cgEventSetType             func(event uintptr, typ uint32)
+	cgEventSetDoubleValueField func(event uintptr, field uint32, value float64)
+	cgEventSetLocation         func(event uintptr, p NSPoint)
+)
+
+// TestPinch pinches a touchpad at a point of a window showing native UI
+// (top-left origin, in points), growing the content by magnification, as
+// a magnify event of macOS says it. It reports false when the event it
+// makes is not one.
+func TestPinch(handle uintptr, x, y, magnification float64) (ok bool) {
+	w := theBackend.byNSWindow[id(handle)]
+	if w == nil || w.surface == nil {
+		return false
+	}
+	testSideOnce.Do(func() {
+		purego.RegisterLibFunc(&cgEventSetIntegerValueField, libCG, "CGEventSetIntegerValueField")
+	})
+	testPinchOnce.Do(func() {
+		purego.RegisterLibFunc(&cgEventSetType, libCG, "CGEventSetType")
+		purego.RegisterLibFunc(&cgEventSetDoubleValueField, libCG, "CGEventSetDoubleValueField")
+		purego.RegisterLibFunc(&cgEventSetLocation, libCG, "CGEventSetLocation")
+	})
+	withPool(func() {
+		content := msgRect(send(w.win, "contentView"), sel("frame"))
+		want := NSPoint{x, content.Size.Height - y}
+		ev := msgMouseEvent(class("NSEvent"), sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+			5, want, 0, 0, sendInt(w.win, "windowNumber"), 0, 0, 0, 0) // NSEventTypeMouseMoved
+		// A gesture event of the window server, of the HID system's zoom
+		// type, which AppKit makes a magnify event of.
+		cg := uintptr(send(ev, "CGEvent"))
+		cgEventSetType(cg, 29)                             // kCGSEventGesture
+		cgEventSetIntegerValueField(cg, 110, 8)            // gesture type: kIOHIDEventTypeZoom
+		cgEventSetDoubleValueField(cg, 113, magnification) // zoom value
+		ev = send(class("NSEvent"), "eventWithCGEvent:", cg)
+		if ev == 0 || sendInt(ev, "type") != 30 { // NSEventTypeMagnify
+			return
+		}
+		// The way through CGEvent moves the point by the window's origin
+		// once more: move it back (CoreGraphics' y goes down).
+		near := func(p NSPoint) bool { return math.Abs(p.X-want.X) < 0.5 && math.Abs(p.Y-want.Y) < 0.5 }
+		if got := msgPoint(ev, sel("locationInWindow")); !near(got) {
+			at := cgEventGetLocation(cg)
+			cgEventSetLocation(cg, NSPoint{at.X - (got.X - want.X), at.Y + (got.Y - want.Y)})
+			ev = send(class("NSEvent"), "eventWithCGEvent:", cg)
+			if ev == 0 || !near(msgPoint(ev, sel("locationInWindow"))) {
+				return
+			}
+		}
+		send(w.surface.view, "magnifyWithEvent:", uintptr(ev))
+		ok = true
+	})
+	return ok
+}
+
+// TestSwipe swipes left (back) or right (forward) in a window showing
+// native UI, as a touchpad swiping between pages and the side buttons of
+// mice through their makers' software do. It reports false when the event
+// it makes is not a swipe.
+func TestSwipe(handle uintptr, back bool) (ok bool) {
+	w := theBackend.byNSWindow[id(handle)]
+	if w == nil || w.surface == nil {
+		return false
+	}
+	testSideOnce.Do(func() {
+		purego.RegisterLibFunc(&cgEventSetIntegerValueField, libCG, "CGEventSetIntegerValueField")
+	})
+	testPinchOnce.Do(func() {
+		purego.RegisterLibFunc(&cgEventSetType, libCG, "CGEventSetType")
+		purego.RegisterLibFunc(&cgEventSetDoubleValueField, libCG, "CGEventSetDoubleValueField")
+		purego.RegisterLibFunc(&cgEventSetLocation, libCG, "CGEventSetLocation")
+	})
+	withPool(func() {
+		content := msgRect(send(w.win, "contentView"), sel("frame"))
+		ev := msgMouseEvent(class("NSEvent"), sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
+			5, NSPoint{10, content.Size.Height - 10}, 0, 0, sendInt(w.win, "windowNumber"), 0, 0, 0, 0) // NSEventTypeMouseMoved
+		// A gesture event of the window server, of the HID system's swipe
+		// type, which AppKit makes a swipe event of: the direction a mask
+		// of kIOHIDSwipeLeft and kIOHIDSwipeRight.
+		cg := uintptr(send(ev, "CGEvent"))
+		direction := int64(1 << 3) // kIOHIDSwipeRight
+		if back {
+			direction = 1 << 2 // kIOHIDSwipeLeft
+		}
+		cgEventSetType(cg, 29)                          // kCGSEventGesture
+		cgEventSetIntegerValueField(cg, 110, 16)        // gesture type: kIOHIDEventTypeSwipe
+		cgEventSetIntegerValueField(cg, 115, direction) // swipe direction
+		ev = send(class("NSEvent"), "eventWithCGEvent:", cg)
+		if ev == 0 || sendInt(ev, "type") != 31 { // NSEventTypeSwipe
+			return
+		}
+		if got, _ := swipeBack(msgFloat(ev, sel("deltaX"))); got != back {
+			return
+		}
+		send(w.surface.view, "swipeWithEvent:", uintptr(ev))
+		ok = true
+	})
+	return ok
+}
+
 // TestTrafficLights returns where the top-left corner of a window's close
 // button is, in points from the top-left corner of the window.
 func TestTrafficLights(handle uintptr) (x, y float64) {
@@ -277,6 +446,13 @@ func TestWebViewAttached(handle uintptr) bool {
 	return w != nil && send(w.web, "window") == w.win
 }
 
+// TestTabFocusesLinks reports whether Tab reaches links and form controls
+// that are not text fields in a window's page.
+func TestTabFocusesLinks(handle uintptr) bool {
+	w := theBackend.byNSWindow[id(handle)]
+	return w != nil && w.web != 0 && sendBool(send(send(w.web, "configuration"), "preferences"), "tabFocusesLinks")
+}
+
 // TestIsFrontmost reports whether the application is the frontmost one,
 // which NSApp's isActive does not tell while a nonactivating panel is the
 // key window: it reports the app active then.
@@ -292,6 +468,52 @@ func TestIsFrontmost() bool {
 // TestCollectionBehavior returns a window's NSWindowCollectionBehavior.
 func TestCollectionBehavior(handle uintptr) uint {
 	return uint(sendInt(id(handle), "collectionBehavior"))
+}
+
+// TestMaterial returns the class of a window's material (Vibrancy), its
+// style when glass, the corners its content view is cut to, and whether
+// the window draws as active.
+func TestMaterial(handle uintptr) (class string, style int, radius float64, active bool) {
+	w := theBackend.byNSWindow[id(handle)]
+	if w == nil {
+		return "", 0, 0, false
+	}
+	if w.effect != 0 {
+		class = goString(send(w.effect, "className"))
+		if w.glass {
+			style = sendInt(w.effect, "style")
+		}
+	}
+	if layer := send(w.view, "layer"); layer != 0 {
+		radius = msgFloat(layer, sel("cornerRadius"))
+	}
+	if respondsTo(w.win, "_hasActiveAppearance") {
+		active = sendBool(w.win, "_hasActiveAppearance")
+	}
+	return class, style, radius, active
+}
+
+// TestRoundedBacking reports whether a window is opaque, and the alpha and
+// red, in sRGB, of its content view's background, which fills its rounded
+// corners' inside.
+func TestRoundedBacking(handle uintptr) (opaque bool, alpha, red float64) {
+	w := theBackend.byNSWindow[id(handle)]
+	if w == nil {
+		return false, 0, 0
+	}
+	opaque = sendBool(w.win, "isOpaque")
+	withPool(func() {
+		if layer := send(w.view, "layer"); layer != 0 {
+			if c := send(layer, "backgroundColor"); c != 0 {
+				color := send(send(class("NSColor"), "colorWithCGColor:", uintptr(c)), "colorUsingColorSpace:", uintptr(send(class("NSColorSpace"), "sRGBColorSpace")))
+				if color != 0 {
+					alpha = msgFloat(color, sel("alphaComponent"))
+					red = msgFloat(color, sel("redComponent"))
+				}
+			}
+		}
+	})
+	return opaque, alpha, red
 }
 
 // TestDockInspector opens the web inspector of a window docked to it, and
@@ -513,6 +735,24 @@ func TestKeyShift(handle uintptr, code uint16, chars string, shift bool) bool {
 	if w == nil || w.surface == nil {
 		return false
 	}
+	sendKeyToWindow(w, code, chars, shift)
+	return true
+}
+
+// TestPageKeyShift presses a key in a window showing a web page, which the
+// window sends to its first responder as it does the keyboard's, with Shift
+// held when shift is set. It reports false for a window without a page.
+func TestPageKeyShift(handle uintptr, code uint16, chars string, shift bool) bool {
+	w := theBackend.byNSWindow[id(handle)]
+	if w == nil || w.web == 0 {
+		return false
+	}
+	sendKeyToWindow(w, code, chars, shift)
+	return true
+}
+
+// sendKeyToWindow sends a key down and up to a window, as the keyboard does.
+func sendKeyToWindow(w *window, code uint16, chars string, shift bool) {
 	var flags uint
 	if shift {
 		flags = 1 << 17 // NSEventModifierFlagShift
@@ -526,7 +766,6 @@ func TestKeyShift(handle uintptr, code uint16, chars string, shift bool) bool {
 			send(w.win, "sendEvent:", uintptr(ev))
 		}
 	})
-	return true
 }
 
 // TestCompose does what an input method does to a window showing native
@@ -729,14 +968,15 @@ func TestAccessibilityPerform(handle uintptr, label, action, value string) bool 
 		ok := false
 		withPool(func() {
 			selector := map[string]string{"press": "accessibilityPerformPress", "increment": "accessibilityPerformIncrement",
-				"decrement": "accessibilityPerformDecrement", "focus": "setAccessibilityFocused:", "value": "setAccessibilityValue:"}[action]
+				"decrement": "accessibilityPerformDecrement", "focus": "setAccessibilityFocused:", "value": "setAccessibilityValue:",
+				"insert": "setAccessibilitySelectedText:"}[action]
 			if !sendBool(n.obj, "isAccessibilitySelectorAllowed:", uintptr(sel(selector))) {
 				return
 			}
 			switch action {
 			case "focus":
 				send(n.obj, selector, 1)
-			case "value":
+			case "value", "insert":
 				send(n.obj, selector, uintptr(nsString(value)))
 			default:
 				sendBool(n.obj, selector)

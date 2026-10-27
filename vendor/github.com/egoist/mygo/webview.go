@@ -92,6 +92,7 @@ func (w *Window) newWebView(opts WebViewOptions, bg *background) (*WebView, erro
 		return nil, fmt.Errorf("mygo: cannot create a web view: %w", err)
 	}
 	pw.native = &webViewNative{Window: w.native, web: nv}
+	startContentRules(nv, opts.Page.ContentRules)
 	v := &WebView{pw}
 	pw.webView = v
 
@@ -278,6 +279,7 @@ func (n *webViewNative) Eval(js string)                      { n.web.Eval(js) }
 func (n *webViewNative) SetUserScripts(scripts []platform.UserScript) {
 	n.web.SetUserScripts(scripts)
 }
+func (n *webViewNative) SetContentRules(lists []any) { n.web.SetContentRules(lists) }
 func (n *webViewNative) CallAsyncFunction(body string, cb func(string, error)) {
 	n.web.CallAsyncFunction(body, cb)
 }
@@ -285,6 +287,10 @@ func (n *webViewNative) SetZoom(factor float64) { n.web.SetZoom(factor) }
 func (n *webViewNative) Zoom() float64          { return n.web.Zoom() }
 func (n *webViewNative) SetUserAgent(ua string) { n.web.SetUserAgent(ua) }
 func (n *webViewNative) UserAgent() string      { return n.web.UserAgent() }
+func (n *webViewNative) ProcessID() int         { return n.web.ProcessID() }
+func (n *webViewNative) IsAudible() bool        { return n.web.IsAudible() }
+func (n *webViewNative) SetAudioMuted(v bool)   { n.web.SetAudioMuted(v) }
+func (n *webViewNative) IsAudioMuted() bool     { return n.web.IsAudioMuted() }
 func (n *webViewNative) OpenDevTools()          { n.web.OpenDevTools() }
 func (n *webViewNative) CloseDevTools()         { n.web.CloseDevTools() }
 func (n *webViewNative) IsDevToolsOpened() bool { return n.web.IsDevToolsOpened() }

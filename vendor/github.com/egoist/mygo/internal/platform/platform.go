@@ -92,6 +92,7 @@ type Backend interface {
 	Theme() Theme
 	Power() Power
 	Network() Network
+	NowPlaying() NowPlaying
 	// Secrets may be called before Init, from any goroutine.
 	Secrets() Secrets
 	// Applications lists the applications installed on the computer.
@@ -171,15 +172,28 @@ type AppHandler interface {
 	NetworkChanged(status NetworkStatus)
 	HotkeyPressed(id int)
 	NotificationClicked(id string)
+	// MediaCommand reports a media key or a remote command for what
+	// NowPlaying shows; position is where MediaSeek asks to go.
+	MediaCommand(cmd MediaCommand, position time.Duration)
 }
 
 // AppController exposes application level native features.
 type AppController interface {
 	SetActivationPolicy(policy string)
 	Activate()
+	// AllowForeground lets the next process to ask bring its windows to
+	// the front, which Windows only lets the process in front do.
+	AllowForeground()
+	// WithActivationToken runs fn with the startup notification or XDG
+	// activation token of the launch that caused it, which the window fn
+	// shows or focuses first may need to take the focus (Wayland).
+	WithActivationToken(token string, fn func())
 	Hide()
 	Unhide()
 	IsHidden() bool
+	// IsActive reports whether the app is the active one: in front on
+	// macOS, with a window that has the keyboard elsewhere.
+	IsActive() bool
 	SetBadge(label string)
 	Badge() string
 	// Bounce requests user attention and returns an id for CancelBounce.
@@ -199,6 +213,14 @@ type AppController interface {
 	SetCookie(cookie Cookie, done func(error))
 	DeleteCookie(key CookieKey, done func(error))
 	ClearCookies(done func(error))
+	// CompileContentRules makes a content rule list of rules, in WebKit's
+	// content blocker JSON format: it loads the list kept as identifier
+	// (ContentRulesIdentifier) where the engine keeps compiled lists,
+	// else compiles rules, keeps the list as identifier and removes the
+	// lists kept for id under other identifiers (StaleContentRules).
+	// done runs on the main thread exactly once, with a handle
+	// Page.SetContentRules takes.
+	CompileContentRules(id, identifier, rules string, done func(list any, err error))
 	ShowAboutPanel(opts AboutPanelOptions)
 	// PreferredLanguages returns the languages the user reads, most
 	// preferred first, as the system's settings list them, in the forms
@@ -330,12 +352,19 @@ type WindowOptions struct {
 	TitleBarStyle string
 	// TitleBarHeight is the height of a hidden title bar in DIPs (Linux,
 	// Windows); 0 is the backend's own.
-	TitleBarHeight       int
+	TitleBarHeight int
+	// HideWindowButtons hides the window controls of a hidden title bar,
+	// which the page draws itself: TitleBar is then zero.
+	HideWindowButtons    bool
 	TrafficLightPosition *Point
 	Vibrancy             string
-	Opacity              float64
-	Parent               Window
-	Modal                bool
+	// CornerRadius rounds a frameless window's corners, in DIPs: its
+	// content and material are cut to them (macOS), or the system rounds
+	// it with its own corners (Windows 11).
+	CornerRadius int
+	Opacity      float64
+	Parent       Window
+	Modal        bool
 	// Flyout makes the window a flyout of its Parent, placed next to an
 	// anchor (Window.PlaceFlyout), at Width and Height: borderless,
 	// transparent, out of the taskbar, with Focusable telling whether it
@@ -352,10 +381,18 @@ type WindowOptions struct {
 	UserScripts []UserScript
 	// Schemes lists the custom protocols the webview must route to
 	// WindowHandler.SchemeRequest.
-	Schemes   []string
-	DevTools  bool
+	Schemes  []string
+	DevTools bool
+	// UserAgent overrides the user agent of the webview.
 	UserAgent string
-	Zoom      float64
+	// UserAgentSuffix is appended to UserAgent, or to the webview's own
+	// user agent, after a space. The public package trims it.
+	UserAgentSuffix string
+	Zoom            float64
+	// TabFocusesLinks makes Tab reach links and form controls that are not
+	// text fields (macOS, WKPreferences.tabFocusesLinks); the other
+	// platforms reach them already.
+	TabFocusesLinks bool
 	// Native carries backend specific state, e.g. the WKWebViewConfiguration
 	// WebKit hands us for window.open().
 	Native uintptr
@@ -436,6 +473,13 @@ type Window interface {
 	SetIgnoreMouseEvents(v bool)
 	SetContentProtection(v bool)
 	SetVibrancy(material string)
+	// SetActiveAppearance keeps the window drawn as active, as the key
+	// window of the app in front, while it is not (macOS).
+	SetActiveAppearance(v bool)
+	// SetWindowButtonsTheme draws the controls of a hidden title bar for a
+	// "light" or "dark" background whatever the app's appearance, or
+	// follows it again with "system" (Windows).
+	SetWindowButtonsTheme(source string)
 	// SetProgressBar shows progress on the taskbar button, Dock icon or
 	// launcher entry: state is "" (none), "normal", "indeterminate",
 	// "paused" or "error", value between 0 and 1.
@@ -495,6 +539,10 @@ type Page interface {
 	// the current document keeps what it ran. Scripts a backend injects
 	// itself, as the title bar's, stay.
 	SetUserScripts(scripts []UserScript)
+	// SetContentRules replaces the content rule lists the page's loads
+	// go through from then on with lists, handles of
+	// AppController.CompileContentRules; none removes them.
+	SetContentRules(lists []any)
 	// CallAsyncFunction runs body as the body of an async function in the
 	// main frame, awaits it and reports the returned value, which the
 	// caller arranges to be a string. err is non-nil when the body fails to
@@ -504,6 +552,21 @@ type Page interface {
 	Zoom() float64
 	SetUserAgent(ua string)
 	UserAgent() string
+	// ProcessID returns the ID of the operating system's process that
+	// the backend reports for the page (see Page.ProcessID in package
+	// mygo for which one), 0 when it reports none.
+	ProcessID() int
+	// IsAudible reports whether the page plays sound, from any of its
+	// frames, as WindowHandler.AudibleChanged reports its changes; false
+	// where the backend cannot tell.
+	IsAudible() bool
+	// SetAudioMuted mutes the page's sound, or lets it play again. A
+	// backend whose web view does not exist yet mutes it once it does;
+	// one that cannot mute does nothing.
+	SetAudioMuted(muted bool)
+	// IsAudioMuted reports what SetAudioMuted set, false where the
+	// backend cannot mute.
+	IsAudioMuted() bool
 	OpenDevTools()
 	CloseDevTools()
 	IsDevToolsOpened() bool
@@ -603,6 +666,8 @@ type WindowHandler interface {
 	// ClosedByPage is called when the page calls window.close().
 	ClosedByPage()
 	RenderProcessGone(reason string)
+	// AudibleChanged is called when Page.IsAudible changes.
+	AudibleChanged(audible bool)
 	SchemeRequest(req *SchemeRequest)
 	// DownloadStarted returns where to save a download, "" to cancel it;
 	// DownloadFinished reports how it ended.
@@ -645,6 +710,10 @@ type NewWindowRequest struct {
 	Disposition string
 	// Width/Height/X/Y come from window.open() features; zero when absent.
 	X, Y, Width, Height int
+	// UserInitiated is true when a user's gesture, as a click or a key
+	// press, opened the window: a click on the link, or its handler
+	// calling window.open().
+	UserInitiated bool
 	// Native must be copied into WindowOptions.Native of the window that is
 	// returned.
 	Native uintptr
@@ -718,7 +787,9 @@ type MenuItem struct {
 	Visible     bool
 	Checked     bool
 	ToolTip     string
-	Submenu     *Menu
+	// Icon is the image beside the label, nil for none.
+	Icon    *MenuIcon
+	Submenu *Menu
 }
 
 // FileFilter restricts the files shown in file dialogs.
@@ -915,6 +986,40 @@ type Power interface {
 	IdleTime() time.Duration
 }
 
+// MediaCommand is a command of the system's media controls, or a set of
+// them (NowPlayingInfo.Commands).
+type MediaCommand uint32
+
+const (
+	MediaPlay MediaCommand = 1 << iota
+	MediaPause
+	MediaTogglePlayPause
+	MediaStop
+	MediaNext
+	MediaPrevious
+	MediaSeek
+)
+
+// NowPlayingInfo is what the app plays, fully defaulted by the core.
+type NowPlayingInfo struct {
+	Title, Artist, Album string
+	Artwork              []byte // PNG or JPEG, or nil
+	Duration             time.Duration
+	// Position is where playback was when the core set the info; the
+	// system advances it at Rate while State is "playing".
+	Position time.Duration
+	Rate     float64 // the speed while playing, 1 by default
+	State    string  // "playing", "paused" or "stopped"
+	Commands MediaCommand
+}
+
+// NowPlaying shows what the app plays where the system shows media, and
+// reports AppHandler.MediaCommand for the commands the info enables.
+type NowPlaying interface {
+	// Set shows info; nil removes it and stops reporting commands.
+	Set(info *NowPlayingInfo)
+}
+
 // NetworkStatus is the state of the computer's network connection.
 type NetworkStatus struct {
 	Online  bool
@@ -954,15 +1059,26 @@ type Secrets interface {
 type TrayHandler interface {
 	Clicked()
 	RightClicked()
+	// AppearanceChanged tells that the bar the icon shows on turned dark
+	// or light.
+	AppearanceChanged()
 }
 
 // Tray is a status bar / notification area icon.
 type Tray interface {
+	// SetID names the icon across launches (macOS's autosave name).
+	SetID(id string)
+	// Dark reports whether the bar the icon shows on is dark.
+	Dark() bool
 	SetImage(png []byte, template bool) error
 	SetTitle(title string)
 	SetToolTip(tip string)
 	SetMenu(m *Menu)
 	PopUpMenu(m *Menu)
+	// SetActivatable tells the panel whether the icon answers activation,
+	// so that it can tell a single click from a double one. Platforms that
+	// report clicks themselves ignore it.
+	SetActivatable(on bool)
 	Bounds() Rect
 	Destroy()
 }
@@ -976,5 +1092,12 @@ type Notification struct {
 	Silent   bool
 	// Group gathers the notifications that share it (threadIdentifier on
 	// macOS).
-	Group string
+	Group  string
+	Sender *NotificationSender
+}
+
+// NotificationSender describes an incoming direct message's sender.
+type NotificationSender struct {
+	ID, Name string
+	Avatar   []byte
 }

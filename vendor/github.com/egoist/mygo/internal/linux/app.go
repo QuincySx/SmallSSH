@@ -233,6 +233,10 @@ type appController struct{ b *Backend }
 
 func (a appController) SetActivationPolicy(string) {}
 
+func (a appController) AllowForeground() {}
+
+func (a appController) WithActivationToken(token string, fn func()) { withActivationToken(token, fn) }
+
 func (a appController) Activate() {
 	for _, w := range a.b.windows {
 		if gtkWidgetGetVisible(w.win) {
@@ -255,6 +259,17 @@ func (a appController) Unhide() {
 }
 
 func (a appController) IsHidden() bool { return false }
+
+// IsActive reports whether a window of the app has the keyboard.
+func (a appController) IsActive() bool {
+	for _, w := range a.b.windows {
+		if !w.closed && gtkWindowIsActive(w.win) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a appController) SetBadge(label string) {
 	a.b.launcher.badge = label
 	a.b.updateLauncherEntry()

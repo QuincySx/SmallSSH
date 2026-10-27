@@ -120,8 +120,9 @@ type Span struct {
 	// rune of the span, an object replacement character (U+FFFC), an
 	// inline object: a box that wide, standing that high on the baseline,
 	// which lines break around and which draws no glyph, as an image in a
-	// rich text's line (Glyph.Object).
-	ObjectWidth, ObjectHeight float32
+	// rich text's line (Glyph.Object). ObjectDescent extends the box that
+	// far below the baseline, as math's subscripts and fractions go.
+	ObjectWidth, ObjectHeight, ObjectDescent float32
 }
 
 // style returns the style of the span's runes in a text of style base.
@@ -173,6 +174,10 @@ func EncodeSpans(spans []Span) string {
 		str(sp.Features)
 		b = binary.LittleEndian.AppendUint32(b, math.Float32bits(sp.ObjectWidth))
 		b = binary.LittleEndian.AppendUint32(b, math.Float32bits(sp.ObjectHeight))
+		if sp.ObjectWidth != 0 {
+			// Only objects have a descent: other spans' keys stay short.
+			b = binary.LittleEndian.AppendUint32(b, math.Float32bits(sp.ObjectDescent))
+		}
 		str(sp.Lang)
 	}
 	return string(b)
@@ -224,6 +229,9 @@ func DecodeSpans(s string) []Span {
 		sp.Features = str()
 		sp.ObjectWidth = f32()
 		sp.ObjectHeight = f32()
+		if sp.ObjectWidth != 0 {
+			sp.ObjectDescent = f32()
+		}
 		sp.Lang = str()
 		if b == nil {
 			break
@@ -341,9 +349,11 @@ type System struct {
 	runs  map[runKey]*atlasEntry
 	masks map[uint64]*atlasEntry
 	// transient holds the masks drawn for the frame being painted alone,
-	// recent the frame each of them was last drawn in.
-	transient map[uint64]GlyphImage
-	recent    map[uint64]uint64
+	// recent the frame each of them was last drawn in, and transientUses
+	// counts the times Mask returned one of them (TransientUses).
+	transient     map[uint64]GlyphImage
+	recent        map[uint64]uint64
+	transientUses uint64
 	// MaskAtlas holds coverage masks, ColorAtlas color glyphs.
 	MaskAtlas, ColorAtlas *scene.Atlas
 	// full tells which atlases (mask, color) left out something the frame
@@ -658,9 +668,11 @@ func (s *System) Layout(p Params) *Layout {
 	p.Style.Lang = strings.Clone(p.Style.Lang)
 	c := s.layout(p)
 	c.bytes = layoutBytes(c)
-	// A large paragraph still lays out correctly; keeping it would evict
-	// all the ordinary labels and lines of other windows.
-	if c.bytes <= maxLayoutBytes {
+	// A large paragraph is kept only where it fits next to the layouts
+	// recent frames used: evicting those for it would have the ordinary
+	// labels and lines of other windows laid out again. Otherwise it still
+	// lays out correctly, every time.
+	if c.bytes <= maxLayoutBytes || c.bytes <= maxLargeLayoutBytes && s.roomBesideLive(c.bytes) {
 		for s.oldest != nil && (s.overLayoutBudget(c.bytes) || len(s.layouts) >= maxLayouts) {
 			s.removeLayout(s.oldest)
 		}
@@ -673,12 +685,29 @@ func (s *System) Layout(p Params) *Layout {
 
 // The memory estimate includes text, shaped glyphs and room for lazy caret
 // geometry. A count limit also bounds the map for many very short labels.
+// A layout above maxLayoutBytes is kept, up to maxLargeLayoutBytes, only
+// within the live budget beside the layouts recent frames used.
 const (
-	liveLayoutFrames   = 8
-	maxLiveLayoutBytes = 64 << 20
-	maxLayoutBytes     = 8 << 20
-	maxLayouts         = 4096
+	liveLayoutFrames    = 8
+	maxLiveLayoutBytes  = 64 << 20
+	maxLayoutBytes      = 8 << 20
+	maxLargeLayoutBytes = maxLiveLayoutBytes / 2
+	maxLayouts          = 4096
 )
+
+// roomBesideLive tells whether n more bytes fit within the live budget by
+// evicting only layouts no frame used within liveLayoutFrames. The list
+// is in order of use, so those are the oldest.
+func (s *System) roomBesideLive(n int) bool {
+	free, count := maxLiveLayoutBytes-s.layoutBytes, len(s.layouts)
+	for c := s.oldest; free < n || count >= maxLayouts; c = c.next {
+		if c == nil || s.frame-c.used < liveLayoutFrames {
+			return false
+		}
+		free, count = free+c.bytes, count-1
+	}
+	return true
+}
 
 // Above the ordinary budget, keep layouts used within a few global frames:
 // otherwise sequential reuse of a larger working set evicts each layout just
@@ -1005,9 +1034,10 @@ func line(p Params, text []rune, sl shapedLine, offset int, rtl bool, m lineMetr
 				g.Runes = max(next-g.Cluster, 1)
 				if o := objectAt(spans, g.Cluster); o != nil {
 					// An inline object stands on the baseline, as high as
-					// it is, whatever font its run took.
+					// it is and as deep, whatever font its run took.
 					g.Object, g.Advance, g.ID = true, o.ObjectWidth, 0
 					line.Ascent = max(line.Ascent, o.ObjectHeight)
+					line.Descent = max(line.Descent, o.ObjectDescent)
 				}
 				g.Cluster += offset
 			}

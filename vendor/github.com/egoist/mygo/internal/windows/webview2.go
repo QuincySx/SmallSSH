@@ -50,6 +50,7 @@ const (
 	wvReload                                 = 31
 	wvAddWebMessageReceived                  = 34
 	wvCallDevToolsProtocolMethod             = 36
+	wvGetBrowserProcessId                    = 37
 	wvGetCanGoBack                           = 38
 	wvGetCanGoForward                        = 39
 	wvGoBack                                 = 40
@@ -75,6 +76,10 @@ const (
 	set2GetUserAgent                     = 21
 	set2PutUserAgent                     = 22
 
+	// ICoreWebView2Settings3
+	set3GetAreBrowserAcceleratorKeysEnabled = 23
+	set3PutAreBrowserAcceleratorKeysEnabled = 24
+
 	// Event arguments and helpers.
 	navStartingGetURI             = 3
 	navStartingGetIsUserInitiated = 4
@@ -88,7 +93,10 @@ const (
 	objectsGetValueAtIndex        = 4
 	fileGetPath                   = 3
 	newWinGetURI                  = 3
+	newWinPutNewWindow            = 4
 	newWinPutHandled              = 6
+	newWinGetIsUserInitiated      = 8 // after get_NewWindow (5), put_Handled (6), get_Handled (7)
+	newWinGetDeferral             = 9
 	newWinGetWindowFeatures       = 10
 	featGetHasPosition            = 3
 	featGetHasSize                = 4
@@ -104,6 +112,7 @@ const (
 	reqGetMethod                  = 5
 	reqGetContent                 = 7
 	reqGetHeaders                 = 9
+	headersRemoveHeader           = 7
 	headersGetIterator            = 8
 	iterGetCurrentHeader          = 3
 	iterGetHasCurrentHeader       = 4
@@ -130,13 +139,28 @@ const (
 	accelPutHandled               = 8
 )
 
+// ICoreWebView2_8, whose methods follow ICoreWebView2_7's PrintToPdf (80)
+// in WebView2.h: add_IsMutedChanged (81), remove_IsMutedChanged (82),
+// get_IsMuted (83), put_IsMuted (84), add_IsDocumentPlayingAudioChanged
+// (85), remove_IsDocumentPlayingAudioChanged (86) and
+// get_IsDocumentPlayingAudio (87).
+const (
+	wv8AddIsMutedChanged                = 81
+	wv8GetIsMuted                       = 83
+	wv8PutIsMuted                       = 84
+	wv8AddIsDocumentPlayingAudioChanged = 85
+	wv8GetIsDocumentPlayingAudio        = 87
+)
+
 var (
 	iidICoreWebView2Controller2                  = guid("c979903e-d4ca-4228-92eb-47ee3fa96eab")
 	iidICoreWebView2Settings2                    = guid("ee9a0f68-f46c-4e32-ac23-ef8cac224d2a")
+	iidICoreWebView2Settings3                    = guid("fdb5ab74-af33-4854-84f0-0a631deb5eba")
 	iidICoreWebView2WebMessageReceivedEventArgs2 = guid("06fc7ab7-c90c-4297-9389-33ca01cf6d5e")
 	iidICoreWebView2NavigationStartingEventArgs3 = guid("ddffe494-4942-4bd2-ab73-35b8ff40e19f")
 	iidICoreWebView2File                         = guid("f2c19559-6bc1-4583-a757-90021be9afec")
 	iidICoreWebView2_4                           = guid("20d02d59-6df2-42dc-bd06-f98a694b1302")
+	iidICoreWebView2_8                           = guid("e9632730-6e1e-43ab-b7b8-7b2c9e62e094")
 	iidICoreWebView2_13                          = guid("f75f09a8-667e-4983-88d6-c8773f315e84")
 	iidICoreWebView2Profile2                     = guid("fa740d4b-5eae-4344-a8ad-74be31925397")
 )

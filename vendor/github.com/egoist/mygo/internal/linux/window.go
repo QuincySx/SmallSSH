@@ -61,6 +61,10 @@ type window struct {
 	// controls are the title buttons over the page of a window with a
 	// hidden title bar (titlebar.go), in an overlay with the web view.
 	controls *windowControls
+	// csd tells that GTK decorates a frameless window or one with a hidden
+	// title bar itself, with an empty title bar: it draws the shadow and
+	// the border, and resizes the window at its edges (see useCSD).
+	csd bool
 
 	// flyout is how a flyout (WindowOptions.Flyout) was placed last, at
 	// flyoutSize, once placed is set. grabbed tells that a focusable one
@@ -176,7 +180,11 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	gtkWindowSetResizable(w.win, o.Resizable)
 	gtkWindowSetDeletable(w.win, o.Closable)
 	if w.undecorated() {
-		gtkWindowSetDecorated(w.win, false)
+		if w.useCSD() {
+			w.decorate()
+		} else {
+			gtkWindowSetDecorated(w.win, false)
+		}
 	}
 	if o.AlwaysOnTop {
 		w.SetAlwaysOnTop(true)
@@ -209,7 +217,7 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	// its natural size.
 	gtkWidgetSetSizeRequest(w.box, 1, 1)
 	gtkContainerAdd(w.win, w.box)
-	if w.hiddenTitleBar() {
+	if w.hiddenTitleBar() && !o.HideWindowButtons {
 		w.newControls()
 	}
 	if o.Surface {
@@ -255,7 +263,7 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	if w.web != 0 {
 		b.byWebView[w.web] = w
 	}
-	if o.Frameless && o.Flyout == nil && !w.layer && b.announceCSD != nil {
+	if o.Frameless && !w.csd && o.Flyout == nil && !w.layer && b.announceCSD != nil {
 		// GTK asks a Wayland compositor that speaks
 		// org_kde_kwin_server_decoration (KWin, COSMIC, Sway…) to decorate
 		// every window it does not decorate itself, an undecorated one
@@ -301,7 +309,9 @@ func (w *window) createWebView() {
 	webkitSettingsSetAllowFileAccessFromFileURLs(settings, true)
 	webkitSettingsSetJavascriptCanAccessClipboard(settings, true)
 	if o.UserAgent != "" {
-		webkitSettingsSetUserAgent(settings, cs(o.UserAgent))
+		webkitSettingsSetUserAgent(settings, cs(userAgentWithSuffix(o.UserAgent, o.UserAgentSuffix)))
+	} else if o.UserAgentSuffix != "" {
+		webkitSettingsSetUserAgentSuffix(settings, o.UserAgentSuffix)
 	}
 	if o.Zoom > 0 && o.Zoom != 1 {
 		webkitWebViewSetZoomLevel(w.web, o.Zoom)
@@ -316,6 +326,9 @@ func (w *window) createWebView() {
 	connect(w.web, "load-changed", cbLoadChanged, data)
 	connect(w.web, "load-failed", cbLoadFailed, data)
 	connect(w.web, "notify::title", cbTitle, data)
+	if webkitWebViewIsPlayingAudio != nil {
+		connect(w.web, "notify::is-playing-audio", cbPlayingAudio, data)
+	}
 	connect(w.web, "decide-policy", cbDecidePolicy, data)
 	connect(w.web, "create", cbCreate, data)
 	connect(w.web, "close", cbClose, data)
@@ -776,11 +789,14 @@ func (w *window) SetBackgroundColor(c platform.Color) {
 
 func (w *window) SetOpacity(v float64)      { gtkWidgetSetOpacity(w.win, v) }
 func (w *window) Opacity() float64          { return gtkWidgetGetOpacity(w.win) }
-func (w *window) SetHasShadow(bool)         {}
-func (w *window) HasShadow() bool           { return true }
 func (w *window) SetIgnoreMouseEvents(bool) {}
 func (w *window) SetContentProtection(bool) {}
 func (w *window) SetVibrancy(string)        {}
+func (w *window) SetActiveAppearance(bool)  {}
+
+// SetWindowButtonsTheme does nothing: GTK's title buttons follow the
+// theme, which is the application's.
+func (w *window) SetWindowButtonsTheme(string) {}
 
 // StartDrag begins moving the window with the last button press. On an
 // undecorated window the compositor takes the pointer once the move
@@ -820,7 +836,8 @@ func (w *window) checkDragStart(event ptr) {
 }
 
 // GTK gives windows without decorations no resize edges, so the outer
-// pixels of the page resize frameless windows, as in Electron.
+// pixels of the page resize frameless windows, as in Electron. Those GTK
+// decorates itself (useCSD) resize at its edges, around the page.
 const (
 	resizeInset  = 5  // pixels of the page along the edges
 	resizeCorner = 16 // pixels along the edges from a corner that resize it
@@ -846,7 +863,7 @@ var resizeEdges = [8]struct {
 // GdkEventMotion or GdkEventButton) would resize, or -1.
 func (w *window) resizeEdge(event ptr) int32 {
 	// GdkEventMotion and GdkEventButton: window 8, x 24, y 32.
-	if !w.undecorated() || w.state&(stateMaximized|stateFullscreen) != 0 ||
+	if !w.undecorated() || w.csd || w.state&(stateMaximized|stateFullscreen) != 0 ||
 		field[ptr](event, 8) != w.contentWindow() || !gtkWindowGetResizable(w.win) {
 		return -1
 	}
@@ -944,8 +961,53 @@ func (w *window) hiddenTitleBar() bool {
 }
 
 // undecorated reports a window without the window manager's decorations,
-// whose page's outer pixels resize it.
+// whose page's outer pixels resize it unless GTK decorates it (useCSD).
 func (w *window) undecorated() bool { return w.opts.Frameless || w.hiddenTitleBar() }
+
+// useCSD reports whether GTK decorates an undecorated window itself, as it
+// does the windows of GNOME's apps: its client-side decorations, with an
+// empty title bar, draw the shadow and the border around the page, and
+// resize the window at its edges, where they are. That is on Wayland,
+// whose compositors leave windows that decorate themselves without either.
+// GTK sizes the window without them, so that the page keeps the size asked
+// for, and drops them while the window is maximized or in full screen.
+//
+// Not decorated:
+//   - Windows without a shadow (DisableShadow), as before.
+//   - Transparent windows: the decorations would outline the window's
+//     rectangle around a page that shows its own shape.
+//   - Flyouts and panels: popups take no decorations, a panel on Wayland
+//     is a layer surface, which the compositor sizes and puts without
+//     them, and both have a look of their own (Flyout.Shadow).
+//   - A hidden title bar where the compositor decorates windows itself
+//     (KWin): it keeps the compositor's title bar, with the buttons.
+//   - X11, where Mutter puts its shadow around opaque undecorated windows
+//     as it composites, and where a window that decorates itself has its
+//     shadow inside its X window, which Bounds, SetBounds and the frame
+//     extents of the window manager (frameExtents) do not count.
+func (w *window) useCSD() bool {
+	o := w.opts
+	return !w.b.onX11 && o.HasShadow && !o.Transparent && o.Flyout == nil && !o.Panel &&
+		!(w.hiddenTitleBar() && w.b.compositorDecorates)
+}
+
+// decorate has GTK decorate the window itself, before it is realized, with
+// a title bar that never shows: GtkWindow lays out and draws no title bar
+// that is not visible, and keeps its decorations.
+func (w *window) decorate() {
+	gtkWindowSetTitlebar(w.win, gtkBoxNew(0, 0))
+	w.csd = true
+}
+
+// The shadow comes with the window (useCSD): GTK styles the decorations
+// of a window that shows once, so that a style taking them away later
+// changes nothing until the window is hidden and shown again, and then
+// leaves the page smaller.
+func (w *window) SetHasShadow(bool) {}
+
+// HasShadow reports whether the window manager decorates the window, or GTK
+// draws a shadow around it.
+func (w *window) HasShadow() bool { return !w.undecorated() || w.csd }
 
 func (w *window) TitleBarDoubleClicked() {
 	if w.IsMaximized() {
@@ -961,6 +1023,12 @@ func (w *window) Close() {
 		return
 	}
 	if !w.closed {
+		if s := w.surface; s != nil && s.drawing() {
+			// GTK uses the window once the frame returns: destroy it after,
+			// before the next events (G_PRIORITY_HIGH).
+			gIdleAddFull(-100, cbCloseLater, ptr(w.id), 0)
+			return
+		}
 		if w.opts.Flyout != nil {
 			w.ungrab()
 		}
@@ -1068,11 +1136,63 @@ func (w *window) SetZoom(f float64) { webkitWebViewSetZoomLevel(w.web, f) }
 func (w *window) Zoom() float64     { return webkitWebViewGetZoomLevel(w.web) }
 
 func (w *window) SetUserAgent(ua string) {
-	webkitSettingsSetUserAgent(webkitWebViewGetSettings(w.web), optCS(ua))
+	settings := webkitWebViewGetSettings(w.web)
+	suffix := w.opts.UserAgentSuffix
+	if ua == "" {
+		// An empty one restores the default user agent, and the suffix
+		// appends to that.
+		if suffix != "" {
+			webkitSettingsSetUserAgentSuffix(settings, suffix)
+			return
+		}
+		webkitSettingsSetUserAgent(settings, nil)
+		return
+	}
+	webkitSettingsSetUserAgent(settings, cs(userAgentWithSuffix(ua, suffix)))
+}
+
+// userAgentWithSuffix appends the suffix the options set, after a space.
+func userAgentWithSuffix(ua, suffix string) string {
+	if suffix == "" {
+		return ua
+	}
+	return ua + " " + suffix
+}
+
+// webkitSettingsSetUserAgentSuffix appends suffix to the default user agent
+// of settings, after a space, as the other backends do. WebKitGTK's
+// application details would join a name and a version with "/", and give
+// a suffix without one WebKit's version.
+func webkitSettingsSetUserAgentSuffix(settings ptr, suffix string) {
+	webkitSettingsSetUserAgent(settings, nil)
+	ua := goStr(webkitSettingsGetUserAgent(settings))
+	webkitSettingsSetUserAgent(settings, cs(userAgentWithSuffix(ua, suffix)))
 }
 
 func (w *window) UserAgent() string {
 	return goStr(webkitSettingsGetUserAgent(webkitWebViewGetSettings(w.web)))
+}
+
+// ProcessID is 0: WebKitGTK has no public API for the web process of a
+// view (webkit_web_view_get_page_id is WebKit's own page identifier).
+func (w *window) ProcessID() int { return 0 }
+
+// IsAudible reports webkit_web_view_is_playing_audio, which
+// notify::is-playing-audio tells the changes of.
+func (w *window) IsAudible() bool {
+	return webkitWebViewIsPlayingAudio != nil && webkitWebViewIsPlayingAudio(w.web)
+}
+
+// SetAudioMuted mutes the web view (webkit_web_view_set_is_muted,
+// WebKitGTK 2.30+); older versions can't.
+func (w *window) SetAudioMuted(v bool) {
+	if webkitWebViewSetIsMuted != nil {
+		webkitWebViewSetIsMuted(w.web, v)
+	}
+}
+
+func (w *window) IsAudioMuted() bool {
+	return webkitWebViewGetIsMuted != nil && webkitWebViewGetIsMuted(w.web)
 }
 
 func (w *window) OpenDevTools() {
@@ -1253,6 +1373,7 @@ var (
 	cbCreate, cbClose, cbCrashed, cbButtonPress, cbAsyncReady, cbPNGWrite       ptr
 	cbDragData, cbDragDrop, cbPrintFinished, cbPrintFailed, cbPermission        ptr
 	cbMotion, cbControlsAllocated, cbDecorationLayout, cbActivationResize       ptr
+	cbCloseLater, cbPlayingAudio                                                ptr
 )
 
 func field[T any](p ptr, offset uintptr) T {
@@ -1272,6 +1393,12 @@ func initWindowCallbacks() {
 			w.cleanup()
 			w.h.Closed()
 		}
+	})
+	cbCloseLater = purego.NewCallback(func(data ptr) int32 {
+		if w := b().window(data); w != nil {
+			w.Close()
+		}
+		return 0 // G_SOURCE_REMOVE
 	})
 	cbFocusIn = purego.NewCallback(func(widget, event, data ptr) bool {
 		if w := b().window(data); w != nil {
@@ -1548,6 +1675,11 @@ func initWindowCallbacks() {
 			w.h.TitleChanged(goStr(webkitWebViewGetTitle(w.web)))
 		}
 	})
+	cbPlayingAudio = purego.NewCallback(func(web, pspec, data ptr) {
+		if w := b().window(data); w != nil {
+			w.h.AudibleChanged(webkitWebViewIsPlayingAudio(w.web))
+		}
+	})
 	cbDecidePolicy = purego.NewCallback(func(web, decision ptr, kind int32, data ptr) bool {
 		w := b().window(data)
 		if w == nil {
@@ -1593,7 +1725,8 @@ func initWindowCallbacks() {
 		// manager, which would route the new window's IPC to the opener.
 		// Open an independent window instead; its page has no opener.
 		url := goStr(webkitURIRequestGetURI(webkitNavigationActionGetRequest(action)))
-		if child, ok := w.h.NewWindow(platform.NewWindowRequest{URL: url}).(*window); ok && child != nil {
+		req := platform.NewWindowRequest{URL: url, UserInitiated: webkitNavigationActionIsUserGesture(action)}
+		if child, ok := w.h.NewWindow(req).(*window); ok && child != nil {
 			child.LoadURL(url)
 		}
 		return 0

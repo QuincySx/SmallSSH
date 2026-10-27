@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo/internal/update"
@@ -52,6 +53,9 @@ type UpdaterModule struct{}
 
 // Updater installs new versions of the app.
 var Updater = &UpdaterModule{}
+
+// prereleases is set while Check offers prereleases (SetPrereleases).
+var prereleases atomic.Bool
 
 // ErrUpdatesDisabled is returned by Check for builds without updates:
 // development builds, and builds of apps without updates in mygo.config.ts.
@@ -97,11 +101,30 @@ func (u *UpdaterModule) Check(ctx context.Context) (*Update, error) {
 	if !u.Enabled() {
 		return nil, ErrUpdatesDisabled
 	}
-	return checkUpdate(ctx, packageUpdateFeed, packageUpdateKey, App.Version())
+	return checkUpdate(ctx, packageUpdateFeed, packageUpdateKey, App.Version(), prereleases.Load())
 }
 
-func checkUpdate(ctx context.Context, feed, key, current string) (*Update, error) {
-	feed, err := update.ResolveFeed(ctx, feed, httpGet)
+// SetPrereleases makes Check offer prereleases too, such as 1.3.0-beta.1,
+// for the users of an app who chose its beta: with updates on GitHub,
+// Check then reads the release of the highest version that is not a
+// draft, through the GitHub API (usually one request a check), so that a
+// release newer than the prereleases is offered too. Check never offers a
+// version older than the running one, so turning it off waits for the
+// release after the prerelease the app runs. Updates of updates.url are
+// the manifest the server has, whichever is set. It is off at launch; the
+// app keeps the user's choice and sets it again. It may be called from
+// any goroutine.
+func (u *UpdaterModule) SetPrereleases(on bool) { prereleases.Store(on) }
+
+// Prereleases reports whether Check offers prereleases (SetPrereleases).
+func (u *UpdaterModule) Prereleases() bool { return prereleases.Load() }
+
+func checkUpdate(ctx context.Context, feed, key, current string, pre bool) (*Update, error) {
+	resolve := update.ResolveFeed
+	if pre {
+		resolve = update.ResolvePrereleaseFeed
+	}
+	feed, err := resolve(ctx, feed, httpGet)
 	if err != nil {
 		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
 	}
@@ -186,11 +209,20 @@ func installUpdate(ctx context.Context, m update.Manifest, key, current, target 
 	if err != nil {
 		return fmt.Errorf("cannot write next to the app: %w", err)
 	}
-	defer os.RemoveAll(work)
+	staged := false
+	defer func() {
+		if !staged {
+			os.RemoveAll(work)
+		}
+	}()
 	unpacked := filepath.Join(work, "app")
 	swap := swapFiles
 	if runtime.GOOS == "darwin" {
-		swap = swapBundle
+		swap = func(dir, target string) error {
+			err := stageBundle(work, dir, target)
+			staged = err == nil
+			return err
+		}
 	}
 
 	if d := m.Delta(current); d != nil {
@@ -277,8 +309,28 @@ func download(ctx context.Context, url string, size int64, signature string, pub
 	return update.Verify(pub, sum.Sum(nil), signature)
 }
 
-// swapBundle replaces the bundle at target with the one in dir.
-func swapBundle(dir, target string) error {
+// stagedUpdate is a new version of the app bundle target, at bundle in
+// work, a directory next to target that the update was made in, and the
+// helper process that installs it once the app has exited.
+type stagedUpdate struct {
+	work, bundle, target string
+	helper               *exec.Cmd
+}
+
+// pendingUpdate is the update that Install staged on macOS. It replaces the
+// app's bundle once the app has exited, however it exits: replacing it
+// while the app runs moved the bundle of the running app away, the Dock's
+// tile of the app followed it, and the new version, opened where the app
+// was, got a second tile.
+var pendingUpdate atomic.Pointer[stagedUpdate]
+
+// appPid is the process whose exit a staged update waits for: the app's,
+// which tests replace.
+var appPid = os.Getpid()
+
+// stageBundle leaves the bundle that dir holds to replace target once the
+// app has exited, in place of an update staged before.
+func stageBundle(work, dir, target string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -286,17 +338,48 @@ func swapBundle(dir, target string) error {
 	if len(entries) != 1 || !strings.HasSuffix(entries[0].Name(), ".app") {
 		return errors.New("the update holds no app bundle")
 	}
-	old := filepath.Join(filepath.Dir(target), "."+filepath.Base(target)+".old-"+strconv.Itoa(os.Getpid()))
-	if err := os.Rename(target, old); err != nil {
+	p := &stagedUpdate{work: work, bundle: filepath.Join(dir, entries[0].Name()), target: target}
+	args := []string{"-c", installAfterExit, "mygo-update", strconv.Itoa(appPid), p.target, p.bundle, p.work, p.target}
+	if len(os.Args) > 1 {
+		args = append(append(args, "--args"), os.Args[1:]...)
+	}
+	p.helper = exec.Command("/bin/sh", args...)
+	if err := p.helper.Start(); err != nil {
 		return err
 	}
-	if err := os.Rename(filepath.Join(dir, entries[0].Name()), target); err != nil {
-		_ = os.Rename(old, target)
-		return err
+	if old := pendingUpdate.Swap(p); old != nil {
+		_ = old.helper.Process.Kill()
+		_ = old.helper.Wait()
+		_ = os.RemoveAll(old.work)
 	}
-	// The running app keeps its open files.
-	_ = os.RemoveAll(old)
 	return nil
+}
+
+// installAfterExit is the script of /bin/sh that installs a staged update:
+// with the pid of the app, the target, bundle and work of the update and
+// then the arguments of open, it waits for the app to exit, swaps the
+// bundles, putting the old one back if the new one cannot be moved in, and
+// opens the app again when Relaunch asked for it (relaunchUpdated). Through
+// Launch Services, as openBundle, but without -n: the app has exited, and
+// the Dock gives the new version the app's tile.
+const installAfterExit = `pid=$1 target=$2 new=$3 work=$4
+shift 4
+trap '' HUP
+while kill -0 "$pid" 2>/dev/null; do sleep 0.05; done
+if mv "$target" "$work/old"; then
+	mv "$new" "$target" || mv "$work/old" "$target"
+fi
+relaunch=
+if [ -e "$work/relaunch" ]; then relaunch=1; fi
+rm -rf "$work"
+if [ -n "$relaunch" ]; then exec /usr/bin/open "$@"; fi
+`
+
+// relaunchUpdated asks the helper of a staged update to open the app once
+// it has installed the update, reporting whether there is one.
+func relaunchUpdated() bool {
+	p := pendingUpdate.Load()
+	return p != nil && os.WriteFile(filepath.Join(p.work, "relaunch"), nil, 0o644) == nil
 }
 
 // swapFiles replaces the entries of the app directory target with those in
@@ -344,6 +427,9 @@ func relaunchNow() {
 	if launchedByDev() {
 		os.Exit(devRelaunchCode)
 	}
+	if runtime.GOOS == "darwin" && (relaunchUpdated() || openBundle()) {
+		return
+	}
 	// The executable the app started from, which an update may have
 	// replaced.
 	cmd := exec.Command(startExe, os.Args[1:]...)
@@ -355,6 +441,25 @@ func relaunchNow() {
 	if cmd.Start() == nil {
 		_ = cmd.Process.Release()
 	}
+}
+
+// openBundle starts the app bundle again through Launch Services, as the
+// Dock does, reporting whether it did. A child of this process would stay
+// in this instance's coalition, which has no app once this instance exits:
+// when an app that the new instance started quits, as one a terminal's
+// shell ran, loginwindow takes the coalition's other processes for that
+// app's and ends them with SIGTERM.
+func openBundle() bool {
+	bundle, err := installTarget()
+	if err != nil {
+		return false
+	}
+	// -n: this instance still runs, and would only be brought forward.
+	args := []string{"-n", bundle}
+	if len(os.Args) > 1 {
+		args = append(append(args, "--args"), os.Args[1:]...)
+	}
+	return exec.Command("/usr/bin/open", args...).Run() == nil
 }
 
 // cleanUpdateLeftovers removes what an update could not remove while the
@@ -383,7 +488,10 @@ func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "MyGo/"+Version+" "+App.Name()+"/"+App.Version())
+	// Not the app's name: GitHub's release assets come from a store that
+	// answers 400 to a User-Agent with bytes outside ASCII, as 云音乐, for
+	// every file its CDN has not cached yet.
+	req.Header.Set("User-Agent", "mygo-updater")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

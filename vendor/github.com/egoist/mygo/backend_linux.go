@@ -8,3 +8,9 @@ import (
 )
 
 func newBackend() platform.Backend { return linux.New() }
+
+func linkContentRules() { linux.LinkContentRules() }
+
+func linkNowPlaying() { linux.LinkNowPlaying() }
+
+func linkMenuIcons() { linux.LinkMenuIcons() }

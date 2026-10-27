@@ -41,6 +41,7 @@ func (*Backend) Screen() platform.Screen                                    { re
 func (*Backend) Theme() platform.Theme                                      { return theme{} }
 func (*Backend) Power() platform.Power                                      { return power{} }
 func (*Backend) Network() platform.Network                                  { return network{} }
+func (*Backend) NowPlaying() platform.NowPlaying                            { return nowPlaying{} }
 func (*Backend) Secrets() platform.Secrets                                  { return secrets{} }
 func (*Backend) NewTray(platform.TrayHandler) (platform.Tray, error)        { return nil, errUnsupported }
 func (*Backend) RegisterHotkey(int, string) error                           { return errUnsupported }
@@ -59,9 +60,12 @@ type app struct{}
 
 func (app) SetActivationPolicy(string)                        {}
 func (app) Activate()                                         {}
+func (app) AllowForeground()                                  {}
+func (app) WithActivationToken(_ string, fn func())           { fn() }
 func (app) Hide()                                             {}
 func (app) Unhide()                                           {}
 func (app) IsHidden() bool                                    { return false }
+func (app) IsActive() bool                                    { return false }
 func (app) SetBadge(string)                                   {}
 func (app) Badge() string                                     { return "" }
 func (app) Bounce(bool) int                                   { return 0 }
@@ -92,6 +96,9 @@ func (app) ListCookies(_ string, done func([]platform.Cookie, error)) {
 func (app) SetCookie(_ platform.Cookie, done func(error))       { done(platform.ErrUnsupported) }
 func (app) DeleteCookie(_ platform.CookieKey, done func(error)) { done(platform.ErrUnsupported) }
 func (app) ClearCookies(done func(error))                       { done(platform.ErrUnsupported) }
+func (app) CompileContentRules(_, _, _ string, done func(any, error)) {
+	done(nil, platform.ErrUnsupported)
+}
 
 type dialogs struct{}
 
@@ -157,6 +164,10 @@ func (power) Watch()                        {}
 func (power) KeepAwake(bool, string) func() { return func() {} }
 func (power) OnBattery() bool               { return false }
 func (power) IdleTime() time.Duration       { return 0 }
+
+type nowPlaying struct{}
+
+func (nowPlaying) Set(*platform.NowPlayingInfo) {}
 
 type network struct{}
 
