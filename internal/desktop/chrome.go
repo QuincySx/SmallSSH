@@ -20,6 +20,7 @@ type menuGroup struct {
 // Native menus and the workspace navigation share the same actions. Nothing here
 // intercepts terminal arrows, Ctrl+C, Ctrl+R, Tab or ordinary text input.
 func (a *app) menuGroups() []menuGroup {
+	zoomIn, zoomOut, zoomActual := zoomKeys()
 	closeKey := "Cmd+W"
 	if runtime.GOOS != "darwin" {
 		closeKey = "Ctrl+Shift+W"
@@ -61,6 +62,9 @@ func (a *app) menuGroups() []menuGroup {
 			{"工具面板放到底部", "", func() { a.setToolsDock(false) }},
 			{"工具面板放到右侧", "", func() { a.setToolsDock(true) }},
 			{"工具面板独立窗口", "", a.detachTools},
+			{"放大", zoomIn, func() { a.zoomBy(1) }},
+			{"缩小", zoomOut, func() { a.zoomBy(-1) }},
+			{"实际大小", zoomActual, a.zoomActual},
 		}},
 		{"security", "安全", []menuAction{
 			{"授权中心", "", func() { a.page = 3 }},

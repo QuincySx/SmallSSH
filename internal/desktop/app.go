@@ -146,6 +146,8 @@ type app struct {
 	inlineApproval, popupApproval *approvalPromptState
 	mainWindowReady               bool
 	applicationActive             bool
+	// zoom is the main window's content zoom; 0 means unset, which draws at 100%.
+	zoom                          float32
 	approvalAutoAttempted         map[string]bool
 	sessions                      []*session
 	serverStatuses                map[string]*serverStatusState
@@ -558,6 +560,9 @@ func wipe(b []byte) {
 }
 
 func (a *app) view(c *ui.Context) {
+	// Browser-like content zoom: MyGo lays the view out in a window 1/z its size
+	// and draws it z times larger, so text and glyphs stay sharp.
+	c.SetZoom(a.viewZoom())
 	defer a.queueUnlockAuthentication()
 	defer a.queueInlineApproval()
 	defer a.publishToolsState()

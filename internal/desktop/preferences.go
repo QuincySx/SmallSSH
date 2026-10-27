@@ -20,6 +20,9 @@ type layoutPreferences struct {
 	Sidebar            float32 `json:"sidebar"`
 	SidebarHidden      bool    `json:"sidebarHidden,omitempty"`
 	LocaleChoice       string  `json:"localeChoice,omitempty"`
+	// Zoom is the content zoom of the main window, 1 for 100%. Layout only: it
+	// says how large the interface is drawn, nothing about what is in it.
+	Zoom float32 `json:"zoom,omitempty"`
 }
 
 func (a *app) loadLayout() {
@@ -29,7 +32,7 @@ func (a *app) loadLayout() {
 	}
 	defer f.Close()
 	var p layoutPreferences
-	if json.NewDecoder(io.LimitReader(f, 8193)).Decode(&p) != nil || (p.Version != 1 && p.Version != 2) {
+	if json.NewDecoder(io.LimitReader(f, 8193)).Decode(&p) != nil || p.Version < 1 || p.Version > 3 {
 		return
 	}
 	a.toolsRight, a.toolsHidden = p.Right, p.Hidden
@@ -39,6 +42,7 @@ func (a *app) loadLayout() {
 		a.toolsRight = false
 	}
 	a.sidebarHidden = p.SidebarHidden
+	a.zoom = clampZoom(p.Zoom)
 	a.languageChoice = languageChoiceOrSystem(p.LocaleChoice)
 	if p.Tab >= 0 && p.Tab <= toolDiagnostics {
 		a.dock = p.Tab
@@ -63,8 +67,9 @@ func (a *app) saveLayout() error {
 	if e := localipc.Prepare(a.dir); e != nil {
 		return e
 	}
-	p := layoutPreferences{Version: 2, Right: a.toolsRight, Hidden: a.toolsHidden, Tab: a.dock,
-		TerminalShare: a.terminalShare, TerminalWidthShare: a.terminalWidthShare, Sidebar: a.sidebarWidth, SidebarHidden: a.sidebarHidden, LocaleChoice: a.languageChoice}
+	p := layoutPreferences{Version: 3, Right: a.toolsRight, Hidden: a.toolsHidden, Tab: a.dock,
+		TerminalShare: a.terminalShare, TerminalWidthShare: a.terminalWidthShare, Sidebar: a.sidebarWidth, SidebarHidden: a.sidebarHidden, LocaleChoice: a.languageChoice,
+		Zoom: a.viewZoom()}
 	f, e := os.CreateTemp(a.dir, ".layout-")
 	if e != nil {
 		return e
