@@ -1,17 +1,23 @@
+# 忽略规则
+
+只有两类，逐条理由与产物路径表见 [docs/DEVELOPMENT.md](../docs/DEVELOPMENT.md)：
+
+- **构建产物**：`build/`、`resources/<goos>-<goarch>/`。全部由 `go run ./tools build` 重建。
+- **运行数据**：保险库、审计、传输、开发进程状态。默认在仓库外的数据目录，这里兜底。
+
+`internal/systemauth/native-hashes.json` 与 `resources/THIRD_PARTY_NOTICES.txt` 也是构建生成的文件，但**提交进仓库**（原因见 docs/DEVELOPMENT.md），用 `go run ./tools build -check` 校验是否最新。
+
 /build/
-/dist/
+/resources/*-*/
 /.mygo/
-*.log
-.DS_Store
+
 vault.json
-audit.jsonl
-agent.sock
 vault.lock
 device-unlock.json
+audit.jsonl
+agent.sock
 transfers/
 qa-stop
-/resources/*/ssh-client
-/resources/*/ssh-client.exe
-/resources/*/biometric-helper
-/resources/*/libsmallssh-auth.dylib
-/resources/*/cli/
+
+*.log
+.DS_Store
