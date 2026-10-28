@@ -360,7 +360,10 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 		}
 		prefix = hex.EncodeToString(h.Sum(nil))
 	}
-	kind := "put-resume"
+	kind := "put"
+	if owner != nil || j.Bytes > 0 {
+		kind = "put-resume"
+	}
 	if j.Direction == "download" {
 		kind = "get-resume"
 	}
@@ -393,7 +396,7 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 			return e
 		}
 	}
-	if e = m.client.Wait(ctx, r.ID); e != nil {
+	if e = m.client.Wait(ctx, r.ID, ticket); e != nil {
 		return e
 	}
 	stream, e := m.client.Start(ctx, r.ID, ticket, 0, 0)

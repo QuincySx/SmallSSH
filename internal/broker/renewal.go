@@ -23,6 +23,9 @@ func (s *Server) checkRenewalTarget(op approval.Operation) error {
 // a different endpoint, permission, key or duration for a renewal.
 func (s *Server) renewSession(q Message) (Message, error) {
 	if q.Action == "renewalChallenge" {
+		if _, err := s.Approvals.GetForTicket(q.ID, q.Ticket); err != nil {
+			return Message{}, s.recordAuthorityFailure(approval.Operation{Kind: q.Action}, "", "invalid_authority", err)
+		}
 		attempt := approval.Operation{Kind: "renewalChallenge", Client: q.Operation.Client}
 		if previous, err := s.Approvals.SessionStatus(q.ID); err == nil {
 			attempt.Host = previous.Operation.Host

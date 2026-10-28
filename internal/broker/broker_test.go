@@ -48,7 +48,7 @@ func setup(t *testing.T) (client.Client, *testserver.Server) {
 		t.Fatal(e)
 	}
 	t.Cleanup(s.Close)
-	return client.Client{Dir: dir}, fixture
+	return client.Client{Dir: dir, Owner: s.Vault}, fixture
 }
 func request(t *testing.T, c client.Client, op approval.Operation) (approval.Request, string) {
 	t.Helper()

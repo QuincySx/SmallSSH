@@ -34,6 +34,14 @@ type UploadSession struct {
 }
 
 func (c *Client) PrepareUpload(ctx context.Context, p, id, expected string, size int64) (*UploadSession, error) {
+	return c.prepareUpload(ctx, p, id, expected, size, false)
+}
+
+func (c *Client) PrepareNewUpload(ctx context.Context, p, id, expected string, size int64) (*UploadSession, error) {
+	return c.prepareUpload(ctx, p, id, expected, size, true)
+}
+
+func (c *Client) prepareUpload(ctx context.Context, p, id, expected string, size int64, createOnly bool) (*UploadSession, error) {
 	if e := remotePath(p); e != nil {
 		return nil, e
 	}
@@ -53,6 +61,9 @@ func (c *Client) PrepareUpload(ctx context.Context, p, id, expected string, size
 		}
 	}()
 	if info, e := s.Lstat(p); e == nil {
+		if createOnly {
+			return nil, errors.New("新上传目标已存在，不会覆盖或复用")
+		}
 		if !info.Mode().IsRegular() || info.Size() != size {
 			return nil, errors.New("目标已存在且不同，续传不会覆盖")
 		}
@@ -76,7 +87,12 @@ func (c *Client) PrepareUpload(ctx context.Context, p, id, expected string, size
 	} else if !os.IsNotExist(e) {
 		return nil, e
 	}
-	info, e := s.Lstat(u.part)
+	var info os.FileInfo
+	if !createOnly {
+		info, e = s.Lstat(u.part)
+	} else {
+		e = os.ErrNotExist
+	}
 	if os.IsNotExist(e) {
 		u.file, e = s.OpenFile(u.part, os.O_RDWR|os.O_CREATE|os.O_EXCL)
 		if e == nil {

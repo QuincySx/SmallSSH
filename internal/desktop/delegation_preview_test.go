@@ -41,8 +41,10 @@ func TestDelegationApprovalSnapshotsWithoutWindows(t *testing.T) {
 				a.requests = []approval.Request{{ID: "demo-parent-authorization", Status: "pending", Expires: time.Date(2026, 10, 21, 12, 5, 0, 0, time.UTC), Operation: approval.Operation{Host: "demo", Endpoint: "deploy@192.0.2.10:22", HostFingerprint: "SHA256:DEMO_HOST_FINGERPRINT", Client: "演示 AI 工具", Kind: "grant", Grant: approval.GrantScope{PublicKey: base64.RawURLEncoding.EncodeToString(pub), Permission: permission, LifetimeSeconds: 7200, IdleSeconds: 900}}}}
 				tt := ui.NewTester(a.workspaceView, 1280, 900)
 				tt.SetDark(dark)
-				if !tt.HasText(approvalActionLabel(a.requests[0])) || !tt.HasText(a.requests[0].Operation.Grant.PairingCode()) {
-					t.Fatal("authorization controls missing")
+				for _, label := range []string{"允许", "不允许", "保险库主密码", a.requests[0].Operation.Grant.PairingCode()} {
+					if !tt.HasText(label) {
+						t.Fatal("authorization controls missing", label)
+					}
 				}
 				f, err := os.Create(filepath.Join(dir, fmt.Sprintf("delegation-%s.png", name)))
 				if err != nil {

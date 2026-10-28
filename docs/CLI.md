@@ -37,9 +37,12 @@ smallssh --client '我的 AI 助手' session request server-id my-ai.json read 2
 smallssh --session my-ai.json ls server-id /srv
 smallssh session status my-ai.json
 smallssh session revoke my-ai.json
+
+# 可进一步限定文件根目录，选项须放在连接 ID 前面
+smallssh session request --read-root /srv/project --write-root /srv/project server-id project.json full 30m 10m
 ```
 
-首次批准需要核对申请端和所有者界面的配对码、服务器、权限与期限。默认只读；`full` 提供读写能力，仍受每台服务器的 AI 访问和关键路径策略限制。默认保护模式不开放任意命令或终端；所有者明确关闭保护并确认风险后才开放该 SSH 账号完整能力。会话文件只存于代理私有目录；它代表该客户端的委托权限，不含 SSH 凭据。父授权最长 8 小时，子操作最多 5 分钟，锁定 / 退出 / 撤销后失效。详情见 [客户端会话与子授权](DELEGATION.md)。
+首次批准需要核对申请端和所有者界面的配对码、服务器、权限与期限。默认只读；`full` 提供读写能力，仍受每台服务器的 AI 访问和关键路径策略限制。默认保护模式拒绝保护路径的读取、下载和修改，并且不开放任意命令或终端；所有者明确关闭保护并确认风险后才开放该 SSH 账号完整能力。会话文件只存于代理私有目录；它代表该客户端的委托权限，不含 SSH 凭据。父授权最长 8 小时，子操作最多 5 分钟，锁定 / 退出 / 撤销后失效。详情见 [客户端会话与子授权](DELEGATION.md)。
 
 默认关键路径保护会直接拒绝任意命令和终端；关闭保护后的普通命令会申请授权并等待，所有者批准后才连接服务器。使用 `--session` 时由代理核对既有范围并签发短期票据。申请方标签是调用方自报信息，**不代表经过验证的进程身份**。
 
@@ -57,6 +60,8 @@ smallssh approve REQUEST_ID
 smallssh deny REQUEST_ID
 smallssh revoke REQUEST_ID
 ```
+
+`hosts/pending` 先验证所有者身份；普通调用方只能用自己的票据查询自己的请求。批准、拒绝和撤销先解锁并展示具体请求，再从控制终端输入 `yes` 确认。受保护目录内的文件读取会直接拒绝，新上传使用排他创建，真正续传仍在保护模式中禁用。
 
 主密码只从人类使用的控制终端读取，不接受密码参数、环境变量或管道输入。`host add` 的离线编辑需要先退出代理；桌面保存连接通过代理完成并撤销旧授权。
 

@@ -25,7 +25,11 @@ func grantFixture(t *testing.T, permission string) (*Manager, Request, string, e
 	return m, r, ticket, key
 }
 func grantedOperation(r Request, kind string) Operation {
-	return Operation{Host: r.Operation.Host, Endpoint: r.Operation.Endpoint, HostFingerprint: r.Operation.HostFingerprint, Client: "same label is not authority", Kind: kind, Path: "/example"}
+	op := Operation{Host: r.Operation.Host, Endpoint: r.Operation.Endpoint, HostFingerprint: r.Operation.HostFingerprint, Client: "same label is not authority", Kind: kind}
+	if kind != "monitor" && kind != "shell" && kind != "exec" && kind != "grant" {
+		op.Path = "/example"
+	}
+	return op
 }
 func delegated(t *testing.T, m *Manager, parent Request, key ed25519.PrivateKey, kind string) (Request, string) {
 	t.Helper()
@@ -114,7 +118,7 @@ func TestDelegationReadScopeTargetAndTranscriptCannotExpand(t *testing.T) {
 	for _, kind := range []string{"list", "file-info", "get", "get-resume", "monitor"} {
 		op := grantedOperation(p, kind)
 		if kind == "get-resume" {
-			op.TransferID = "fixture"
+			op.TransferID = "abcdefghijklmnopqrstuvwx"
 		}
 		c, err := m.DelegationChallenge(p.ID, op, time.Minute)
 		if err != nil {

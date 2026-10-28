@@ -45,7 +45,7 @@ func TestCLISessionRequestApproveUseAndRevoke(t *testing.T) {
 	defer s.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	c := client.Client{Dir: dir}
+	c := client.Client{Dir: dir, Owner: s.Vault}
 	done := make(chan error, 1)
 	go func() {
 		_, err := sessionCommand(ctx, c, "CLI fixture", []string{"request", "fixture", "fixture.json", "full", "2m", "1m"})
@@ -150,5 +150,74 @@ wait:
 	os.Args = []string{"ssh-client", "--data-dir", dir, "session", "status", "fixture.json"}
 	if code, err := run(); err != nil || code != 0 {
 		t.Fatal("stale environment blocked session status", code, err)
+	}
+}
+
+func TestCLIScopedSessionPersistsExactlyTheApprovedRoots(t *testing.T) {
+	dir, err := os.MkdirTemp("", "cli-roots-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	if err = localipc.Prepare(dir); err != nil {
+		t.Fatal(err)
+	}
+	f := testserver.New(t)
+	v, err := vault.New([]byte("synthetic scoped CLI fixture password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = v.Put(f.Profile()); err != nil {
+		t.Fatal(err)
+	}
+	s, err := broker.OpenSession(dir, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	c := client.Client{Dir: dir}
+	owner := client.Client{Dir: dir, Owner: s.Vault}
+	done := make(chan error, 1)
+	go func() {
+		_, err := sessionCommand(ctx, c, "scoped CLI fixture", []string{"request", "--read-root", "/srv/read", "--write-root", "/srv/write", "fixture", "scoped.json", "full", "2m", "1m"})
+		done <- err
+	}()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	approved := false
+	for !approved {
+		select {
+		case err := <-done:
+			t.Fatal("request ended before approval", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-tick.C:
+			page, err := owner.Call(ctx, broker.Message{Action: "pending"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range page.Requests {
+				if r.Operation.Grant.ReadRoot != "/srv/read" || r.Operation.Grant.WriteRoot != "/srv/write" {
+					t.Fatal("CLI roots changed before approval")
+				}
+				if err = owner.DecideReviewedWithOwner(ctx, r, true, false, s.Vault); err != nil {
+					t.Fatal(err)
+				}
+				approved = true
+			}
+		}
+	}
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	d, err := client.ReadDelegation("scoped.json", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if d.ReadRoot != "/srv/read" || d.WriteRoot != "/srv/write" {
+		t.Fatal("saved roots differ from approved scope")
 	}
 }

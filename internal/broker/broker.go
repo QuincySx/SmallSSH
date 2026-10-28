@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"sshclient/internal/accesspolicy"
@@ -27,6 +28,10 @@ import (
 
 // Message is the local wire protocol. Credentials are never response fields.
 type Message struct {
+	Challenge     string                        `json:"challenge,omitempty"`
+	After         string                        `json:"after,omitempty"`
+	Next          string                        `json:"next,omitempty"`
+	Limit         int                           `json:"limit,omitempty"`
 	AuditQuery    *auditlog.Query               `json:"auditQuery,omitempty"`
 	AuditPage     *auditlog.Page                `json:"auditPage,omitempty"`
 	Renewal       *approval.RenewalChallenge    `json:"renewal,omitempty"`
@@ -88,6 +93,7 @@ type Server struct {
 	monitorClosed  bool
 	monitorWG      sync.WaitGroup
 	audit          *audit
+	auditFault     atomic.Bool
 }
 
 // Open takes exclusive ownership of the vault until Close. The caller reads the
@@ -207,6 +213,13 @@ func (s *Server) handle(c net.Conn) {
 		}
 		_ = w.Send(Message{Action: "error", Error: e.Error(), ErrorCode: code})
 	}
+	if s.auditFault.Load() {
+		switch q.Action {
+		case "request", "ownerRequest", "decide", "delegate", "renewSession", "run", "profileChange", "profilePut", "profileDetails", "profileDelete":
+			fail(errAuditUnavailable)
+			return
+		}
+	}
 	switch q.Action {
 	case "renewalChallenge", "renewSession":
 		s.ownerMu.Lock()
@@ -218,7 +231,7 @@ func (s *Server) handle(c net.Conn) {
 		}
 		_ = w.Send(result)
 	case "sessionStatus":
-		r, e := s.Approvals.SessionStatus(q.ID)
+		r, e := s.queryRequest(q)
 		if e != nil {
 			fail(e)
 			return
@@ -236,6 +249,10 @@ func (s *Server) handle(c net.Conn) {
 		q.Operation.HostFingerprint = p.Fingerprint
 		if e = s.checkAutomation(p, q.Operation, q.ID); e != nil {
 			fail(e)
+			return
+		}
+		if _, e := s.Approvals.GetForTicket(q.ID, q.Ticket); e != nil {
+			fail(s.recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e))
 			return
 		}
 		challenge, e := s.Approvals.DelegationChallenge(q.ID, q.Operation, time.Duration(q.TTL)*time.Second)
@@ -275,6 +292,10 @@ func (s *Server) handle(c net.Conn) {
 		}
 		_ = w.Send(Message{Request: &r, Ticket: t})
 	case "probeHost":
+		if !s.ownerQuery(q) {
+			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
+			return
+		}
 		ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
 		defer cancel()
 		watch := context.AfterFunc(ctx, func() { c.Close() })
@@ -288,6 +309,10 @@ func (s *Server) handle(c net.Conn) {
 		}
 		_ = w.Send(Message{HostIdentity: &identity})
 	case "agentIdentities":
+		if !s.ownerQuery(q) {
+			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
+			return
+		}
 		keys, e := sshconn.AgentIdentities(s.ctx)
 		if e != nil {
 			fail(e)
@@ -489,9 +514,18 @@ func (s *Server) handle(c net.Conn) {
 		s.Approvals.InvalidateHost(q.Target)
 		_ = w.Send(Message{Action: "ok"})
 	case "hosts":
+		if !s.ownerQuery(q) {
+			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
+			return
+		}
 		_ = w.Send(Message{Hosts: s.Vault.Names(), Connections: s.Vault.Summaries()})
 	case "pending":
-		_ = w.Send(Message{Requests: s.Approvals.List()})
+		page, e := s.pendingPage(q)
+		if e != nil {
+			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", e))
+			return
+		}
+		_ = w.Send(page)
 	case "request":
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
@@ -519,10 +553,7 @@ func (s *Server) handle(c net.Conn) {
 		}
 		_ = w.Send(Message{Request: &r, Ticket: t})
 	case "status":
-		r, e := s.Approvals.Get(q.ID)
-		if e != nil {
-			r, e = s.Approvals.SessionStatus(q.ID)
-		}
+		r, e := s.queryRequest(q)
 		if e != nil {
 			fail(e)
 			return
@@ -599,6 +630,11 @@ func (d dataWriter) Write(p []byte) (int, error) {
 func (s *Server) run(w *localipc.Wire, q Message) {
 	fail := func(e error) { _ = w.Send(Message{Action: "error", Error: e.Error()}) }
 	s.ownerMu.Lock()
+	if s.auditFault.Load() {
+		s.ownerMu.Unlock()
+		fail(errAuditUnavailable)
+		return
+	}
 	ctx, op, cancel, e := s.Approvals.Start(s.ctx, q.ID, q.Ticket)
 	if e != nil {
 		s.ownerMu.Unlock()
@@ -620,6 +656,15 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		return
 	}
 	p, e := s.Vault.Profile(op.Host)
+	var scope approval.GrantScope
+	if e == nil && r.ParentID != "" {
+		parent, err := s.Approvals.Get(r.ParentID)
+		if err != nil {
+			e = err
+		} else {
+			scope = parent.Operation.Grant
+		}
+	}
 	if e == nil && !r.OwnerIssued {
 		e = s.checkAutomation(p, op, r.ParentID)
 	}
@@ -634,7 +679,38 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		fail(e)
 		return
 	}
-	defer s.auditRequest("ended", &r)
+	ended := false
+	finish := func(result Message) error {
+		if ended {
+			return errors.New("操作已结束")
+		}
+		ended = true
+		outcome := "success"
+		if result.Action == "error" || result.ExitCode != 0 {
+			outcome = "failed"
+		}
+		if ctx.Err() != nil {
+			outcome = "cancelled"
+		}
+		var code *int
+		if result.Action == "done" {
+			code = &result.ExitCode
+		}
+		if err := s.auditCompletion(&r, outcome, code); err != nil {
+			return err
+		}
+		return w.Send(result)
+	}
+	fail = func(err error) { _ = finish(Message{Action: "error", Error: err.Error()}) }
+	defer func() {
+		if !ended {
+			outcome := "unknown"
+			if ctx.Err() != nil {
+				outcome = "cancelled"
+			}
+			_ = s.auditCompletion(&r, outcome, nil)
+		}
+	}()
 	stop := context.AfterFunc(ctx, func() { w.Conn.Close() })
 	defer stop()
 	s.ownerMu.Unlock()
@@ -666,6 +742,23 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 				return
 			}
 		}
+		if paths := accesspolicy.ReadPaths(op); len(paths) > 0 {
+			lockWrites()
+			if e = c.CheckProtectedReadPaths(ctx, paths, p.Policy.Paths()); e != nil {
+				fail(s.recordRefusal(op, r.ParentID, "protected_path", p.Name, e))
+				return
+			}
+		}
+	}
+	if scope.ReadRoot != "" || scope.WriteRoot != "" {
+		lockWrites()
+		if e = c.CheckAllowedPaths(ctx, accesspolicy.ReadPaths(op), scope.ReadRoot); e == nil {
+			e = c.CheckAllowedPaths(ctx, accesspolicy.MutationPaths(op), scope.WriteRoot)
+		}
+		if e != nil {
+			fail(s.recordRefusal(op, r.ParentID, "scope_denied", p.Name, e))
+			return
+		}
 	}
 	var up *sshconn.UploadSession
 	var down *sshconn.DownloadSession
@@ -687,9 +780,13 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		}
 		defer shell.Close()
 	}
-	if op.Kind == "put-resume" {
+	if op.Kind == "put-resume" || op.Kind == "put" && op.TransferID != "" {
 		lockWrites()
-		up, e = c.PrepareUpload(ctx, op.Path, op.TransferID, op.ContentHash, op.Size)
+		if op.Kind == "put" {
+			up, e = c.PrepareNewUpload(ctx, op.Path, op.TransferID, op.ContentHash, op.Size)
+		} else {
+			up, e = c.PrepareUpload(ctx, op.Path, op.TransferID, op.ContentHash, op.Size)
+		}
 		if e != nil {
 			fail(e)
 			return
@@ -715,14 +812,18 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 	}
 	switch op.Kind {
 	case "docker-logs", "compose-plan", "compose-update":
-		if err := s.runDockerWork(ctx, c, w, op); err != nil {
+		if err := s.runDockerWork(ctx, c, w, op, finish); err != nil {
 			fail(err)
 		}
 	case "file-info", "file-attributes":
 		var info fileattrs.Info
 		var err error
 		if op.Kind == "file-info" {
-			info, err = c.FileInfo(ctx, op.Path)
+			if r.OwnerIssued {
+				info, err = c.FileInfo(ctx, op.Path)
+			} else {
+				info, err = c.FileInfoBasic(ctx, op.Path)
+			}
 		} else {
 			lockWrites()
 			info, err = c.SetFileAttributes(ctx, op.Path, op.Attributes)
@@ -736,7 +837,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			fail(err)
 			return
 		}
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	case "mkdir", "rename", "remove", "chmod":
 		lockWrites()
 		e := c.Mutate(ctx, op.Kind, op.Path, op.Destination, op.Mode)
@@ -744,7 +845,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			fail(e)
 			return
 		}
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	case "monitor":
 		if e := s.streamSharedMonitor(ctx, c, p.ID, p.Fingerprint, w); e != nil && ctx.Err() == nil {
 			fail(e)
@@ -762,7 +863,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		if _, e = (dataWriter{w, "stderr"}).Write([]byte(r.Stderr)); e != nil {
 			return
 		}
-		_ = w.Send(Message{Action: "done", ExitCode: r.ExitCode})
+		_ = finish(Message{Action: "done", ExitCode: r.ExitCode})
 	case "list":
 		files, e := c.List(ctx, op.Path)
 		if e != nil {
@@ -777,19 +878,19 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			}
 			files = files[n:]
 		}
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	case "get-resume":
 		if e = down.Copy(dataWriter{w, "data"}); e != nil {
 			fail(e)
 			return
 		}
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	case "get":
 		if e = c.Download(ctx, op.Path, dataWriter{w, "data"}); e != nil {
 			fail(e)
 			return
 		}
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	case "put", "replace", "put-resume":
 		lockWrites()
 		reader, writer := io.Pipe()
@@ -817,7 +918,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 				}
 			}
 		}()
-		if op.Kind == "put-resume" {
+		if up != nil {
 			e = up.Finish(reader)
 		} else if op.Kind == "replace" {
 			var backup string
@@ -832,7 +933,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			fail(e)
 			return
 		}
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	case "shell", "docker-terminal":
 		sh := shell
 		finishStatus := func() {}
@@ -904,7 +1005,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			return
 		}
 		finishStatus()
-		_ = w.Send(Message{Action: "done"})
+		_ = finish(Message{Action: "done"})
 	}
 }
 

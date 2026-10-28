@@ -21,6 +21,8 @@ import (
 // Delegation holds only this client's restricted authority. It is never a
 // password-manager session or a vault/SSH key. Treat a saved file as sensitive.
 type Delegation struct {
+	ReadRoot   string `json:"readRoot,omitempty"`
+	WriteRoot  string `json:"writeRoot,omitempty"`
 	ParentID   string `json:"parentId"`
 	Directory  string `json:"directory"`
 	Key        []byte `json:"key"`
@@ -31,11 +33,15 @@ type Delegation struct {
 }
 
 func (c Client) RequestSession(ctx context.Context, host, label, permission string, lifetime, idle time.Duration) (approval.Request, *Delegation, error) {
+	return c.RequestScopedSession(ctx, host, label, permission, lifetime, idle, "", "")
+}
+
+func (c Client) RequestScopedSession(ctx context.Context, host, label, permission string, lifetime, idle time.Duration, readRoot, writeRoot string) (approval.Request, *Delegation, error) {
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		return approval.Request{}, nil, err
 	}
-	scope := approval.GrantScope{PublicKey: base64.RawURLEncoding.EncodeToString(pub), Permission: permission, LifetimeSeconds: int(lifetime / time.Second), IdleSeconds: int(idle / time.Second)}
+	scope := approval.GrantScope{ReadRoot: readRoot, WriteRoot: writeRoot, PublicKey: base64.RawURLEncoding.EncodeToString(pub), Permission: permission, LifetimeSeconds: int(lifetime / time.Second), IdleSeconds: int(idle / time.Second)}
 	if err = scope.Validate(); err != nil {
 		return approval.Request{}, nil, err
 	}
@@ -47,7 +53,7 @@ func (c Client) RequestSession(ctx context.Context, host, label, permission stri
 	if err != nil {
 		return approval.Request{}, nil, err
 	}
-	return r, &Delegation{ParentID: r.ID, Directory: dir, Key: key, Ticket: t, Permission: permission, Host: host, PublicKey: scope.PublicKey}, nil
+	return r, &Delegation{ReadRoot: readRoot, WriteRoot: writeRoot, ParentID: r.ID, Directory: dir, Key: key, Ticket: t, Permission: permission, Host: host, PublicKey: scope.PublicKey}, nil
 }
 
 func (d *Delegation) Close() {
@@ -59,6 +65,9 @@ func (d *Delegation) Close() {
 }
 
 func (d *Delegation) Validate(dir string) error {
+	if err := (approval.GrantScope{ReadRoot: d.ReadRoot, WriteRoot: d.WriteRoot, PublicKey: d.PublicKey, Permission: d.Permission, LifetimeSeconds: 60, IdleSeconds: 60}).Validate(); err != nil {
+		return err
+	}
 	abs, err := filepath.Abs(dir)
 	if err != nil || abs != d.Directory || len(d.Key) != ed25519.PrivateKeySize || d.ParentID == "" || d.Host == "" || (d.Permission != "read" && d.Permission != "full") {
 		return errors.New("客户端会话文件与当前代理不匹配或已损坏")
@@ -79,14 +88,14 @@ func (c Client) RequestDelegated(ctx context.Context, op approval.Operation, ttl
 	}
 	// Submit even a cross-host attempt to the broker: it must be denied and
 	// recorded there, rather than disappearing in local client validation.
-	r, err := c.Call(ctx, broker.Message{Action: "delegationChallenge", ID: d.ParentID, Operation: op, TTL: int(min(ttl, 5*time.Minute) / time.Second)})
+	r, err := c.Call(ctx, broker.Message{Action: "delegationChallenge", ID: d.ParentID, Ticket: d.Ticket, Operation: op, TTL: int(min(ttl, 5*time.Minute) / time.Second)})
 	if errors.Is(err, approval.ErrSessionExpired) || errors.Is(err, approval.ErrSessionRenewing) {
 		if err = c.renewDelegation(ctx, d, op); err != nil {
 			return approval.Request{}, "", err
 		}
 		// No operation has started yet. Retry only its authorization challenge,
 		// never replay a command or file write that was already submitted.
-		r, err = c.Call(ctx, broker.Message{Action: "delegationChallenge", ID: d.ParentID, Operation: op, TTL: int(min(ttl, 5*time.Minute) / time.Second)})
+		r, err = c.Call(ctx, broker.Message{Action: "delegationChallenge", ID: d.ParentID, Ticket: d.Ticket, Operation: op, TTL: int(min(ttl, 5*time.Minute) / time.Second)})
 	}
 	if err != nil {
 		return approval.Request{}, "", err
@@ -167,7 +176,7 @@ func ReadDelegation(path, dir string) (*Delegation, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !lst.Mode().IsRegular() || lst.Size() > 8192 || runtime.GOOS != "windows" && lst.Mode().Perm()&0077 != 0 {
+	if !lst.Mode().IsRegular() || lst.Size() > 32768 || runtime.GOOS != "windows" && lst.Mode().Perm()&0077 != 0 {
 		return nil, errors.New("会话文件必须是仅当前用户可读写的普通文件")
 	}
 	f, err := os.Open(path)
@@ -176,10 +185,10 @@ func ReadDelegation(path, dir string) (*Delegation, error) {
 	}
 	defer f.Close()
 	st, err := f.Stat()
-	if err != nil || !os.SameFile(lst, st) || !st.Mode().IsRegular() || st.Size() > 8192 || runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0 {
+	if err != nil || !os.SameFile(lst, st) || !st.Mode().IsRegular() || st.Size() > 32768 || runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0 {
 		return nil, errors.New("会话文件在读取期间已变化")
 	}
-	b, err := io.ReadAll(io.LimitReader(f, 8193))
+	b, err := io.ReadAll(io.LimitReader(f, 32769))
 	defer func() {
 		for i := range b {
 			b[i] = 0
@@ -189,7 +198,7 @@ func ReadDelegation(path, dir string) (*Delegation, error) {
 		return nil, err
 	}
 	var d Delegation
-	if len(b) > 8192 || json.Unmarshal(b, &d) != nil {
+	if len(b) > 32768 || json.Unmarshal(b, &d) != nil {
 		return nil, errors.New("会话文件格式无效")
 	}
 	if err = d.Validate(dir); err != nil {

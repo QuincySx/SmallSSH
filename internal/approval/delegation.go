@@ -5,12 +5,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"path"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // GrantScope never contains a provider session or an SSH credential. PublicKey
 // identifies possession of a client key, not a verified application brand.
 type GrantScope struct {
+	ReadRoot        string `json:"readRoot,omitempty"`
+	WriteRoot       string `json:"writeRoot,omitempty"`
 	PublicKey       string `json:"publicKey"`
 	Permission      string `json:"permission"`
 	LifetimeSeconds int    `json:"lifetimeSeconds"`
@@ -18,6 +24,14 @@ type GrantScope struct {
 }
 
 func (s GrantScope) Validate() error {
+	for _, root := range []string{s.ReadRoot, s.WriteRoot} {
+		if root != "" && (len(root) > 4096 || !utf8.ValidString(root) || !path.IsAbs(root) || path.Clean(root) != root || strings.ContainsFunc(root, unicode.IsControl)) {
+			return errors.New("授权根目录需为规范绝对路径")
+		}
+	}
+	if s.Permission == "read" && s.WriteRoot != "" {
+		return errors.New("只读授权不能包含写入根目录")
+	}
 	key, err := base64.RawURLEncoding.DecodeString(s.PublicKey)
 	if err != nil || len(key) != ed25519.PublicKeySize || (s.Permission != "read" && s.Permission != "full") || s.LifetimeSeconds < 60 || s.LifetimeSeconds > 8*60*60 || s.IdleSeconds < 60 || s.IdleSeconds > 30*60 || s.IdleSeconds > s.LifetimeSeconds {
 		return errors.New("会话授权需指定客户端公钥、只读或完整权限、1分钟至8小时期限和不超过30分钟的闲置期限")
@@ -52,6 +66,9 @@ func grantAllows(parent Request, op Operation) bool {
 	if parent.Operation.Kind != "grant" || parent.Status != "approved" || op.Grant != (GrantScope{}) || op.Kind == "grant" || op.Host != parent.Operation.Host || op.Endpoint != parent.Operation.Endpoint || op.HostFingerprint != parent.Operation.HostFingerprint {
 		return false
 	}
+	if scope := parent.Operation.Grant; scope.ReadRoot != "" || scope.WriteRoot != "" {
+		return scope.allowsPath(op)
+	}
 	if parent.Operation.Grant.Permission == "full" {
 		return true
 	}
@@ -62,7 +79,26 @@ func grantAllows(parent Request, op Operation) bool {
 	return false
 }
 
+func WithinRoot(root, target string) bool {
+	return root != "" && path.IsAbs(target) && path.Clean(target) == target && !strings.ContainsFunc(target, unicode.IsControl) && (target == root || strings.HasPrefix(target, strings.TrimSuffix(root, "/")+"/"))
+}
+
+func (s GrantScope) allowsPath(op Operation) bool {
+	switch op.Kind {
+	case "list", "file-info", "get", "get-resume":
+		return WithinRoot(s.ReadRoot, op.Path)
+	case "put", "replace", "mkdir", "remove", "rename":
+		return s.Permission == "full" && op.Path != s.WriteRoot && WithinRoot(s.WriteRoot, op.Path) && (op.Kind != "rename" || op.Destination != s.WriteRoot && WithinRoot(s.WriteRoot, op.Destination))
+	}
+	// Arbitrary commands, existing-inode writes and status/log reads cannot be
+	// confined to a file root over SFTP. They require a separate broad grant.
+	return false
+}
+
 func (m *Manager) DelegationChallenge(parentID string, op Operation, ttl time.Duration) (DelegationChallenge, error) {
+	if err := validateFields(op); err != nil {
+		return DelegationChallenge{}, err
+	}
 	if len(op.Command) > 32768 || len(op.Path) > 4096 || len(op.Destination) > 4096 || len(op.Client) > 128 || len(op.Host) > 128 {
 		return DelegationChallenge{}, errors.New("子授权操作字段超过上限")
 	}

@@ -14,13 +14,14 @@ func TestDefaultPolicyLimits(t *testing.T) {
 		{Kind: "put", Path: "/etc/hosts"}, {Kind: "remove", Path: "/usr/bin/tool"},
 		{Kind: "rename", Path: "/srv/safe", Destination: "/etc/new"},
 		{Kind: "mkdir", Path: "/"}, {Kind: "replace", Path: "/etc"},
+		{Kind: "list", Path: "/etc"}, {Kind: "get", Path: "/etc/hosts"}, {Kind: "file-info", Path: "/root/key"}, {Kind: "get-resume", Path: "/home/user/key"},
 	} {
 		if err := p.Check(op); !errors.Is(err, ErrProtected) {
 			t.Errorf("%+v: %v", op, err)
 		}
 	}
 	for _, kind := range []string{"exec", "shell", "docker-terminal", "compose-update", "chmod", "file-attributes", "put-resume", "unknown"} {
-		if err := p.Check(approval.Operation{Kind: kind, Path: "/srv/safe"}); !errors.Is(err, ErrUncontrolled) {
+		if err := p.Check(approval.Operation{Kind: kind, Path: "/srv/safe"}); !errors.Is(err, ErrUncontrolled) && !errors.Is(err, ErrCommand) {
 			t.Errorf("%s: %v", kind, err)
 		}
 	}
@@ -28,7 +29,7 @@ func TestDefaultPolicyLimits(t *testing.T) {
 		{Kind: "mkdir", Path: "/etc2"}, {Kind: "put", Path: "/srv/safe"},
 		{Kind: "replace", Path: "/srv/safe"}, {Kind: "remove", Path: "/srv/safe"},
 		{Kind: "rename", Path: "/srv/a", Destination: "/srv/b"},
-		{Kind: "list", Path: "/etc"}, {Kind: "get", Path: "/etc/hosts"},
+		{Kind: "list", Path: "/"}, {Kind: "get", Path: "/srv/value"},
 		{Kind: "monitor"}, {Kind: "docker-logs"}, {Kind: "compose-plan"}, {Kind: "grant"},
 	} {
 		if err := p.Check(op); err != nil {

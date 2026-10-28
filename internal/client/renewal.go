@@ -10,12 +10,12 @@ import (
 )
 
 func (d *Delegation) renewalScopeMatches(op approval.Operation, requested approval.Operation) bool {
-	return op.Kind == "grant" && op.Host == d.Host && op.Grant.PublicKey == d.PublicKey && op.Grant.Permission == d.Permission && op.Grant.Validate() == nil &&
+	return op.Kind == "grant" && op.Host == d.Host && op.Grant.PublicKey == d.PublicKey && op.Grant.Permission == d.Permission && op.Grant.ReadRoot == d.ReadRoot && op.Grant.WriteRoot == d.WriteRoot && op.Grant.Validate() == nil &&
 		(requested.Endpoint == "" || requested.Endpoint == op.Endpoint) && (requested.HostFingerprint == "" || requested.HostFingerprint == op.HostFingerprint)
 }
 
 func (c Client) renewDelegation(ctx context.Context, d *Delegation, op approval.Operation) error {
-	r, err := c.Call(ctx, broker.Message{Action: "renewalChallenge", ID: d.ParentID})
+	r, err := c.Call(ctx, broker.Message{Action: "renewalChallenge", ID: d.ParentID, Ticket: d.Ticket})
 	if err != nil {
 		return err
 	}
@@ -37,7 +37,7 @@ func (c Client) renewDelegation(ctx context.Context, d *Delegation, op approval.
 		if c.OnSessionRenewal != nil {
 			c.OnSessionRenewal(*r.Request)
 		}
-		return c.Wait(ctx, d.ParentID)
+		return c.Wait(ctx, d.ParentID, d.Ticket)
 	}
 	if r.Request.Status != "approved" {
 		return approval.ErrDenied

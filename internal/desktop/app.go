@@ -132,6 +132,7 @@ type app struct {
 	online, busy, create          bool
 	generation                    int
 	epoch                         atomic.Uint64
+	queryOwner                    atomic.Pointer[vault.Session]
 	pass, confirm, status         string
 	unlockError                   string
 	unlockState                   *unlockState
@@ -311,6 +312,7 @@ func (a *app) isActive() bool {
 }
 
 func (a *app) lock() {
+	a.queryOwner.Store(nil)
 	a.disposeUnlockState()
 	a.closeApprovalAuthentication()
 	a.closeServerNotes()
@@ -501,9 +503,13 @@ func (a *app) poll() {
 			return
 		case <-t.C:
 			epoch := a.epoch.Load()
+			owner := a.queryOwner.Load()
+			if owner == nil {
+				continue
+			}
 			ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
-			h, e := a.client.Call(ctx, broker.Message{Action: "hosts"})
-			p, e2 := a.client.Call(ctx, broker.Message{Action: "pending"})
+			h, e := a.client.CallWithOwner(ctx, broker.Message{Action: "hosts"}, owner)
+			p, e2 := a.client.CallWithOwner(ctx, broker.Message{Action: "pending"}, owner)
 			cancel()
 			if e != nil || e2 != nil {
 				continue
@@ -639,6 +645,9 @@ func (a *app) operationContext() context.Context {
 	return context.Background()
 }
 func (a *app) startUnlockedSession() {
+	if a.server != nil {
+		a.queryOwner.Store(a.server.Vault)
+	}
 	if a.sessionCancel != nil {
 		a.sessionCancel()
 	}

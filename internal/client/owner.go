@@ -21,9 +21,9 @@ func (c Client) Decide(ctx context.Context, id string, allow, revoke bool, pass 
 }
 
 func (c Client) DecideWithOwner(ctx context.Context, id string, allow, revoke bool, v *vault.Session) error {
-	r, e := c.Call(ctx, broker.Message{Action: "status", ID: id})
+	r, e := c.CallWithOwner(ctx, broker.Message{Action: "status", ID: id}, v)
 	if e != nil && revoke {
-		r, e = c.Call(ctx, broker.Message{Action: "sessionStatus", ID: id})
+		r, e = c.CallWithOwner(ctx, broker.Message{Action: "sessionStatus", ID: id}, v)
 	}
 	if e != nil {
 		return e
@@ -118,11 +118,24 @@ func Describe(r approval.Request) string {
 			header = "会话已自然过期 · 按原服务器与权限申请续期\n"
 		}
 		permission := "只读：目录、文件下载和固定状态采样"
+		if o.PathProtection {
+			permission += "；保护路径不可读取"
+		}
 		if o.Grant.Permission == "full" {
 			permission = "完整：此 SSH 账号的全部权限，包括任意命令与文件写入"
 			if o.PathProtection {
 				permission = "读写：受服务器路径保护限制，不开放任意命令、终端、属性或续传写入"
 			}
+		}
+		if o.Grant.ReadRoot != "" || o.Grant.WriteRoot != "" {
+			readRoot, writeRoot := o.Grant.ReadRoot, o.Grant.WriteRoot
+			if readRoot == "" {
+				readRoot = "不开放"
+			}
+			if writeRoot == "" {
+				writeRoot = "不开放"
+			}
+			permission = fmt.Sprintf("限定目录文件操作；读取根目录：%q；写入根目录：%q；不含命令、终端、状态采样或容器日志", readRoot, writeRoot)
 		}
 		r.Operation.Kind = "客户端会话"
 		return header + fmt.Sprintf("会话权限: %s\n配对码（与申请端核对）: %s\n最长使用: %s；闲置: %s\n", permission, o.Grant.PairingCode(), time.Duration(o.Grant.LifetimeSeconds)*time.Second, time.Duration(o.Grant.IdleSeconds)*time.Second) + Describe(r)

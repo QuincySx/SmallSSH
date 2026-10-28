@@ -82,7 +82,7 @@ func dockerUIFixture(t *testing.T) (*app, *testdocker.Fixture, chan func()) {
 	t.Cleanup(server.Close)
 	updates := make(chan func(), 256)
 	a := managementApp()
-	a.ctx, a.dir, a.server, a.client = ctx, dir, server, client.Client{Dir: dir}
+	a.ctx, a.dir, a.server, a.client = ctx, dir, server, client.Client{Dir: dir, Owner: server.Vault}
 	a.dispatch = func(fn func()) { updates <- fn }
 	a.dock, a.diagnosticTab = toolDiagnostics, 4
 	p := ssh.Profile()

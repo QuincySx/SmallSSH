@@ -306,3 +306,54 @@ func TestSystemApprovalReasonNamesAccessAndServerWithoutClaimedIdentity(t *testi
 		t.Fatal("unbounded OS prompt", got)
 	}
 }
+
+func TestScopedRootsAndReadProtectionAreVisibleInBothReviewSurfaces(t *testing.T) {
+	a, r := reviewFixture("read")
+	r.Operation.PathProtection = true
+	if _, _, caution := approvalPermission(r); caution != "保护路径不可读取；其余路径仍受账户权限限制" {
+		t.Fatal("read protection was hidden", caution)
+	}
+	r.Operation.Grant.ReadRoot = "/srv/project"
+	if got := approvalAuthReason(r); got != "允许限定目录访问 · deploy@192.0.2.10:22" {
+		t.Fatal("OS prompt overstated scoped access", got)
+	}
+	for _, compact := range []bool{false, true} {
+		tt := ui.NewTester(func(c *ui.Context) {
+			if compact {
+				a.compactApprovalReview(c, r)
+			} else {
+				requestReview(c, r)
+			}
+		}, 540, 1100)
+		for _, text := range []string{"限定目录访问", "读取根目录", "/srv/project", "写入根目录", "不开放", "不含命令、终端、状态采样或容器日志"} {
+			if !tt.HasText(text) {
+				t.Fatal("scope detail missing", compact, text, tt.Texts())
+			}
+		}
+	}
+}
+
+func TestScopedPromptKeepsRootsPairingAndDecisionVisible(t *testing.T) {
+	for _, width := range []int{380, 420} {
+		a, r := reviewFixture("full")
+		r.Operation.Grant.ReadRoot, r.Operation.Grant.WriteRoot = "/srv/read", "/srv/write"
+		a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
+		tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, &approvalPromptState{}, func(bool, bool) {}, func() {}) }, width, approvalWindowHeight)
+		footer, ok := tt.Find("授权方式：触控 ID")
+		if !ok {
+			t.Fatal("authentication missing")
+		}
+		for _, label := range []string{"/srv/read", "/srv/write", r.Operation.Grant.PairingCode()} {
+			b, ok := tt.Find(label)
+			if !ok || b.Y < 0 || b.Y+b.H > footer.Y {
+				t.Fatal("scope or pairing clipped by authentication", width, label, b, footer)
+			}
+		}
+		for _, label := range []string{"不允许", "取消"} {
+			b, ok := tt.Find(label)
+			if !ok || b.Y+b.H > approvalWindowHeight {
+				t.Fatal("decision clipped", width, label, b)
+			}
+		}
+	}
+}

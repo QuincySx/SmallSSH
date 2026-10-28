@@ -53,13 +53,20 @@ func approvalAuthReason(r approval.Request) string {
 func approvalPermission(r approval.Request) (label, actions, caution string) {
 	switch r.Operation.Kind {
 	case "grant":
+		if r.Operation.Grant.ReadRoot != "" || r.Operation.Grant.WriteRoot != "" {
+			return tr(nil, "限定目录访问"), tr(nil, "仅开放授权目录内的文件操作"), tr(nil, "不含命令、终端、状态采样或容器日志")
+		}
 		if r.Operation.Grant.Permission == "full" {
 			if r.Operation.PathProtection {
 				return tr(nil, "读写（受服务器策略限制）"), "", tr(nil, "保护开启时，AI 不开放任意命令和终端")
 			}
 			return tr(nil, "完整控制"), "", tr(nil, "可使用此 SSH 账户的全部权限，包括任意命令和文件修改")
 		}
-		return tr(nil, "只读访问"), tr(nil, "浏览、下载文件，读取状态和容器日志"), tr(nil, "可读取此账户有权访问的所有路径")
+		caution := tr(nil, "可读取此账户有权访问的所有路径")
+		if r.Operation.PathProtection {
+			caution = tr(nil, "保护路径不可读取；其余路径仍受账户权限限制")
+		}
+		return tr(nil, "只读访问"), tr(nil, "浏览、下载文件，读取状态和容器日志"), caution
 	case "exec":
 		return tr(nil, "执行命令"), "", tr(nil, "使用此 SSH 账户的权限执行")
 	case "shell":
@@ -136,6 +143,7 @@ func requestReview(c *ui.Context, r approval.Request, serverNames ...string) {
 				})
 			})
 			if op.Kind == "grant" {
+				requestGrantRoots(c, op.Grant)
 				term := fmt.Sprintf(tr(c, "最长 %s · 闲置 %s 后失效"), grantDuration(op.Grant.LifetimeSeconds), grantDuration(op.Grant.IdleSeconds))
 				if r.Status == "approved" {
 					term = r.Expires.Local().Format(tr(c, "01-02 15:04 到期")) + tr(c, " · 闲置 ") + grantDuration(op.Grant.IdleSeconds) + tr(c, " 后失效")
@@ -162,6 +170,21 @@ func requestReview(c *ui.Context, r approval.Request, serverNames ...string) {
 			requestTechnicalReview(c, r)
 		})
 	})
+}
+
+func requestGrantRoots(c *ui.Context, scope approval.GrantScope) {
+	if scope.ReadRoot == "" && scope.WriteRoot == "" {
+		return
+	}
+	readRoot, writeRoot := scope.ReadRoot, scope.WriteRoot
+	if readRoot == "" {
+		readRoot = tr(c, "不开放")
+	}
+	if writeRoot == "" {
+		writeRoot = tr(c, "不开放")
+	}
+	reviewRow(c, tr(c, "读取根目录"), readRoot)
+	reviewRow(c, tr(c, "写入根目录"), writeRoot)
 }
 
 func (a *app) approvalServerName(r approval.Request) string {

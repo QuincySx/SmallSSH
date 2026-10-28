@@ -78,7 +78,7 @@ func newConnectionFlowHarness(t *testing.T) *connectionFlowHarness {
 }
 
 func (h *connectionFlowHarness) resetApp() {
-	h.a = &app{ctx: h.ctx, dir: h.dir, client: client.Client{Dir: h.dir}, online: true, server: h.server, dispatch: func(fn func()) { h.updates <- fn }, groups: map[string]*bool{}}
+	h.a = &app{ctx: h.ctx, dir: h.dir, client: client.Client{Dir: h.dir, Owner: h.server.Vault}, online: true, server: h.server, dispatch: func(fn func()) { h.updates <- fn }, groups: map[string]*bool{}}
 	h.ui = ui.NewTester(h.a.connectionView, 820, 1600)
 }
 

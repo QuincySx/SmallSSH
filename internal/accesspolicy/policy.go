@@ -17,6 +17,7 @@ var (
 	ErrDisabled      = errors.New("此服务器已禁止 AI 和自动化访问")
 	ErrProtected     = errors.New("操作涉及受保护路径")
 	ErrUncontrolled  = errors.New("路径保护模式不允许无法限定文件影响范围的操作")
+	ErrCommand       = errors.New("保护模式下不开放任意命令与终端；关闭保护需确认账户完整权限风险")
 	ErrInvalidPolicy = errors.New("自动化策略无效")
 )
 
@@ -66,15 +67,23 @@ func validPath(v string) bool {
 // whose removal or rename would also move a protected root. It is a lexical check;
 // remote symlink and canonical path checks are additionally required before use.
 func CheckPaths(paths, protected []string) error {
+	return checkPaths(paths, protected, true)
+}
+
+func CheckReadPaths(paths, protected []string) error {
+	return checkPaths(paths, protected, false)
+}
+
+func checkPaths(paths, protected []string, mutation bool) error {
 	for _, p := range paths {
-		if !validPath(p) || p == "/" {
+		if !validPath(p) || mutation && p == "/" {
 			return fmt.Errorf("%w: 写入目标需为根目录以外的规范绝对路径", ErrProtected)
 		}
 		for _, root := range protected {
 			if !validPath(root) {
 				return fmt.Errorf("%w: 无法确认受保护路径", ErrProtected)
 			}
-			if root == "/" || p == root || strings.HasPrefix(p, root+"/") || strings.HasPrefix(root, p+"/") {
+			if root == "/" || p == root || strings.HasPrefix(p, root+"/") || mutation && strings.HasPrefix(root, p+"/") {
 				return ErrProtected
 			}
 		}
@@ -86,10 +95,23 @@ func CheckPaths(paths, protected []string) error {
 // Opaque existing-inode changes are denied by Check in protected mode.
 func MutationPaths(op approval.Operation) []string {
 	switch op.Kind {
-	case "mkdir", "remove", "chmod", "file-attributes", "put", "replace", "put-resume":
+	case "put":
+		if op.TransferID != "" {
+			return []string{op.Path, path.Join(path.Dir(op.Path), ".ssh-part-"+op.TransferID)}
+		}
+		return []string{op.Path}
+	case "mkdir", "remove", "chmod", "file-attributes", "replace", "put-resume":
 		return []string{op.Path}
 	case "rename":
 		return []string{op.Path, op.Destination}
+	}
+	return nil
+}
+
+func ReadPaths(op approval.Operation) []string {
+	switch op.Kind {
+	case "list", "file-info", "get", "get-resume":
+		return []string{op.Path}
 	}
 	return nil
 }
@@ -107,14 +129,18 @@ func (p Policy) Check(op approval.Operation) error {
 		return nil
 	}
 	switch op.Kind {
-	case "exec", "shell", "docker-terminal", "compose-update", "chmod", "file-attributes", "put-resume":
+	case "exec", "shell", "docker-terminal":
+		return ErrCommand
+	case "compose-update", "chmod", "file-attributes", "put-resume":
 		// SFTP v3 cannot prove that an existing inode is not also hard-linked
 		// inside a protected tree. Attribute changes and resumed upload writes
 		// therefore require the owner's explicit unrestricted policy.
 		return ErrUncontrolled
 	case "mkdir", "remove", "rename", "put", "replace":
 		return CheckPaths(MutationPaths(op), p.Paths())
-	case "grant", "monitor", "list", "file-info", "get", "get-resume", "docker-logs", "compose-plan":
+	case "list", "file-info", "get", "get-resume":
+		return CheckReadPaths(ReadPaths(op), p.Paths())
+	case "grant", "monitor", "docker-logs", "compose-plan":
 		return nil
 	default:
 		return ErrUncontrolled
@@ -127,7 +153,7 @@ func Reason(err error) string {
 		return "automation_disabled"
 	case errors.Is(err, ErrProtected):
 		return "protected_path"
-	case errors.Is(err, ErrUncontrolled):
+	case errors.Is(err, ErrUncontrolled), errors.Is(err, ErrCommand):
 		return "uncontrolled_operation"
 	case errors.Is(err, ErrInvalidPolicy):
 		return "invalid_policy"

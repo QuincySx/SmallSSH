@@ -87,6 +87,12 @@ func requestState(status string) string {
 }
 func approvalActionLabel(r approval.Request) string {
 	if r.Operation.Kind == "grant" {
+		if r.Operation.Grant.ReadRoot != "" || r.Operation.Grant.WriteRoot != "" {
+			if r.Renewal {
+				return tr(nil, "续期限定目录访问")
+			}
+			return tr(nil, "允许限定目录访问")
+		}
 		if r.Renewal {
 			if r.Operation.Grant.Permission == "full" {
 				if r.Operation.PathProtection {

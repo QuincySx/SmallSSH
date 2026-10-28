@@ -9,6 +9,14 @@ import (
 )
 
 func (c *Client) FileInfo(ctx context.Context, p string) (fileattrs.Info, error) {
+	return c.fileInfo(ctx, p, true)
+}
+
+func (c *Client) FileInfoBasic(ctx context.Context, p string) (fileattrs.Info, error) {
+	return c.fileInfo(ctx, p, false)
+}
+
+func (c *Client) fileInfo(ctx context.Context, p string, accounts bool) (fileattrs.Info, error) {
 	if err := remotePath(p); err != nil {
 		return fileattrs.Info{}, err
 	}
@@ -24,6 +32,9 @@ func (c *Client) FileInfo(ctx context.Context, p string) (fileattrs.Info, error)
 		return fileattrs.Info{}, err
 	}
 	info := fileattrs.Info{Snapshot: fileattrs.FromStat(st), Name: st.Name()}
+	if !accounts {
+		return info, ctx.Err()
+	}
 	for _, target := range []struct {
 		path string
 		into *[]fileattrs.Account

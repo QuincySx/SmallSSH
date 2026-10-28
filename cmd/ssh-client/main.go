@@ -35,7 +35,7 @@ const help = `SmallSSH · 开发预览版
  host group 连接ID 分组名       保留凭据并修改分组（需代理运行）
  probe 主机:端口               查看主机指纹；请通过服务器控制台另行核对
  agent                         启动代理；主密码仅从本地终端读取
- hosts                         列出连接 ID、分组与地址
+ hosts                         所有者验证后列出连接 ID、分组与地址
  biometric status|enable|disable 系统验证设置
  --biometric agent / approve ID  用系统验证解锁或授权
  monitor 连接ID                 连续 Linux 监控（JSON 行）
@@ -45,9 +45,11 @@ const help = `SmallSSH · 开发预览版
                                预览 / 更新 Compose，需绑定配置与计划摘要
  transfer list                  查看持久化传输队列
  transfer resume 任务ID          校验并断点继续（可复用客户端会话）
- pending                       查看待授权和运行中的操作
+ pending                       所有者验证后查看待授权和运行中的操作
  session request 连接ID 文件 [read|full] [2h] [15m]
                                申请有期限的客户端会话；核对配对码后批准
+ session request --read-root /srv --write-root /srv ...
+                               可选限定文件读写目录；选项置于连接 ID 前
  --session 文件 exec/ls/get/... 使用已批准会话签发一次性子授权
  SSH_CLIENT_SESSION=文件       在当前客户端环境中复用同一授权，无需逐条传参
  session status 文件            查看会话范围与期限
@@ -153,7 +155,12 @@ func run() (int, error) {
 		return 0, nil
 	case "host":
 		if len(args) == 4 && args[1] == "group" {
-			h, e := c.Call(ctx, broker.Message{Action: "hosts"})
+			owner, e := openOwner(ctx, *dir, *biometric, "修改 SSH 连接分组")
+			if e != nil {
+				return 1, e
+			}
+			defer owner.Close()
+			h, e := c.CallWithOwner(ctx, broker.Message{Action: "hosts"}, owner)
 			if e != nil {
 				return 1, e
 			}
@@ -169,21 +176,6 @@ func run() (int, error) {
 				return 1, errors.New("连接不存在")
 			}
 			d.Group = args[3]
-			var owner *vault.Session
-			if *biometric {
-				owner, e = systemauth.New(0).Open(ctx, *dir, "修改 SSH 连接分组")
-			} else {
-				p, err := password("主密码确认修改分组: ")
-				if err != nil {
-					return 1, err
-				}
-				owner, e = vault.Read(broker.VaultPath(*dir), p)
-				wipe(p)
-			}
-			if e != nil {
-				return 1, e
-			}
-			defer owner.Close()
 			return 0, c.PutDetails(ctx, *d, owner)
 		}
 		if len(args) != 2 || args[1] != "add" {
@@ -278,8 +270,13 @@ func run() (int, error) {
 		<-ctx.Done()
 		return 0, nil
 	case "hosts", "pending":
+		owner, err := openOwner(ctx, *dir, *biometric, "查看 SSH 管理信息")
+		if err != nil {
+			return 1, err
+		}
+		defer owner.Close()
 		action := args[0]
-		r, e := c.Call(ctx, broker.Message{Action: action})
+		r, e := c.CallWithOwner(ctx, broker.Message{Action: action}, owner)
 		if e != nil {
 			return 1, e
 		}
@@ -297,10 +294,12 @@ func run() (int, error) {
 		if len(args) != 2 {
 			return 2, errors.New("请提供完整授权 ID")
 		}
-		r, e := c.Call(ctx, broker.Message{Action: "status", ID: args[1]})
-		if e != nil && args[0] == "revoke" {
-			r, e = c.Call(ctx, broker.Message{Action: "sessionStatus", ID: args[1]})
+		owner, err := openOwner(ctx, *dir, *biometric, "查看并处理 SSH 授权")
+		if err != nil {
+			return 1, err
 		}
+		defer owner.Close()
+		r, e := c.CallWithOwner(ctx, broker.Message{Action: "status", ID: args[1]}, owner)
 		if e != nil {
 			return 1, e
 		}
@@ -308,21 +307,20 @@ func run() (int, error) {
 			return 1, approval.ErrDenied
 		}
 		fmt.Println(client.Describe(*r.Request))
-		fmt.Println("完整会话或命令拥有该 SSH 账户的权限。")
-		if *biometric {
-			v, e := systemauth.New(0).Open(ctx, *dir, "批准 SSH 操作 "+args[1])
-			if e != nil {
-				return 1, e
-			}
-			defer v.Close()
-			return 0, c.DecideReviewedWithOwner(ctx, *r.Request, args[0] == "approve", args[0] == "revoke", v)
-		}
-		p, e := password("核对后输入主密码确认本次决定: ")
+		tty, e := openTTY()
 		if e != nil {
 			return 1, e
 		}
-		defer wipe(p)
-		e = c.DecideReviewed(ctx, *r.Request, args[0] == "approve", args[0] == "revoke", p)
+		fmt.Fprint(os.Stderr, "核对上面的具体操作后，输入 yes 确认本次决定: ")
+		answer, e := bufio.NewReader(tty).ReadString('\n')
+		tty.Close()
+		if e != nil {
+			return 1, e
+		}
+		if strings.TrimSpace(answer) != "yes" {
+			return 1, errors.New("已取消授权决定")
+		}
+		e = c.DecideReviewedWithOwner(ctx, *r.Request, args[0] == "approve", args[0] == "revoke", owner)
 		if e == nil {
 			fmt.Println("已处理")
 		}
@@ -401,7 +399,7 @@ func run() (int, error) {
 		return 1, e
 	}
 	writeApprovalNotice(os.Stderr, r)
-	if e = c.Wait(ctx, r.ID); e != nil {
+	if e = c.Wait(ctx, r.ID, ticket); e != nil {
 		return 1, e
 	}
 	cols, rows := 80, 24
@@ -595,4 +593,16 @@ func wipe(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+func openOwner(ctx context.Context, dir string, biometric bool, reason string) (*vault.Session, error) {
+	if biometric {
+		return systemauth.New(0).Open(ctx, dir, reason)
+	}
+	pass, err := password(reason + " · 主密码: ")
+	if err != nil {
+		return nil, err
+	}
+	defer wipe(pass)
+	return vault.Read(broker.VaultPath(dir), pass)
 }

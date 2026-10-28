@@ -40,6 +40,7 @@ func (a *app) connectionPolicyForm(c *ui.Context) {
 				}
 			})
 			if !a.form.Policy.Unrestricted {
+				ui.Text(c, tr(c, "受保护路径禁止读取、下载和修改")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 				ui.Text(c, tr(c, "保护开启时，AI 不开放任意命令和终端")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 				ui.Text(c, tr(c, "仅开放受控文件操作；属性和续传写入关闭")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 			} else {

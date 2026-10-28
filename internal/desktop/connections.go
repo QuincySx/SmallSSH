@@ -576,11 +576,16 @@ func (a *app) readAgentIdentities() {
 	if a.connection.phase != "" {
 		return
 	}
+	owner, err := a.unlockedOwner()
+	if err != nil {
+		a.status = err.Error()
+		return
+	}
 	ctx, seq, gen := a.editorOperation("agent")
 	cli := a.client
 	a.connection.message = tr(nil, "正在读取代理中的公开身份…")
 	go func() {
-		result, err := cli.Call(ctx, broker.Message{Action: "agentIdentities"})
+		result, err := cli.CallWithOwner(ctx, broker.Message{Action: "agentIdentities"}, owner)
 		a.postUI(func() {
 			if !a.editorCurrent(seq, gen) || ctx.Err() != nil {
 				return
@@ -673,9 +678,15 @@ func (a *app) saveProfile() {
 		}
 		ctx, seq, gen := a.editorOperation("probe")
 		cli := a.client
+		owner, err := a.unlockedOwner()
+		if err != nil {
+			a.cancelConnectionEditor()
+			a.status = err.Error()
+			return
+		}
 		a.connection.message = tr(nil, "正在读取服务器身份，尚未发送登录凭据…")
 		go func() {
-			result, err := cli.Call(ctx, broker.Message{Action: "probeHost", Target: change.Profile.Host, Port: change.Profile.Port})
+			result, err := cli.CallWithOwner(ctx, broker.Message{Action: "probeHost", Target: change.Profile.Host, Port: change.Profile.Port}, owner)
 			a.postUI(func() {
 				if !a.editorCurrent(seq, gen) || ctx.Err() != nil {
 					return

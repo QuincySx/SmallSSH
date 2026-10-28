@@ -92,3 +92,46 @@ func TestResumeInterruptionPrefixesAndNoOverwrite(t *testing.T) {
 	}
 	_ = io.Discard
 }
+
+func TestNewUploadNeverReusesAnExistingPartialInode(t *testing.T) {
+	fixture := testserver.New(t)
+	c, err := sshconn.Dial(context.Background(), fixture.Profile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	root := t.TempDir()
+	target, victim := filepath.Join(root, "target"), filepath.Join(root, "victim")
+	id := vault.ShortID()
+	if err = os.WriteFile(victim, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	partial := filepath.Join(root, ".ssh-part-"+id)
+	if err = os.Link(victim, partial); err != nil {
+		t.Skip(err)
+	}
+	body := []byte("must not reach the existing inode")
+	if u, err := c.PrepareNewUpload(context.Background(), testserver.RemotePath(target), id, digest(body), int64(len(body))); err == nil {
+		u.Close()
+		t.Fatal("reused an existing hard-linked inode")
+	}
+	if data, err := os.ReadFile(victim); err != nil || len(data) != 0 {
+		t.Fatal("existing inode was modified", err)
+	}
+	if err = os.Remove(partial); err != nil {
+		t.Fatal(err)
+	}
+	u, err := c.PrepareNewUpload(context.Background(), testserver.RemotePath(target), id, digest(body), int64(len(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = u.Finish(bytes.NewReader(body)); err != nil {
+		u.Close()
+		t.Fatal(err)
+	}
+	u.Close()
+	if u, err := c.PrepareNewUpload(context.Background(), testserver.RemotePath(target), vault.ShortID(), digest(body), int64(len(body))); err == nil {
+		u.Close()
+		t.Fatal("reused an existing completed target")
+	}
+}

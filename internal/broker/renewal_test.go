@@ -62,7 +62,7 @@ func newRenewalHarness(t *testing.T) *renewalHarness {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	h.ctx = ctx
 	t.Cleanup(cancel)
-	h.c = client.Client{Dir: dir}
+	h.c = client.Client{Dir: dir, Owner: h.s.Vault}
 	return h
 }
 

@@ -48,7 +48,7 @@ func policyHarness(t *testing.T, profiles ...vault.Profile) (*broker.Server, cli
 	t.Cleanup(s.Close)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	t.Cleanup(cancel)
-	return s, client.Client{Dir: dir}, ctx
+	return s, client.Client{Dir: dir, Owner: s.Vault}, ctx
 }
 
 func policySession(t *testing.T, s *broker.Server, cli client.Client, ctx context.Context, host, permission string) *client.Delegation {
@@ -332,8 +332,8 @@ func TestDisablingAutomationCancelsActiveGrantAndLeavesNoRenewal(t *testing.T) {
 
 func TestInvalidRenewalProofAndOwnerSpoofAreAuditedWithoutApproval(t *testing.T) {
 	h := newRenewalHarness(t)
-	original, _ := h.grant(t, "read")
-	challenge, err := h.c.Call(h.ctx, broker.Message{Action: "renewalChallenge", ID: original.ID})
+	original, d := h.grant(t, "read")
+	challenge, err := h.c.Call(h.ctx, broker.Message{Action: "renewalChallenge", ID: original.ID, Ticket: d.Ticket})
 	if err != nil || challenge.Renewal == nil {
 		t.Fatal("renewal challenge missing", err)
 	}

@@ -11,17 +11,26 @@ import (
 	"sshclient/internal/localipc"
 	"sshclient/internal/monitor"
 	"sshclient/internal/sshconn"
+	"sshclient/internal/vault"
 	"sync"
 	"time"
 )
 
 type Client struct {
 	Dir              string
+	Owner            *vault.Session
 	Delegation       *Delegation
 	OnSessionRenewal func(approval.Request)
 }
 
 func (c Client) Call(ctx context.Context, q broker.Message) (broker.Message, error) {
+	if c.Owner != nil && broker.OwnerQueryAction(q.Action) && q.Challenge == "" && q.Ticket == "" {
+		return c.CallWithOwner(ctx, q, c.Owner)
+	}
+	return c.call(ctx, q)
+}
+
+func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, error) {
 	w, e := localipc.Connect(ctx, c.Dir)
 	if e != nil {
 		return broker.Message{}, e
@@ -59,11 +68,11 @@ func (c Client) Request(ctx context.Context, op approval.Operation, ttl time.Dur
 	}
 	return *r.Request, r.Ticket, nil
 }
-func (c Client) Wait(ctx context.Context, id string) error {
+func (c Client) Wait(ctx context.Context, id, ticket string) error {
 	t := time.NewTicker(350 * time.Millisecond)
 	defer t.Stop()
 	for {
-		r, e := c.Call(ctx, broker.Message{Action: "status", ID: id})
+		r, e := c.Call(ctx, broker.Message{Action: "status", ID: id, Ticket: ticket})
 		if e != nil {
 			return e
 		}

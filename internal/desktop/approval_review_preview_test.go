@@ -23,11 +23,18 @@ func TestApprovalPromptSnapshotsWithoutWindows(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, variant := range []string{"read", "full", "full-dark", "full-narrow", "command", "renewal", "renewal-narrow", "password", "password-only", "busy", "error"} {
+	for _, variant := range []string{"read", "protected-read", "scoped", "full", "full-dark", "full-narrow", "command", "renewal", "renewal-narrow", "password", "password-only", "busy", "error"} {
 		t.Run(variant, func(t *testing.T) {
 			a, r := reviewFixture("full")
-			if variant == "read" {
+			if variant == "read" || variant == "protected-read" {
 				a, r = reviewFixture("read")
+			}
+			if variant == "protected-read" {
+				r.Operation.PathProtection = true
+			}
+			if variant == "scoped" {
+				r.Operation.Grant.ReadRoot, r.Operation.Grant.WriteRoot = "/srv/project", "/srv/project"
+				r.Operation.PathProtection = true
 			}
 			if variant == "command" {
 				r.Operation.Kind = "exec"

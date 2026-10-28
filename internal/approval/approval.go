@@ -106,6 +106,9 @@ func (m *Manager) CreateOwner(op Operation) (Request, string, error) {
 }
 
 func (m *Manager) create(op Operation, ttl time.Duration, owner bool) (Request, string, error) {
+	if err := validateFields(op); err != nil {
+		return Request{}, "", err
+	}
 	if len(op.Command) > 32768 || len(op.Path) > 4096 || len(op.Destination) > 4096 || len(op.Client) > 128 || len(op.Host) > 128 {
 		return Request{}, "", errors.New("操作字段超过上限")
 	}
@@ -309,6 +312,23 @@ func (m *Manager) Get(id string) (Request, error) {
 	m.prune()
 	e, ok := m.pending[id]
 	if !ok {
+		return Request{}, ErrDenied
+	}
+	return e.request, nil
+}
+
+// A ticket grants visibility only into its own operation, including after it
+// was consumed for execution. It never grants global queue or host visibility.
+func (m *Manager) GetForTicket(id, ticket string) (Request, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prune()
+	e := m.pending[id]
+	if e == nil {
+		e = m.dormant[id]
+	}
+	h := sha256.Sum256([]byte(ticket))
+	if e == nil || ticket == "" || !hmac.Equal(h[:], e.ticketHash[:]) {
 		return Request{}, ErrDenied
 	}
 	return e.request, nil

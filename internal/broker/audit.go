@@ -36,7 +36,12 @@ func (a *audit) write(event string, r *approval.Request) error {
 }
 
 func (a *audit) writeHost(event string, r *approval.Request, hostName string) error {
+	return a.writeOutcome(event, r, hostName, "", nil)
+}
+
+func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcome string, code *int) error {
 	v := auditEvent{Time: time.Now().UTC(), Event: event}
+	v.Outcome, v.ExitCode = outcome, code
 	if r != nil {
 		v.ParentID = auditText(r.ParentID, 128)
 		v.RequestID = auditText(r.ID, 128)

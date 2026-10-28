@@ -10,6 +10,14 @@ import (
 	"sshclient/internal/vault"
 )
 
+var errAuditUnavailable = errors.New("审计不可用，授权已撤销；请修复审计存储后重新解锁")
+
+func (s *Server) failAudit(err error) error {
+	s.auditFault.Store(true)
+	s.Approvals.Lock()
+	return fmt.Errorf("%w: %w", errAuditUnavailable, err)
+}
+
 // Policy refusals never create a pending request. A caller label, a parent
 // grant, or the public ServerStatus flag cannot acquire owner authority.
 func (s *Server) checkAutomation(p vault.Profile, op approval.Operation, parent string) error {
@@ -23,8 +31,7 @@ func (s *Server) recordRefusal(op approval.Operation, parent, reason, hostName s
 	if err := s.audit.reject(op, parent, reason, hostName); err != nil {
 		// No authority or remote effect is allowed when its refusal cannot be
 		// recorded. Existing grants are also invalidated on audit failure.
-		s.Approvals.Lock()
-		return fmt.Errorf("审计记录失败，操作已阻止: %w", err)
+		return s.failAudit(err)
 	}
 	return cause
 }
@@ -44,7 +51,27 @@ func (s *Server) auditRequest(event string, r *approval.Request) error {
 			name = p.Name
 		}
 	}
-	return s.audit.writeHost(event, r, name)
+	if s.auditFault.Load() {
+		return errAuditUnavailable
+	}
+	if err := s.audit.writeHost(event, r, name); err != nil {
+		return s.failAudit(err)
+	}
+	return nil
+}
+
+func (s *Server) auditCompletion(r *approval.Request, outcome string, code *int) error {
+	if s.auditFault.Load() {
+		return errAuditUnavailable
+	}
+	name := ""
+	if p, err := s.Vault.Profile(r.Operation.Host); err == nil {
+		name = p.Name
+	}
+	if err := s.audit.writeOutcome("ended", r, name, outcome, code); err != nil {
+		return s.failAudit(err)
+	}
+	return nil
 }
 
 func (s *Server) auditExpiries() {
@@ -84,7 +111,7 @@ func (s *Server) invalidateProfile(old vault.Profile, existed bool, p vault.Prof
 
 func policyDenial(err error) bool {
 	return errors.Is(err, accesspolicy.ErrDisabled) || errors.Is(err, accesspolicy.ErrProtected) ||
-		errors.Is(err, accesspolicy.ErrUncontrolled) || errors.Is(err, accesspolicy.ErrInvalidPolicy)
+		errors.Is(err, accesspolicy.ErrUncontrolled) || errors.Is(err, accesspolicy.ErrCommand) || errors.Is(err, accesspolicy.ErrInvalidPolicy)
 }
 
 func managementAttempt(q Message) approval.Operation {

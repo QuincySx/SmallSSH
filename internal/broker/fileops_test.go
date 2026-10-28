@@ -56,7 +56,11 @@ func TestFileMutationsRequireApprovalAndBindDestination(t *testing.T) {
 		t.Fatal(string(data))
 	}
 	for _, kind := range []string{"chmod", "remove"} {
-		r, ticket = request(t, c, approval.Operation{Host: "fixture", Kind: kind, Path: testserver.RemotePath(dest), Mode: 0600, Client: "UI test"})
+		mode := uint32(0)
+		if kind == "chmod" {
+			mode = 0600
+		}
+		r, ticket = request(t, c, approval.Operation{Host: "fixture", Kind: kind, Path: testserver.RemotePath(dest), Mode: mode, Client: "UI test"})
 		approve(t, c, r)
 		s, e = c.Start(ctx, r.ID, ticket, 0, 0)
 		if e != nil {

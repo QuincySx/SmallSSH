@@ -146,6 +146,16 @@ func historyOperation(event auditlog.Event) string {
 }
 
 func historyResult(event auditlog.Event) string {
+	if event.Event == "ended" && event.Outcome != "" {
+		result := map[string]string{"success": tr(nil, "执行成功"), "failed": tr(nil, "执行失败"), "cancelled": tr(nil, "已取消"), "unknown": tr(nil, "结果未确认")}[event.Outcome]
+		if result == "" {
+			result = tr(nil, "结果未确认")
+		}
+		if event.ExitCode != nil {
+			result += fmt.Sprintf(tr(nil, " · 退出码 %d"), *event.ExitCode)
+		}
+		return result
+	}
 	result := map[string]string{
 		"unlocked": tr(nil, "已解锁"), "locked": tr(nil, "已锁定"),
 		"approved": tr(nil, "已批准"), "denied": tr(nil, "已拒绝"),

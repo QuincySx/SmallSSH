@@ -30,7 +30,12 @@ func approvalApplicant(r approval.Request) (name, note string) {
 func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
 	op := r.Operation
 	t := c.Theme()
-	ui.Column(c).FillWidth().Gap(12).Children(func() {
+	scoped := op.Kind == "grant" && (op.Grant.ReadRoot != "" || op.Grant.WriteRoot != "")
+	gap := float32(12)
+	if scoped {
+		gap = 8
+	}
+	ui.Column(c).FillWidth().Gap(gap).Children(func() {
 		ui.Column(c).FillWidth().Padding(14).Gap(10).Radius(10).
 			Background(t.Surface).Border(1, t.Border.Alpha(.7)).Children(func() {
 			target := op.Endpoint
@@ -49,7 +54,7 @@ func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
 				if permission != compactApprovalTitle(r) {
 					ui.Text(c, permission).FontSize(13).Bold()
 				}
-				if actions != "" {
+				if actions != "" && !scoped {
 					ui.Text(c, actions).FillWidth().FontSize(12).TextColor(t.TextMuted)
 				}
 				if caution != "" {
@@ -67,7 +72,10 @@ func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
 				}
 				ui.Text(c, term).FillWidth().FontSize(12)
 				if op.Kind == "grant" {
-					ui.Text(c, tr(c, "锁定、退出或撤销后失效")).FillWidth().FontSize(11).TextColor(t.TextMuted)
+					requestGrantRoots(c, op.Grant)
+					if !scoped {
+						ui.Text(c, tr(c, "锁定、退出或撤销后失效")).FillWidth().FontSize(11).TextColor(t.TextMuted)
+					}
 				}
 			})
 		})

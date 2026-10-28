@@ -11,6 +11,7 @@ import (
 
 	"github.com/pkg/sftp"
 	"sshclient/internal/accesspolicy"
+	"sshclient/internal/approval"
 )
 
 // CheckProtectedPaths checks the remote directory entries of a typed mutation
@@ -19,13 +20,25 @@ import (
 // The broker must still serialize its own writes. SFTP has no race-free openat
 // equivalent: a separate remote process can change paths after this check.
 func (c *Client) CheckProtectedPaths(ctx context.Context, paths, protected []string) error {
+	return c.checkProtectedPaths(ctx, paths, protected, true)
+}
+
+func (c *Client) CheckProtectedReadPaths(ctx context.Context, paths, protected []string) error {
+	return c.checkProtectedPaths(ctx, paths, protected, false)
+}
+
+func (c *Client) checkProtectedPaths(ctx context.Context, paths, protected []string, mutation bool) error {
 	if len(paths) == 0 {
 		return nil
 	}
 	if len(protected) == 0 {
 		protected = (accesspolicy.Policy{}).Paths()
 	}
-	if err := accesspolicy.CheckPaths(paths, protected); err != nil {
+	check := accesspolicy.CheckReadPaths
+	if mutation {
+		check = accesspolicy.CheckPaths
+	}
+	if err := check(paths, protected); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
@@ -51,7 +64,7 @@ func (c *Client) CheckProtectedPaths(ctx context.Context, paths, protected []str
 		if err != nil {
 			return pathGuardError(err)
 		}
-		if err := accesspolicy.CheckPaths([]string{resolved}, canonicalRoots); err != nil {
+		if err := check([]string{resolved}, canonicalRoots); err != nil {
 			return err
 		}
 	}
@@ -59,6 +72,41 @@ func (c *Client) CheckProtectedPaths(ctx context.Context, paths, protected []str
 		return pathGuardError(err)
 	}
 	return nil
+}
+
+// Roots and targets must both be real, canonical paths. This constrains path
+// entries, not inode aliases or changes made by independent remote processes.
+func (c *Client) CheckAllowedPaths(ctx context.Context, paths []string, root string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	if root == "" {
+		return approval.ErrDenied
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s, err := sftp.NewClient(c.SSH)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	stop := context.AfterFunc(ctx, func() { s.Close() })
+	defer stop()
+	resolvedRoot, err := guardedPath(s, root, true, 0)
+	if err != nil {
+		return pathGuardError(err)
+	}
+	for _, target := range paths {
+		resolved, err := guardedPath(s, target, true, 0)
+		if err != nil {
+			return pathGuardError(err)
+		}
+		if !approval.WithinRoot(resolvedRoot, resolved) {
+			return approval.ErrDenied
+		}
+	}
+	return ctx.Err()
 }
 
 func pathGuardError(err error) error {

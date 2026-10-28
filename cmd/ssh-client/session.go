@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -25,7 +26,7 @@ func sessionCommand(ctx context.Context, c client.Client, label string, args []s
 			}
 			return 0, err
 		}
-		r, err := c.Call(ctx, broker.Message{Action: "sessionStatus", ID: d.ParentID})
+		r, err := c.Call(ctx, broker.Message{Action: "sessionStatus", ID: d.ParentID, Ticket: d.Ticket})
 		if err != nil {
 			return 1, err
 		}
@@ -35,6 +36,15 @@ func sessionCommand(ctx context.Context, c client.Client, label string, args []s
 		fmt.Println(client.Describe(*r.Request))
 		fmt.Println("状态:", r.Request.Status)
 		return 0, nil
+	}
+	fs := flag.NewFlagSet("session request", flag.ContinueOnError)
+	readRoot := fs.String("read-root", "", "限定文件读取的绝对根目录")
+	writeRoot := fs.String("write-root", "", "限定文件写入的绝对根目录")
+	if len(args) > 0 && args[0] == "request" {
+		if err := fs.Parse(args[1:]); err != nil {
+			return 2, err
+		}
+		args = append([]string{"request"}, fs.Args()...)
 	}
 	if len(args) < 3 || len(args) > 6 || args[0] != "request" {
 		return 2, errors.New("用法: smallssh session request 连接ID 新会话文件 [read|full] [2h] [15m]；smallssh session status/revoke 会话文件")
@@ -64,7 +74,7 @@ func sessionCommand(ctx context.Context, c client.Client, label string, args []s
 		}
 	}
 	idle = min(idle, lifetime)
-	r, d, err := c.RequestSession(ctx, args[1], label, permission, lifetime, idle)
+	r, d, err := c.RequestScopedSession(ctx, args[1], label, permission, lifetime, idle, *readRoot, *writeRoot)
 	if err != nil {
 		return 1, err
 	}
@@ -78,7 +88,7 @@ func sessionCommand(ctx context.Context, c client.Client, label string, args []s
 		}
 	}()
 	fmt.Fprintf(os.Stderr, "%s\n请在所有者界面核对配对码 %s，再批准会话。\n", client.Describe(r), r.Operation.Grant.PairingCode())
-	if err = c.Wait(ctx, r.ID); err != nil {
+	if err = c.Wait(ctx, r.ID, d.Ticket); err != nil {
 		return 1, err
 	}
 	if err = d.Save(path); err != nil {

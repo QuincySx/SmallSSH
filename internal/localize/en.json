@@ -1161,5 +1161,20 @@
   "默认路由网卡": "Default route interface",
   "，状态将在后续采样刷新": "; status will refresh with subsequent samples",
   "，确认后点执行": "; review it, then click Run",
-  "；旧副本: ": "; previous copy: "
+  "；旧副本: ": "; previous copy: ",
+  " · 退出码 %d": " · Exit code %d",
+  "不含命令、终端、状态采样或容器日志": "Excludes commands, terminals, status sampling and container logs",
+  "不开放": "Not allowed",
+  "仅开放授权目录内的文件操作": "File operations only within the approved directories",
+  "保护路径不可读取；其余路径仍受账户权限限制": "Protected paths cannot be read; account permissions still apply elsewhere",
+  "写入根目录": "Write root",
+  "受保护路径禁止读取、下载和修改": "Protected paths cannot be read, downloaded or modified",
+  "执行失败": "Execution failed",
+  "执行成功": "Execution succeeded",
+  "结果未确认": "Outcome unconfirmed",
+  "读取根目录": "Read root",
+  "限定目录访问": "Access to specified directories",
+  "已取消": "Cancelled",
+  "续期限定目录访问": "Renew access to specified directories",
+  "允许限定目录访问": "Allow access to specified directories"
 }

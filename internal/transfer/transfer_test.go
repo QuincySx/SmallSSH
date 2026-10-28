@@ -52,7 +52,7 @@ func TestPersistentResumeRequiresFreshGrantAndChecksIntegrity(t *testing.T) {
 	}
 	defer srv.Close()
 	ctx := context.Background()
-	cli := client.Client{Dir: dir}
+	cli := client.Client{Dir: dir, Owner: srv.Vault}
 	source := filepath.Join(t.TempDir(), "source")
 	body := bytes.Repeat([]byte("resumable payload\n"), 250000)
 	os.WriteFile(source, body, 0600)
@@ -195,7 +195,7 @@ func TestOwnerTransfersReuseSessionAndLeaveUnrelatedRequestPending(t *testing.T)
 	}
 	defer server.Close()
 	ctx := context.Background()
-	cli := client.Client{Dir: dir}
+	cli := client.Client{Dir: dir, Owner: server.Vault}
 	request, _, err := cli.Request(ctx, approval.Operation{Host: "fixture", Kind: "exec", Command: "external", Client: "desktop spoof"}, time.Minute)
 	if err != nil {
 		t.Fatal(err)

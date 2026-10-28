@@ -31,7 +31,7 @@ func readComposePlan(ctx context.Context, c *sshconn.Client, target serverops.Co
 	return serverops.ParseComposePlan(target, r.Stdout)
 }
 
-func (s *Server) runDockerWork(ctx context.Context, c *sshconn.Client, w *localipc.Wire, op approval.Operation) error {
+func (s *Server) runDockerWork(ctx context.Context, c *sshconn.Client, w *localipc.Wire, op approval.Operation, finish func(Message) error) error {
 	if op.Kind == "docker-logs" {
 		command, err := op.Docker.Command(op.Kind)
 		if err != nil {
@@ -41,7 +41,7 @@ func (s *Server) runDockerWork(ctx context.Context, c *sshconn.Client, w *locali
 		if err != nil {
 			return err
 		}
-		return w.Send(Message{Action: "done", ExitCode: code})
+		return finish(Message{Action: "done", ExitCode: code})
 	}
 	if op.Kind == "compose-update" {
 		s.writes.Lock()
@@ -55,7 +55,7 @@ func (s *Server) runDockerWork(ctx context.Context, c *sshconn.Client, w *locali
 		if err = w.Send(Message{Action: "compose-plan", ComposePlan: &plan}); err != nil {
 			return err
 		}
-		return w.Send(Message{Action: "done"})
+		return finish(Message{Action: "done"})
 	}
 	if plan.Hash != op.Compose.ConfigHash {
 		return errors.New("Compose 配置已变化，请重新检查更新；尚未重建容器")
@@ -119,5 +119,5 @@ func (s *Server) runDockerWork(ctx context.Context, c *sshconn.Client, w *locali
 	if err != nil {
 		return fmt.Errorf("已重建，状态核对未通过：%w", err)
 	}
-	return w.Send(Message{Action: "done"})
+	return finish(Message{Action: "done"})
 }

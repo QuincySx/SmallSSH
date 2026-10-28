@@ -82,7 +82,7 @@ func dockerCommand(ctx context.Context, c client.Client, label string, args []st
 		c.Call(cleanup, broker.Message{Action: "withdraw", ID: r.ID, Ticket: ticket})
 	}()
 	writeApprovalNotice(os.Stderr, r)
-	if err = c.Wait(ctx, r.ID); err != nil {
+	if err = c.Wait(ctx, r.ID, ticket); err != nil {
 		return 1, err
 	}
 	stream, err := c.Start(ctx, r.ID, ticket, 100, 30)

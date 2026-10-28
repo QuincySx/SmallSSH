@@ -25,6 +25,7 @@ func fileDelegation(t *testing.T) *Delegation {
 
 func TestDelegationFilePrivateRoundtripAndNoOverwrite(t *testing.T) {
 	d := fileDelegation(t)
+	d.ReadRoot = "/srv/project"
 	defer d.Close()
 	if err := d.Save("ai.json"); err != nil {
 		t.Fatal(err)
@@ -37,7 +38,7 @@ func TestDelegationFilePrivateRoundtripAndNoOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer got.Close()
-	if !ed25519.PrivateKey(got.Key).Equal(ed25519.PrivateKey(d.Key)) || got.ParentID != d.ParentID {
+	if !ed25519.PrivateKey(got.Key).Equal(ed25519.PrivateKey(d.Key)) || got.ParentID != d.ParentID || got.ReadRoot != d.ReadRoot || got.WriteRoot != d.WriteRoot {
 		t.Fatal("roundtrip changed client authority")
 	}
 	if err = got.Validate(t.TempDir()); err == nil {

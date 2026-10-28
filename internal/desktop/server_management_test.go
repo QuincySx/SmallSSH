@@ -248,7 +248,7 @@ esac
 	a := managementApp()
 	a.ctx = ctx
 	a.dir = dir
-	a.client = client.Client{Dir: dir}
+	a.client = client.Client{Dir: dir, Owner: server.Vault}
 	a.server = server
 	a.dispatch = func(fn func()) { updates <- fn }
 	profile := fixture.Profile()

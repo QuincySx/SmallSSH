@@ -8,6 +8,8 @@ import (
 )
 
 type Event struct {
+	Outcome       string    `json:"outcome,omitempty"`
+	ExitCode      *int      `json:"exitCode,omitempty"`
 	Generation    string    `json:"generation,omitempty"`
 	ParentID      string    `json:"parentId,omitempty"`
 	OwnerIssued   bool      `json:"ownerIssued,omitempty"`
@@ -38,6 +40,11 @@ type Page struct {
 // each displayed field so a valid 100-row page also fits the local RPC frame,
 // even when JSON escapes every character. Missing legacy identity stays empty.
 func bounded(v Event) Event {
+	switch v.Outcome {
+	case "success", "failed", "cancelled", "unknown", "":
+	default:
+		v.Outcome = "unknown"
+	}
 	v.Generation = text(v.Generation, 64)
 	v.ParentID = text(v.ParentID, 128)
 	v.Event = text(v.Event, 64)

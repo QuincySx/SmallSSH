@@ -48,7 +48,7 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	updates := make(chan func(), 64)
-	a := &app{ctx: ctx, dir: dir, client: client.Client{Dir: dir}, online: true, server: server, dispatch: func(fn func()) { updates <- fn }}
+	a := &app{ctx: ctx, dir: dir, client: client.Client{Dir: dir, Owner: server.Vault}, online: true, server: server, dispatch: func(fn func()) { updates <- fn }}
 	a.newConnection()
 	a.form = f.Profile()
 	a.form.ID = "new-ui-terminal"
