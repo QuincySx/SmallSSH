@@ -218,6 +218,12 @@ func (m *Manager) RunWithOwner(parent context.Context, id, label string, owner *
 	return m.run(parent, id, label, owner)
 }
 
+// freshUploadFallback reports whether a refused resumed upload may be retried as
+// a bounded first-time upload: never for the owner, never for a download.
+func freshUploadFallback(kind string, owner *vault.Session, direction string, err error) bool {
+	return kind == "put-resume" && owner == nil && direction == "upload" && errors.Is(err, client.ErrAutomationPolicy)
+}
+
 func (m *Manager) run(parent context.Context, id, label string, owner *vault.Session) (err error) {
 	if !validID.MatchString(id) {
 		return errors.New("无效传输 ID")
@@ -375,8 +381,22 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 	} else {
 		r, ticket, e = m.client.Request(ctx, op, 15*time.Minute)
 	}
-	if e != nil {
-		return e
+	// The owner's policy can refuse a resumed write outright, because SFTP cannot
+	// prove an existing remote partial is not a hard link into a protected tree.
+	// Re-uploading from the beginning is bounded and allowed, so ask for that
+	// instead of leaving the job refused forever.
+	if e == nil || !freshUploadFallback(kind, owner, j.Direction, e) {
+		if e != nil {
+			return e
+		}
+	} else {
+		j.Bytes = 0
+		kind = "put"
+		op.Kind, op.Offset, op.PrefixHash = "put", 0, ""
+		op.TransferID = vault.ShortID()
+		if r, ticket, e = m.client.Request(ctx, op, 15*time.Minute); e != nil {
+			return e
+		}
 	}
 	defer func() {
 		if ctx.Err() != nil {

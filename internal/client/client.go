@@ -4,6 +4,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"sshclient/internal/approval"
 	"sshclient/internal/broker"
@@ -51,10 +52,19 @@ func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, err
 			e = approval.ErrSessionExpired
 		case "session_renewing":
 			e = approval.ErrSessionRenewing
+		case "automation_policy":
+			// Keep the refusal recognisable: a caller may be able to ask for a
+			// narrower, allowed operation instead of failing outright.
+			e = fmt.Errorf("%w: %s", ErrAutomationPolicy, r.Error)
 		}
 	}
 	return r, e
 }
+
+// ErrAutomationPolicy marks a refusal by the owner's persistent automation
+// policy, which no approval can override.
+var ErrAutomationPolicy = errors.New("自动化策略拒绝")
+
 func (c Client) Request(ctx context.Context, op approval.Operation, ttl time.Duration) (approval.Request, string, error) {
 	if c.Delegation != nil {
 		return c.RequestDelegated(ctx, op, ttl, c.Delegation)
