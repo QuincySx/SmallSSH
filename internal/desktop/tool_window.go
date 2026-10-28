@@ -47,6 +47,9 @@ func (a *app) invalidateWindows() {
 // Only shared state changes request the other window's frame. Terminal output
 // frames alone must not make the resource window redraw at terminal speed.
 func (a *app) publishToolsState() {
+	// The first frame starts the idle lock's clock; it keeps its own time so a
+	// window nobody touches still locks the vault.
+	a.watchIdle()
 	state := a.sharedToolsState()
 	if state != a.toolsPublished {
 		a.toolsPublished = state

@@ -1,7 +1,9 @@
 package localipc
 
 import (
+	"context"
 	"encoding/binary"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -40,5 +42,52 @@ func TestPrivateDirectoryAndKernelLock(t *testing.T) {
 		if e = Prepare(dir); e == nil {
 			t.Fatal("accepted public directory")
 		}
+	}
+}
+
+// The local socket identifies its peer: a connection from this user is accepted
+// and the kernel-reported uid is ours.
+func TestListenerOnlyAcceptsTheCurrentUser(t *testing.T) {
+	// A Unix socket path is short; t.TempDir can push it past the limit.
+	dir, err := os.MkdirTemp("", "ipc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	if err = os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	release, err := Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ln, err := Listen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	accepted := make(chan error, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			accepted <- err
+			return
+		}
+		uid, err := peerUID(c)
+		c.Close()
+		if err == nil && uid != uint32(os.Getuid()) {
+			err = fmt.Errorf("accepted a peer of uid %d", uid)
+		}
+		accepted <- err
+	}()
+	c, err := Dial(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if err := <-accepted; err != nil {
+		t.Fatal(err)
 	}
 }

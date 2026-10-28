@@ -69,7 +69,47 @@ func Listen(dir string) (net.Listener, error) {
 		l.Close()
 		return nil, e
 	}
-	return l, nil
+	return sameUserListener{l}, nil
+}
+
+// sameUserListener drops connections that come from another user before the
+// broker reads a single frame. The 0700 directory and 0600 socket already keep
+// other users out on their own; this makes the boundary explicit instead of
+// inferring it from file modes, and it is the only place the local peer is
+// actually identified.
+type sameUserListener struct{ net.Listener }
+
+func (l sameUserListener) Accept() (net.Conn, error) {
+	for {
+		c, e := l.Listener.Accept()
+		if e != nil {
+			return nil, e
+		}
+		uid, e := peerUID(c)
+		if e != nil || uid != uint32(os.Getuid()) {
+			c.Close()
+			continue
+		}
+		return c, nil
+	}
+}
+
+// peerUID asks the kernel who is on the other end of a local connection.
+func peerUID(c net.Conn) (uint32, error) {
+	sc, ok := c.(*net.UnixConn)
+	if !ok {
+		return 0, errors.New("本地连接不是 Unix 套接字")
+	}
+	raw, e := sc.SyscallConn()
+	if e != nil {
+		return 0, e
+	}
+	var uid uint32
+	var credErr error
+	if e = raw.Control(func(fd uintptr) { uid, credErr = peerUIDOfFD(int(fd)) }); e != nil {
+		return 0, e
+	}
+	return uid, credErr
 }
 func Dial(ctx context.Context, dir string) (net.Conn, error) {
 	if e := Prepare(dir); e != nil {
