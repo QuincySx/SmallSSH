@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"sshclient/internal/accesspolicy"
 	"sshclient/internal/broker"
@@ -68,7 +69,9 @@ func TestProtectedHostUploadFallsBackToABoundedRetry(t *testing.T) {
 	m = New(dir)
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, j.ID, "test") }()
-	pending := waitJob(t, m, j.ID, "waiting")
+	// This path costs an extra round trip (refused resume, then a bounded retry),
+	// so it gets a wider deadline than the shared helper's five seconds.
+	pending := waitWaiting(t, m, j.ID, 20*time.Second)
 	if e = cli.Decide(ctx, pending.RequestID, true, false, pass); e != nil {
 		t.Fatal(e)
 	}
@@ -85,4 +88,19 @@ func TestProtectedHostUploadFallsBackToABoundedRetry(t *testing.T) {
 	if job := m.List(); len(job) != 1 || job[0].State != "done" || job[0].Bytes != int64(len(body)) {
 		t.Fatalf("job did not finish as a complete upload: %+v", job)
 	}
+}
+
+func waitWaiting(t *testing.T, m *Manager, id string, limit time.Duration) Job {
+	t.Helper()
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		for _, j := range m.List() {
+			if j.ID == id && j.State == "waiting" {
+				return j
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("job did not reach waiting", m.List())
+	return Job{}
 }
