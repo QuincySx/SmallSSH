@@ -152,7 +152,10 @@ type app struct {
 	mainWindowReady               bool
 	applicationActive             bool
 	// zoom is the main window's content zoom; 0 means unset, which draws at 100%.
-	zoom                          float32
+	zoom float32
+	// idleUnlockedAt is when this unlock began, used by the idle lock. It belongs
+	// to the UI thread.
+	idleUnlockedAt                time.Time
 	approvalAutoAttempted         map[string]bool
 	sessions                      []*session
 	serverStatuses                map[string]*serverStatusState

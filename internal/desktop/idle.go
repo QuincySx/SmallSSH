@@ -38,6 +38,10 @@ func lockWhenIdle(online bool, idle, unlockedFor time.Duration) bool {
 }
 
 // watchIdle starts the watcher once per process, from the first rendered frame.
+//
+// The clock itself is the only thing that runs off the UI thread: every read of
+// app state, and the lock, happen in a UI callback, so nothing here touches
+// app.online or the power API from two goroutines at once.
 func (a *app) watchIdle() {
 	idleWatch.Do(func() {
 		var done <-chan struct{}
@@ -47,36 +51,32 @@ func (a *app) watchIdle() {
 		go func() {
 			ticker := time.NewTicker(idleTick)
 			defer ticker.Stop()
-			var unlockedAt time.Time
 			for {
 				select {
 				case <-done:
 					return
 				case <-ticker.C:
 				}
-				if !a.online {
-					unlockedAt = time.Time{}
-					continue
-				}
-				if unlockedAt.IsZero() {
-					unlockedAt = time.Now()
-					continue
-				}
-				if !a.idleExpired(time.Now(), unlockedAt) {
-					continue
-				}
-				// Locking touches windows and cancels sessions, so it happens on
-				// the UI thread and re-checks there: the owner may have come back
-				// between the tick and the callback.
-				a.postUI(func() {
-					if a.idleExpired(time.Now(), unlockedAt) {
-						a.lock()
-					}
-				})
-				return
+				a.postUI(a.checkIdle)
 			}
 		}()
 	})
+}
+
+// checkIdle locks the vault once it has been left alone long enough. It runs on
+// the UI thread, where locking is allowed.
+func (a *app) checkIdle() {
+	if !a.online {
+		a.idleUnlockedAt = time.Time{}
+		return
+	}
+	if a.idleUnlockedAt.IsZero() {
+		a.idleUnlockedAt = time.Now()
+		return
+	}
+	if a.idleExpired(time.Now(), a.idleUnlockedAt) {
+		a.lock()
+	}
 }
 
 func (a *app) idleExpired(now time.Time, unlockedAt time.Time) bool {
