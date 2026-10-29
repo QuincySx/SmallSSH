@@ -97,6 +97,7 @@ type Server struct {
 	monitorWG      sync.WaitGroup
 	audit          *audit
 	auditFault     atomic.Bool
+	roots          protectedRootCache
 }
 
 // Open takes exclusive ownership of the vault until Close. The caller reads the
@@ -180,6 +181,7 @@ func (s *Server) serve() {
 }
 func (s *Server) Close() {
 	s.once.Do(func() {
+		s.roots.clear()
 		s.cancel()
 		s.listener.Close()
 		s.Approvals.Lock()
@@ -741,18 +743,35 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		}
 	}()
 	if !r.OwnerIssued && !p.Policy.Unrestricted {
+		roots := p.Policy.Paths()
+		// Resolving the protected roots is the expensive part and they are the
+		// owner's configuration, so the canonical form is cached briefly. The
+		// path being changed is still resolved on every operation.
+		var canonical []string
+		if len(accesspolicy.MutationPaths(op)) > 0 || len(accesspolicy.ReadPaths(op)) > 0 {
+			key := rootCacheKey(p.ID, roots)
+			cached, ok := s.roots.get(key)
+			if !ok {
+				if cached, e = c.ResolveProtectedRoots(ctx, roots); e != nil {
+					fail(s.recordRefusal(op, r.ParentID, "protected_path", p.Name, e))
+					return
+				}
+				s.roots.put(key, cached)
+			}
+			canonical = cached
+		}
 		if paths := accesspolicy.MutationPaths(op); len(paths) > 0 {
 			// Hold the same lock from remote path inspection through commit;
 			// another operation in this broker cannot swap a checked ancestor.
 			lockWrites()
-			if e = c.CheckProtectedPaths(ctx, paths, p.Policy.Paths()); e != nil {
+			if e = c.CheckProtectedPathsCanonical(ctx, paths, roots, canonical); e != nil {
 				fail(s.recordRefusal(op, r.ParentID, "protected_path", p.Name, e))
 				return
 			}
 		}
 		if paths := accesspolicy.ReadPaths(op); len(paths) > 0 {
 			lockWrites()
-			if e = c.CheckProtectedReadPaths(ctx, paths, p.Policy.Paths()); e != nil {
+			if e = c.CheckProtectedReadPathsCanonical(ctx, paths, roots, canonical); e != nil {
 				fail(s.recordRefusal(op, r.ParentID, "protected_path", p.Name, e))
 				return
 			}

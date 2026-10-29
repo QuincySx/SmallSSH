@@ -20,14 +20,59 @@ import (
 // The broker must still serialize its own writes. SFTP has no race-free openat
 // equivalent: a separate remote process can change paths after this check.
 func (c *Client) CheckProtectedPaths(ctx context.Context, paths, protected []string) error {
-	return c.checkProtectedPaths(ctx, paths, protected, true)
+	return c.checkProtectedPaths(ctx, paths, protected, true, nil)
+}
+
+// ResolveProtectedRoots returns the canonical form of each root. The broker caches
+// this briefly: the roots are the owner's configuration and resolving them costs
+// two round trips each, on every mutation, before anything else happens.
+func (c *Client) ResolveProtectedRoots(ctx context.Context, roots []string) ([]string, error) {
+	if len(roots) == 0 {
+		roots = (accesspolicy.Policy{}).Paths()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, pathGuardError(err)
+	}
+	s, err := sftp.NewClient(c.SSH)
+	if err != nil {
+		return nil, pathGuardError(err)
+	}
+	defer s.Close()
+	stop := context.AfterFunc(ctx, func() { s.Close() })
+	defer stop()
+	canonical := make([]string, 0, len(roots))
+	for _, root := range roots {
+		resolved, err := guardedPath(s, root, false, 0)
+		if err != nil {
+			return nil, pathGuardError(err)
+		}
+		canonical = append(canonical, resolved)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, pathGuardError(err)
+	}
+	return canonical, nil
+}
+
+// CheckProtectedPathsCanonical is CheckProtectedPaths with the canonical roots
+// already resolved by ResolveProtectedRoots. The paths themselves are still
+// resolved here, so a link swapped in since the roots were cached is still
+// refused.
+func (c *Client) CheckProtectedPathsCanonical(ctx context.Context, paths, protected, canonical []string) error {
+	return c.checkProtectedPaths(ctx, paths, protected, true, canonical)
 }
 
 func (c *Client) CheckProtectedReadPaths(ctx context.Context, paths, protected []string) error {
-	return c.checkProtectedPaths(ctx, paths, protected, false)
+	return c.checkProtectedPaths(ctx, paths, protected, false, nil)
 }
 
-func (c *Client) checkProtectedPaths(ctx context.Context, paths, protected []string, mutation bool) error {
+// CheckProtectedReadPathsCanonical is CheckProtectedReadPaths with the canonical
+// roots already resolved.
+func (c *Client) CheckProtectedReadPathsCanonical(ctx context.Context, paths, protected, canonical []string) error {
+	return c.checkProtectedPaths(ctx, paths, protected, false, canonical)
+}
+
+func (c *Client) checkProtectedPaths(ctx context.Context, paths, protected []string, mutation bool, canonicalRoots []string) error {
 	if len(paths) == 0 {
 		return nil
 	}
@@ -51,13 +96,15 @@ func (c *Client) checkProtectedPaths(ctx context.Context, paths, protected []str
 	defer s.Close()
 	stop := context.AfterFunc(ctx, func() { s.Close() })
 	defer stop()
-	canonicalRoots := make([]string, 0, len(protected))
-	for _, root := range protected {
-		resolved, err := guardedPath(s, root, false, 0)
-		if err != nil {
-			return pathGuardError(err)
+	if canonicalRoots == nil {
+		canonicalRoots = make([]string, 0, len(protected))
+		for _, root := range protected {
+			resolved, err := guardedPath(s, root, false, 0)
+			if err != nil {
+				return pathGuardError(err)
+			}
+			canonicalRoots = append(canonicalRoots, resolved)
 		}
-		canonicalRoots = append(canonicalRoots, resolved)
 	}
 	for _, target := range paths {
 		resolved, err := guardedPath(s, target, true, 0)

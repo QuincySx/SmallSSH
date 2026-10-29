@@ -115,3 +115,48 @@ func TestRemotePathGuardRejectsDotDotInProtectedLinkTargets(t *testing.T) {
 		})
 	}
 }
+
+// The broker caches the canonical roots and passes them back in; the result must
+// be the same, including for a root that is itself a symbolic link.
+func TestRemotePathGuardWithPreResolvedRoots(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX path guard fixture")
+	}
+	server := testserver.New(t)
+	client, err := sshconn.Dial(context.Background(), server.Profile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	critical, safe := filepath.Join(dir, "critical"), filepath.Join(dir, "safe")
+	for _, p := range []string{critical, safe} {
+		if err := os.Mkdir(p, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias := filepath.Join(dir, "alias")
+	if err := os.Symlink(critical, alias); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := client.ResolveProtectedRoots(context.Background(), []string{alias})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canonical) != 1 || canonical[0] != critical {
+		t.Fatalf("alias root resolved to %v, want %s", canonical, critical)
+	}
+	for _, target := range []string{critical, filepath.Join(critical, "child"), alias, filepath.Join(alias, "child")} {
+		if err := client.CheckProtectedPathsCanonical(context.Background(), []string{target}, []string{alias}, canonical); !errors.Is(err, accesspolicy.ErrProtected) {
+			t.Errorf("accepted protected %s with pre-resolved roots: %v", target, err)
+		}
+	}
+	for _, target := range []string{safe, filepath.Join(safe, "new")} {
+		if err := client.CheckProtectedPathsCanonical(context.Background(), []string{target}, []string{alias}, canonical); err != nil {
+			t.Errorf("rejected %s with pre-resolved roots: %v", target, err)
+		}
+	}
+}

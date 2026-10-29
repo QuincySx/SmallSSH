@@ -37,11 +37,24 @@ func BenchmarkProtectedPathGuard(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+	canonical, err := client.ResolveProtectedRoots(context.Background(), nil)
+	if err != nil {
+		b.Fatal(err)
+	}
 	targets := []string{filepath.Join(root, "file"), deep}
 	for _, target := range targets {
-		b.Run(fmt.Sprintf("components-%d", strings.Count(target, "/")), func(b *testing.B) {
+		label := fmt.Sprintf("components-%d", strings.Count(target, "/"))
+		b.Run(label+"-resolving-roots", func(b *testing.B) {
 			for range b.N {
 				if err := client.CheckProtectedPaths(context.Background(), []string{target}, nil); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		// What the broker does now: the roots are cached, the path is not.
+		b.Run(label+"-cached-roots", func(b *testing.B) {
+			for range b.N {
+				if err := client.CheckProtectedPathsCanonical(context.Background(), []string{target}, nil, canonical); err != nil {
 					b.Fatal(err)
 				}
 			}
