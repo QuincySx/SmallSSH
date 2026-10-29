@@ -14,6 +14,7 @@ type Event struct {
 	ParentID      string    `json:"parentId,omitempty"`
 	OwnerIssued   bool      `json:"ownerIssued,omitempty"`
 	OwnerSession  bool      `json:"ownerSession,omitempty"`
+	Renewals      int       `json:"renewals,omitempty"`
 	Time          time.Time `json:"time"`
 	Event         string    `json:"event"`
 	RequestID     string    `json:"requestId,omitempty"`

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -96,8 +97,9 @@ func TestPendingRejectsIrrelevantPayloadAndPagesLargeQueue(t *testing.T) {
 	if _, _, err := c.Request(ctx, approval.Operation{Host: "fixture", Kind: "list", Path: "/", Client: "unapproved", PrefixHash: strings.Repeat("a", 600<<10)}, time.Minute); err == nil {
 		t.Fatal("irrelevant large field accepted")
 	}
-	for range 40 {
-		request(t, c, approval.Operation{Host: "fixture", Kind: "exec", Command: strings.Repeat("a", 32768), Client: "bounded pending fixture"})
+	// Distinct callers, because one caller's own share of the queue is bounded.
+	for i := range 40 {
+		request(t, c, approval.Operation{Host: "fixture", Kind: "exec", Command: strings.Repeat("a", 32768), Client: fmt.Sprintf("bounded pending fixture %d", i)})
 	}
 	all, err := owner.Call(ctx, broker.Message{Action: "pending"})
 	if err != nil || len(all.Requests) != 40 {

@@ -1265,3 +1265,13 @@ CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮
 复查中确认的其余两条按文档处理，不改代码：路径检查与使用之间的 TOCTOU（SFTP v3 固有限制，远端同账号并发进程可竞争）；所有者操作按设计不受路径策略约束（所有者即信任根）。
 
 验证：`go run ./tools check` 通过；`go test ./internal/auditlog ./internal/localipc ./internal/transfer ./internal/broker ./internal/desktop` 全绿；五平台交叉编译通过。未做：没有真机渗透测试，没有实测 Windows 管道 ACL，没有观察 15 分钟空闲锁的真机行为（只测了判定逻辑）。
+
+## 续期计数与申请方配额 · 2026-10-29
+
+零信任复查剩下的两条可执行项：
+
+- **续期计数可见**：`approval.Request.Renewals` 在每次续期时累加，进入审批证明（canonical 覆盖整个请求）、审批界面标题（"会话已过期，允许续期？（连续第 N 次）"）、CLI 的 `Describe` 与审计记录。此前一个不断被续期的授权在任何地方都看不出来。
+- **申请方配额**：同一申请方的待处理请求上限 16 条，超过即拒绝并要求先处理或撤销；全局 128 条上限与"已结束记录可淘汰"的策略不变。此前任意本地进程都能把队列灌满，把真实申请挤出所有者视野。
+
+验证：新增 `TestRenewalCountsEveryExtension`（连续续期三次计数 1/2/3）、`TestOneCallerCannotFillTheApprovalQueue`（第 17 条被拒，另一个申请方不受影响）；`go run ./tools check` 通过（`build/logs/check-20261029-231248.log`）。改动落在 `internal/approval`、`internal/auditlog`、`internal/broker/audit.go`、`internal/desktop/approval_*`、`internal/client/owner.go` 与两份本地化词条。
+

@@ -10,6 +10,9 @@ import (
 func compactApprovalTitle(r approval.Request) string {
 	if r.Operation.Kind == "grant" {
 		if r.Renewal {
+			if r.Renewals > 1 {
+				return fmt.Sprintf(tr(nil, "会话已过期，允许续期？（连续第 %d 次）"), r.Renewals)
+			}
 			return tr(nil, "会话已过期，允许续期？")
 		}
 		return tr(nil, "允许访问服务器？")

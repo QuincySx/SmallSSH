@@ -26,6 +26,10 @@ func approvalHeading(r approval.Request) string {
 			return tr(nil, "客户端会话授权")
 		}
 		if r.Renewal {
+			// An authority that has been extended many times deserves to say so.
+			if r.Renewals > 1 {
+				return fmt.Sprintf(tr(nil, "会话已过期，允许续期？（连续第 %d 次）"), r.Renewals)
+			}
 			return tr(nil, "会话已过期，允许续期？")
 		}
 		return tr(nil, "允许持续访问服务器？")

@@ -128,6 +128,7 @@ func (m *Manager) Renew(id string, signature []byte) (Request, bool, error) {
 	e.renewedFrom = c.PreviousNonce
 	e.request.Nonce = token()
 	e.request.Renewal = true
+	e.request.Renewals++
 	e.request.Status = "pending"
 	e.request.Expires = m.now().Add(5 * time.Minute).UTC()
 	e.lastUsed = time.Time{}

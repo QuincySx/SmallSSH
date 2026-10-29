@@ -275,3 +275,23 @@ func TestOwnerShellLifetimeIsSeparateFromExternalGrants(t *testing.T) {
 		t.Fatal("lock did not cancel owner session")
 	}
 }
+
+// One caller cannot occupy the approval queue: its own share is bounded, and
+// another caller is unaffected.
+func TestOneCallerCannotFillTheApprovalQueue(t *testing.T) {
+	m := New(prove)
+	op := Operation{Host: "fixture", Kind: "exec", Command: "uptime", Client: "noisy"}
+	for i := 0; i < maxPendingPerClient; i++ {
+		if _, _, err := m.Create(op, time.Minute); err != nil {
+			t.Fatalf("request %d refused early: %v", i, err)
+		}
+	}
+	if _, _, err := m.Create(op, time.Minute); err == nil {
+		t.Fatal("the caller's own share was unbounded")
+	}
+	other := op
+	other.Client = "quiet"
+	if _, _, err := m.Create(other, time.Minute); err != nil {
+		t.Fatalf("another caller was blocked: %v", err)
+	}
+}

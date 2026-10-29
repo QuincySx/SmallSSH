@@ -1176,5 +1176,7 @@
   "限定目录访问": "Access to specified directories",
   "已取消": "Cancelled",
   "续期限定目录访问": "Renew access to specified directories",
-  "允许限定目录访问": "Allow access to specified directories"
+  "允许限定目录访问": "Allow access to specified directories",
+  "会话已过期，允许续期？（连续第 %d 次）": "Session expired. Allow renewal? (renewal %d)",
+  "连续第 %d 次续期\n": "Renewal %d\n"
 }

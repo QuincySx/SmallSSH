@@ -50,6 +50,7 @@ func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcom
 			v.Generation = hex.EncodeToString(generation[:])
 		}
 		v.OwnerIssued = r.OwnerIssued
+		v.Renewals = r.Renewals
 		v.OwnerSession = r.OwnerSession
 		v.Host = auditText(r.Operation.Host, 128)
 		v.Kind = auditText(r.Operation.Kind, 64)

@@ -44,7 +44,10 @@ type Operation struct {
 	Client          string                   `json:"client"`
 }
 type Request struct {
-	Renewal      bool      `json:"renewal,omitempty"`
+	Renewal bool `json:"renewal,omitempty"`
+	// Renewals counts how many times this grant has been extended. An authority
+	// that keeps being extended is worth seeing in the review and in the log.
+	Renewals     int       `json:"renewals,omitempty"`
 	ParentID     string    `json:"parentId,omitempty"`
 	OwnerIssued  bool      `json:"ownerIssued,omitempty"`
 	OwnerSession bool      `json:"ownerSession,omitempty"`
@@ -90,6 +93,10 @@ func token() string {
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
 }
+
+// maxPendingPerClient bounds one caller's share of the approval queue.
+const maxPendingPerClient = 16
+
 func canonical(r Request) []byte {
 	r.Status = ""
 	b, _ := json.Marshal(r)
@@ -208,6 +215,17 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool) (Request, 
 			return Request{}, "", errors.New("待处理授权过多")
 		}
 		delete(m.pending, oldest)
+	}
+	// One caller cannot fill the queue and push everyone else's request out of
+	// the owner's view.
+	queued := 0
+	for _, e := range m.pending {
+		if e.request.Status == "pending" && e.request.Operation.Client == op.Client {
+			queued++
+			if queued >= maxPendingPerClient {
+				return Request{}, "", errors.New("该申请方待处理请求过多，请先处理或撤销")
+			}
+		}
 	}
 	r := Request{OwnerIssued: owner, OwnerSession: owner && (op.Kind == "shell" || op.Kind == "docker-terminal" || op.Kind == "docker-logs" && op.Docker.Follow), ID: token(), Nonce: token(), Operation: op, Expires: m.now().Add(ttl).UTC(), Status: "pending"}
 	t := token()

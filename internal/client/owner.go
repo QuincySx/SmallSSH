@@ -89,6 +89,13 @@ func (c Client) PutProfile(ctx context.Context, p vault.Profile, pass []byte) er
 }
 
 func Describe(r approval.Request) string {
+	if r.Renewal && r.Renewals > 1 {
+		return fmt.Sprintf("连续第 %d 次续期\n", r.Renewals) + describeOperation(r)
+	}
+	return describeOperation(r)
+}
+
+func describeOperation(r approval.Request) string {
 	o := r.Operation
 	if o.Kind == "docker-logs" || o.Kind == "docker-terminal" {
 		r.Operation.Kind = "Docker 操作"

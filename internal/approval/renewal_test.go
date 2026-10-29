@@ -307,3 +307,23 @@ func TestExpiredRenewalMetadataIsBounded(t *testing.T) {
 		t.Fatal("dormant metadata became an execution ticket")
 	}
 }
+
+// An authority that keeps being extended is counted, so the review and the audit
+// can say how many times it already happened.
+func TestRenewalCountsEveryExtension(t *testing.T) {
+	m, original, _, key, now := expiredGrant(t, "full")
+	for want := 1; want <= 3; want++ {
+		c := renewalChallenge(t, m, original.ID)
+		r, created, err := m.Renew(c.ID, ed25519.Sign(key, RenewalProofMessage(*c)))
+		if err != nil || !created {
+			t.Fatal(err)
+		}
+		if !r.Renewal || r.Renewals != want {
+			t.Fatalf("renewal %d recorded %+v", want, r)
+		}
+		approve(t, m, r)
+		*now = now.Add(16 * time.Minute)
+		m.Sweep()
+		original = r
+	}
+}
