@@ -509,7 +509,9 @@ func TestSharedMonitorCancelledRoundsKeepMinimumGlobalProbeSpacing(t *testing.T)
 		cancel()
 		select {
 		case <-stops:
-		case <-time.After(time.Second):
+		// The whole suite runs its packages in parallel, so a canceled goroutine
+		// can take longer than a quiet machine would need to observe it.
+		case <-time.After(3 * time.Second):
 			t.Fatal("canceled counter probe survived its grant")
 		}
 	}
