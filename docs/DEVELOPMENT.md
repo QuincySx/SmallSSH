@@ -20,7 +20,7 @@ go run ./tools <任务> [参数]    # 与 go run ./tools/<任务> 等价
 | 任务 | 用途 | 日志 |
 |---|---|---|
 | `check` | `patches/vendor-integrity.json` 校验 + `gofmt -l` + `go vet` + `go test`。**CI 跑的就是这条** | `build/logs/check-<时间>.log` |
-| `test` | 只跑 `go vet` + `go test`（`-race`、`-short`、`-pkg`、`-timeout`） | `build/logs/test-<时间>[-race].log` |
+| `test` | 只跑 `go vet` + `go test`（`-race`、`-short`、`-pkg`、`-timeout`、`-serial`） | `build/logs/test-<时间>[-race].log` |
 | `build` | 编译原生组件与各平台 CLI，再调 MyGo 打包（`-platform`、`-check`） | 标准输出 |
 | `dev` | 静默开发进程：`run` / `status` / `show` / `stop`（`-data-dir`） | — |
 

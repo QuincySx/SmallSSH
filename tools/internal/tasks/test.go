@@ -22,6 +22,7 @@ type pipeline struct {
 	race     bool
 	short    bool
 	vet      bool
+	serial   bool
 	timeout  time.Duration
 }
 
@@ -31,6 +32,7 @@ func bindPipeline(fs *flag.FlagSet) *pipeline {
 	fs.BoolVar(&p.race, "race", false, "run the tests with the race detector")
 	fs.BoolVar(&p.short, "short", false, "skip tests that take longer")
 	fs.BoolVar(&p.vet, "vet", true, "run go vet before the tests")
+	fs.BoolVar(&p.serial, "serial", false, "test one package at a time; timing-sensitive tests assume a quiet machine")
 	fs.DurationVar(&p.timeout, "timeout", 20*time.Minute, "test timeout")
 	return p
 }
@@ -60,6 +62,11 @@ func (p *pipeline) run(out *tee, logPath string) error {
 		}
 	}
 	args := []string{"test", "-mod=vendor", "-count=1", "-timeout", p.timeout.String()}
+	if p.serial {
+		// Several suites assert on timing windows; running packages in parallel
+		// makes those windows depend on what else the machine is doing.
+		args = append(args, "-p", "1")
+	}
 	if p.race {
 		args = append(args, "-race")
 	}
