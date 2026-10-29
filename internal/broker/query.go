@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"sshclient/internal/approval"
+	"sshclient/internal/vault"
 )
 
 // Owner queries are bound to a one-use challenge and the complete query,
@@ -88,4 +89,15 @@ func (s *Server) pendingPage(q Message) (Message, error) {
 		page.Requests = append(page.Requests, r)
 	}
 	return page, nil
+}
+
+// redactedSummaries keeps only what a caller needs to ask for access: the ID it
+// must name, and the name and group a human uses to recognize it. Addresses,
+// accounts, credentials and automation policy stay with the owner.
+func redactedSummaries(list []vault.Summary) []vault.Summary {
+	out := make([]vault.Summary, len(list))
+	for i, v := range list {
+		out[i] = vault.Summary{ID: v.ID, Name: v.Name, Group: v.Group}
+	}
+	return out
 }

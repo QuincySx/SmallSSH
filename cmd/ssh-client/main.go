@@ -35,7 +35,7 @@ const help = `SmallSSH · 开发预览版
  host group 连接ID 分组名       保留凭据并修改分组（需代理运行）
  probe 主机:端口               查看主机指纹；请通过服务器控制台另行核对
  agent                         启动代理；主密码仅从本地终端读取
- hosts                         所有者验证后列出连接 ID、分组与地址
+ hosts                         列出连接 ID、分组与名称（无需主密码；不含地址与账号）
  biometric status|enable|disable 系统验证设置
  --biometric agent / approve ID  用系统验证解锁或授权
  monitor 连接ID                 连续 Linux 监控（JSON 行）
@@ -269,25 +269,31 @@ func run() (int, error) {
 		fmt.Fprintln(os.Stderr, "代理已启动。保持此窗口打开；退出会锁定并撤销所有会话。")
 		<-ctx.Done()
 		return 0, nil
-	case "hosts", "pending":
+	case "hosts":
+		// Discovery needs no master password: without owner proof the broker
+		// returns connection IDs, names and groups, never an address, account or
+		// automation policy. That is what an automated caller needs to ask for
+		// access to a machine it was told about.
+		r, e := c.Call(ctx, broker.Message{Action: "hosts"})
+		if e != nil {
+			return 1, e
+		}
+		for _, h := range r.Connections {
+			fmt.Printf("%q\t%q\t%q\n", h.ID, h.Group, h.Name)
+		}
+		return 0, nil
+	case "pending":
 		owner, err := openOwner(ctx, *dir, *biometric, "查看 SSH 管理信息")
 		if err != nil {
 			return 1, err
 		}
 		defer owner.Close()
-		action := args[0]
-		r, e := c.CallWithOwner(ctx, broker.Message{Action: action}, owner)
+		r, e := c.CallWithOwner(ctx, broker.Message{Action: "pending"}, owner)
 		if e != nil {
 			return 1, e
 		}
-		if action == "hosts" {
-			for _, h := range r.Connections {
-				fmt.Printf("%q\t%q\t%q\t%q\n", h.ID, h.Group, h.Name, h.Host)
-			}
-		} else {
-			for _, q := range r.Requests {
-				fmt.Printf("%s\n状态: %s\n\n", client.Describe(q), q.Status)
-			}
+		for _, q := range r.Requests {
+			fmt.Printf("%s\n状态: %s\n\n", client.Describe(q), q.Status)
 		}
 		return 0, nil
 	case "approve", "deny", "revoke":

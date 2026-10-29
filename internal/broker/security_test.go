@@ -26,12 +26,23 @@ func TestPrivateQueriesRequireOwnerOrExactTicket(t *testing.T) {
 	stranger := client.Client{Dir: owner.Dir}
 	r, ticket := request(t, owner, approval.Operation{Host: "fixture", Kind: "exec", Command: "synthetic private command", Client: "first client"})
 	for _, q := range []broker.Message{
-		{Action: "pending"}, {Action: "hosts"}, {Action: "status", ID: r.ID},
+		{Action: "pending"}, {Action: "status", ID: r.ID},
 		{Action: "sessionStatus", ID: r.ID}, {Action: "probeHost", Target: f.Profile().Host, Port: f.Profile().Port}, {Action: "agentIdentities"},
 		{Action: "status", ID: r.ID, Ticket: "another client's ticket"},
 	} {
 		if _, err := stranger.Call(ctx, q); err == nil {
 			t.Fatal("unproven query allowed", q.Action)
+		}
+	}
+	// Host discovery is the one private query a caller may make without proof,
+	// and it must not carry how to reach or log in to a machine.
+	redacted, err := stranger.Call(ctx, broker.Message{Action: "hosts"})
+	if err != nil || !redacted.Redacted || len(redacted.Connections) == 0 {
+		t.Fatalf("unproven host discovery failed: %v %+v", err, redacted)
+	}
+	for _, h := range redacted.Connections {
+		if h.Host != "" || h.Port != 0 || h.User != "" || h.Fingerprint != "" || h.ID == "" {
+			t.Fatalf("host discovery leaked reachability: %+v", h)
 		}
 	}
 	if f.Auths.Load() != 0 {

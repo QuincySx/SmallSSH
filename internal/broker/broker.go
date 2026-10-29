@@ -28,10 +28,13 @@ import (
 
 // Message is the local wire protocol. Credentials are never response fields.
 type Message struct {
-	Challenge     string                        `json:"challenge,omitempty"`
-	After         string                        `json:"after,omitempty"`
-	Next          string                        `json:"next,omitempty"`
-	Limit         int                           `json:"limit,omitempty"`
+	Challenge string `json:"challenge,omitempty"`
+	After     string `json:"after,omitempty"`
+	Next      string `json:"next,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+	// Redacted marks a host list served without owner proof: connection IDs,
+	// names and groups only.
+	Redacted      bool                          `json:"redacted,omitempty"`
 	AuditQuery    *auditlog.Query               `json:"auditQuery,omitempty"`
 	AuditPage     *auditlog.Page                `json:"auditPage,omitempty"`
 	Renewal       *approval.RenewalChallenge    `json:"renewal,omitempty"`
@@ -514,11 +517,16 @@ func (s *Server) handle(c net.Conn) {
 		s.Approvals.InvalidateHost(q.Target)
 		_ = w.Send(Message{Action: "ok"})
 	case "hosts":
-		if !s.ownerQuery(q) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
+		// Without owner proof a caller gets what it needs to ask for access and
+		// nothing about where the machine is or how to log in to it.
+		owner := s.ownerQuery(q)
+		list := s.Vault.Summaries()
+		if !owner {
+			list = redactedSummaries(list)
+			_ = w.Send(Message{Connections: list, Redacted: true})
 			return
 		}
-		_ = w.Send(Message{Hosts: s.Vault.Names(), Connections: s.Vault.Summaries()})
+		_ = w.Send(Message{Hosts: s.Vault.Names(), Connections: list})
 	case "pending":
 		page, e := s.pendingPage(q)
 		if e != nil {
