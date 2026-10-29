@@ -97,12 +97,16 @@ func TestPendingRejectsIrrelevantPayloadAndPagesLargeQueue(t *testing.T) {
 	if _, _, err := c.Request(ctx, approval.Operation{Host: "fixture", Kind: "list", Path: "/", Client: "unapproved", PrefixHash: strings.Repeat("a", 600<<10)}, time.Minute); err == nil {
 		t.Fatal("irrelevant large field accepted")
 	}
-	// Distinct callers, because one caller's own share of the queue is bounded.
-	for i := range 40 {
+	// One process gets its own share of the queue and no more: renaming the
+	// caller in each request does not buy another slot.
+	for i := range 16 {
 		request(t, c, approval.Operation{Host: "fixture", Kind: "exec", Command: strings.Repeat("a", 32768), Client: fmt.Sprintf("bounded pending fixture %d", i)})
 	}
+	if _, _, err := c.Request(ctx, approval.Operation{Host: "fixture", Kind: "exec", Command: "one too many", Client: "another label"}, time.Minute); err == nil {
+		t.Fatal("one process filled more than its share of the queue")
+	}
 	all, err := owner.Call(ctx, broker.Message{Action: "pending"})
-	if err != nil || len(all.Requests) != 40 {
+	if err != nil || len(all.Requests) != 16 {
 		t.Fatal("large queue was lost", len(all.Requests), err)
 	}
 	seen := map[string]bool{}

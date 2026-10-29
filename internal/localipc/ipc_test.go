@@ -91,3 +91,49 @@ func TestListenerOnlyAcceptsTheCurrentUser(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The process on the other end of the socket is what the broker counts a
+// caller's share of the approval queue by; here it is this test process.
+func TestListenerReportsThePeerProcess(t *testing.T) {
+	dir, err := os.MkdirTemp("", "ipcpid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	if err = os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	release, err := Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	ln, err := Listen(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	pid := make(chan int, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			pid <- 0
+			return
+		}
+		defer c.Close()
+		got, err := PeerPID(c)
+		if err != nil {
+			pid <- 0
+			return
+		}
+		pid <- got
+	}()
+	c, err := Dial(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if got := <-pid; got != os.Getpid() {
+		t.Fatalf("peer process reported as %d, want %d", got, os.Getpid())
+	}
+}

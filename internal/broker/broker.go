@@ -200,6 +200,12 @@ func (s *Server) handle(c net.Conn) {
 	stop := context.AfterFunc(s.ctx, func() { c.Close() })
 	defer stop()
 	w := &localipc.Wire{Conn: c}
+	// The broker counts one caller's share of the approval queue by the process
+	// the kernel reports, not by the label the caller writes in the request.
+	bucket := ""
+	if pid, err := localipc.PeerPID(c); err == nil && pid > 0 {
+		bucket = fmt.Sprintf("pid:%d", pid)
+	}
 	c.SetDeadline(time.Now().Add(20 * time.Second))
 	var q Message
 	if w.Receive(&q) != nil {
@@ -551,7 +557,7 @@ func (s *Server) handle(c net.Conn) {
 			fail(e)
 			return
 		}
-		r, t, e := s.Approvals.Create(q.Operation, time.Duration(q.TTL)*time.Second)
+		r, t, e := s.Approvals.CreateFrom(q.Operation, time.Duration(q.TTL)*time.Second, bucket)
 		if e != nil {
 			fail(s.recordRefusal(q.Operation, "", "invalid_operation", p.Name, e))
 			return

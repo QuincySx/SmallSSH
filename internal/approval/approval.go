@@ -58,6 +58,8 @@ type Request struct {
 	Status       string    `json:"status"`
 }
 type entry struct {
+	// bucket is the caller identity the broker established for this request.
+	bucket      string
 	renewedFrom string
 	dormantAt   time.Time
 	lastUsed    time.Time
@@ -103,16 +105,23 @@ func canonical(r Request) []byte {
 	return append([]byte("ssh-client/request/v1\x00"), b...)
 }
 func (m *Manager) Create(op Operation, ttl time.Duration) (Request, string, error) {
-	return m.create(op, ttl, false)
+	return m.create(op, ttl, false, "")
+}
+
+// CreateFrom is Create for a caller the broker could identify itself, such as the
+// process on the other end of the local socket. Its share of the queue is counted
+// by that identity, so renaming the caller does not buy another sixteen slots.
+func (m *Manager) CreateFrom(op Operation, ttl time.Duration, bucket string) (Request, string, error) {
+	return m.create(op, ttl, false, bucket)
 }
 
 // CreateOwner is reached only after the broker verifies a signed one-use
 // owner challenge. Caller labels cannot select this scope.
 func (m *Manager) CreateOwner(op Operation) (Request, string, error) {
-	return m.create(op, 15*time.Minute, true)
+	return m.create(op, 15*time.Minute, true, "")
 }
 
-func (m *Manager) create(op Operation, ttl time.Duration, owner bool) (Request, string, error) {
+func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket string) (Request, string, error) {
 	if err := validateFields(op); err != nil {
 		return Request{}, "", err
 	}
@@ -217,10 +226,18 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool) (Request, 
 		delete(m.pending, oldest)
 	}
 	// One caller cannot fill the queue and push everyone else's request out of
-	// the owner's view.
+	// the owner's view. The bucket is the caller identity the broker established;
+	// without one, the label it reports is all there is.
 	queued := 0
 	for _, e := range m.pending {
-		if e.request.Status == "pending" && e.request.Operation.Client == op.Client {
+		if e.request.Status != "pending" {
+			continue
+		}
+		same := e.bucket == bucket && e.request.Operation.Client == op.Client
+		if bucket != "" {
+			same = e.bucket == bucket
+		}
+		if same {
 			queued++
 			if queued >= maxPendingPerClient {
 				return Request{}, "", errors.New("该申请方待处理请求过多，请先处理或撤销")
@@ -229,7 +246,7 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool) (Request, 
 	}
 	r := Request{OwnerIssued: owner, OwnerSession: owner && (op.Kind == "shell" || op.Kind == "docker-terminal" || op.Kind == "docker-logs" && op.Docker.Follow), ID: token(), Nonce: token(), Operation: op, Expires: m.now().Add(ttl).UTC(), Status: "pending"}
 	t := token()
-	m.pending[r.ID] = &entry{request: r, ticketHash: sha256.Sum256([]byte(t))}
+	m.pending[r.ID] = &entry{request: r, ticketHash: sha256.Sum256([]byte(t)), bucket: bucket}
 	return r, t, nil
 }
 func (m *Manager) prune() {

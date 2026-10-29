@@ -94,6 +94,26 @@ func (l sameUserListener) Accept() (net.Conn, error) {
 	}
 }
 
+// PeerPID asks the kernel which process is on the other end of a local
+// connection. A label a caller writes in a request is its own claim; the process
+// id is not, so it is what a per-caller limit can count.
+func PeerPID(c net.Conn) (int, error) {
+	sc, ok := c.(*net.UnixConn)
+	if !ok {
+		return 0, errors.New("本地连接不是 Unix 套接字")
+	}
+	raw, e := sc.SyscallConn()
+	if e != nil {
+		return 0, e
+	}
+	var pid int
+	var credErr error
+	if e = raw.Control(func(fd uintptr) { pid, credErr = peerPIDOfFD(int(fd)) }); e != nil {
+		return 0, e
+	}
+	return pid, credErr
+}
+
 // peerUID asks the kernel who is on the other end of a local connection.
 func peerUID(c net.Conn) (uint32, error) {
 	sc, ok := c.(*net.UnixConn)

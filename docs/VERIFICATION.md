@@ -1275,3 +1275,14 @@ CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮
 
 验证：新增 `TestRenewalCountsEveryExtension`（连续续期三次计数 1/2/3）、`TestOneCallerCannotFillTheApprovalQueue`（第 17 条被拒，另一个申请方不受影响）；`go run ./tools check` 通过（`build/logs/check-20261029-231248.log`）。改动落在 `internal/approval`、`internal/auditlog`、`internal/broker/audit.go`、`internal/desktop/approval_*`、`internal/client/owner.go` 与两份本地化词条。
 
+## 受保护根解析缓存与按进程计的审批配额 · 2026-10-30
+
+零信任复审里最贵的两项，一项性能一项安全：
+
+- **受保护根解析缓存**：每次受保护写操作原本要为 11 个默认根各做两次 SFTP 往返（Lstat+RealPath），在本地实测 2.0–3.3 ms，按真实链路 RTT 折算就是每次保存前先等一两秒。现在按 profile + 根列表缓存 canonical 结果 30 秒，策略/资料变更与关闭即清空；**被操作路径仍然逐段解析**，符号链接语义与信任模型不变。同一基准下从 2.0–3.3 ms 降到 0.6–1.5 ms。
+- **配额按进程计**：上一轮按 `op.Client` 计数，而那是调用方自报的标签，换标签即可绕过。现在 broker 在 accept 时向内核取对端进程（macOS `LOCAL_PEERPID`、Linux `SO_PEERCRED`），配额按该身份计；取不到身份时退回按标签计。端到端测试确认同一进程第 17 条被拒，且把标签换掉也无效。
+
+验证：`go run ./tools check -serial` 通过（`build/logs/check-20261030-000202.log`）；新增 `TestProtectedRootCacheExpiresAndClears`、`TestProtectedRootCacheKeysByRootsAndProfile`、`TestRemotePathGuardWithPreResolvedRoots`（含"受保护根本身是符号链接"仍被拒）、`TestBucketQuotaIgnoresTheReportedLabel`、`TestListenerReportsThePeerProcess`；`BenchmarkProtectedPathGuard` 增加缓存/未缓存对照。
+
+未做：Windows 命名管道尚未取对端进程（退回按标签计）；连接复用（P2）未开始。
+

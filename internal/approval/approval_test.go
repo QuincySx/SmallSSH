@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -293,5 +294,26 @@ func TestOneCallerCannotFillTheApprovalQueue(t *testing.T) {
 	other.Client = "quiet"
 	if _, _, err := m.Create(other, time.Minute); err != nil {
 		t.Fatalf("another caller was blocked: %v", err)
+	}
+}
+
+// A caller identity the broker established cannot be bought back by renaming the
+// caller: the same process gets sixteen slots however it labels itself.
+func TestBucketQuotaIgnoresTheReportedLabel(t *testing.T) {
+	m := New(prove)
+	op := Operation{Host: "fixture", Kind: "exec", Command: "uptime", Client: "name-1"}
+	for i := 0; i < maxPendingPerClient; i++ {
+		op.Client = fmt.Sprintf("name-%d", i)
+		if _, _, err := m.CreateFrom(op, time.Minute, "pid:1"); err != nil {
+			t.Fatalf("request %d refused early: %v", i, err)
+		}
+	}
+	op.Client = "name-retry"
+	if _, _, err := m.CreateFrom(op, time.Minute, "pid:1"); err == nil {
+		t.Fatal("renaming the caller bought another slot")
+	}
+	// Another process still gets its own share.
+	if _, _, err := m.CreateFrom(op, time.Minute, "pid:2"); err != nil {
+		t.Fatalf("a second process was blocked: %v", err)
 	}
 }
