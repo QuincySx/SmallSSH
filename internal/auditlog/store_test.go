@@ -2,6 +2,8 @@ package auditlog
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,8 +80,19 @@ func TestHistoryPersistsLegacyAndPageSnapshotAfterAppendAndReopen(t *testing.T) 
 
 func TestCursorSurvivesRotationAndFailsAfterRetentionEvictsIt(t *testing.T) {
 	s, _ := openTest(t)
-	b, _ := json.Marshal(event(0))
-	s.maxBytes = int64(4*(len(b)+1) + 1)
+	// Records carry a link to the one before them, so measure a linked record
+	// instead of a marshalled event.
+	probePath := filepath.Join(t.TempDir(), "probe.jsonl")
+	probe, err := Open(probePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.Append(event(0))
+	one, _ := os.Stat(probePath)
+	probe.Append(event(1))
+	two, _ := os.Stat(probePath)
+	probe.Close()
+	s.maxBytes = 4*(two.Size()-one.Size()) + 1
 	for i := 0; i < 4; i++ {
 		appendEvent(t, s, i)
 	}
@@ -276,4 +289,131 @@ func TestMalformedLineScanBudgetContinuesWithCursor(t *testing.T) {
 	if err != nil || len(second.Events) != 1 || second.Events[0].RequestID != "1" || second.Next != "" {
 		t.Fatal("bounded scan lost earlier valid history", second, err)
 	}
+}
+
+// Records chain to the one written before them, and editing or dropping one in
+// the middle is refused instead of trusted.
+func TestHistoryRecordsChainAndTamperIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.jsonl")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"exec", "get", "put", "shell"} {
+		if err = s.Append(Event{Event: "requested", Kind: kind, Host: "fixture"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.Verify(); err != nil || n != 4 {
+		t.Fatalf("Verify = %d, %v; want 4 records", n, err)
+	}
+	s.Close()
+
+	lines := readLines(t, path)
+	if len(lines) != 4 {
+		t.Fatalf("wrote %d lines, want 4", len(lines))
+	}
+	var first Event
+	if json.Unmarshal(lines[0], &first) != nil || first.Prev != "" {
+		t.Fatal("the first record must start the chain")
+	}
+	for i := 1; i < len(lines); i++ {
+		var record Event
+		if json.Unmarshal(lines[i], &record) != nil {
+			t.Fatal("unparsable record")
+		}
+		digest := sha256.Sum256(lines[i-1])
+		if record.Prev != hex.EncodeToString(digest[:]) {
+			t.Fatalf("record %d does not name its predecessor", i)
+		}
+	}
+
+	// Editing a record in the middle breaks the chain.
+	edited := bytes.Replace(lines[2], []byte(`"put"`), []byte(`"get"`), 1)
+	if bytes.Equal(edited, lines[2]) {
+		t.Fatal("test did not change the record")
+	}
+	lines[2] = edited
+	if err = os.WriteFile(path, append(bytes.Join(lines, []byte("\n")), '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Open(path); !errors.Is(err, ErrTampered) {
+		t.Fatalf("Open accepted an edited history: %v", err)
+	}
+
+	// So does dropping one.
+	lines = readLines(t, path)
+	lines[2] = bytes.Replace(lines[2], []byte(`"get"`), []byte(`"put"`), 1)
+	dropped := append(append([][]byte{}, lines[:1]...), lines[2:]...)
+	if err = os.WriteFile(path, append(bytes.Join(dropped, []byte("\n")), '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Open(path); !errors.Is(err, ErrTampered) {
+		t.Fatalf("Open accepted a history with a record removed: %v", err)
+	}
+}
+
+// A history written before records carried a link is accepted, and the next
+// record starts chaining from it.
+func TestHistoryFromBeforeTheChainStillOpens(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.jsonl")
+	legacy := `{"time":"2026-10-01T00:00:00Z","event":"requested","kind":"exec"}
+{"time":"2026-10-01T00:00:01Z","event":"ended","kind":"exec"}
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("a pre-chain history was refused: %v", err)
+	}
+	if err = s.Append(Event{Event: "requested", Kind: "get"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.Verify(); err != nil || n != 3 {
+		t.Fatalf("Verify = %d, %v; want 3 records", n, err)
+	}
+	s.Close()
+}
+
+// Rotation keeps the chain: the first record of the new file names the last
+// record of the archive.
+func TestHistoryChainSurvivesRotation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.jsonl")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.maxBytes = 600 // force a rotation after a few records
+	for i := 0; i < 12; i++ {
+		if err = s.Append(Event{Event: "requested", Kind: "exec", Host: fmt.Sprintf("fixture-%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.Verify(); err != nil || n < 2 {
+		t.Fatalf("Verify = %d, %v after rotation", n, err)
+	}
+	s.Close()
+	if _, err = Open(path); err != nil {
+		t.Fatalf("rotation left an unverifiable history: %v", err)
+	}
+	if _, err = os.Stat(path + ".1"); err != nil {
+		t.Fatal("expected a rotated archive")
+	}
+}
+
+func readLines(t *testing.T, path string) [][]byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trimmed := bytes.TrimSuffix(b, []byte("\n"))
+	if len(trimmed) == 0 {
+		return nil
+	}
+	return bytes.Split(trimmed, []byte("\n"))
 }

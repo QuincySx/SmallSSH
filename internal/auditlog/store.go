@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +30,9 @@ type Store struct {
 	path     string
 	f        *os.File
 	maxBytes int64
+	// head is the digest of the last record written, and what the next record
+	// names as its Prev.
+	head []byte
 }
 
 func Open(path string) (*Store, error) {
@@ -55,6 +59,13 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	s.f = f
+	// A record that was edited or removed in the middle is refused here rather
+	// than trusted: the broker stops instead of writing into a log it cannot vouch
+	// for.
+	if _, err = s.Verify(); err != nil {
+		f.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -102,18 +113,19 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Append(v Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.f == nil {
+		return errors.New("历史文件不可用")
+	}
+	// Seal the record to the one before it before it is written.
+	v.Prev = hex.EncodeToString(s.head)
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	if len(b) > maxLineBytes {
 		return errors.New("历史事件超过上限")
-	}
-	b = append(b, '\n')
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.f == nil {
-		return errors.New("历史文件不可用")
 	}
 	st, err := s.f.Stat()
 	if err != nil {
@@ -143,10 +155,16 @@ func (s *Store) Append(v Event) error {
 	if _, err = s.f.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
-	if _, err = s.f.Write(b); err != nil {
+	line := append(b, '\n')
+	if _, err = s.f.Write(line); err != nil {
 		return err
 	}
-	return s.f.Sync()
+	if err = s.f.Sync(); err != nil {
+		return err
+	}
+	digest := sha256.Sum256(b)
+	s.head = digest[:]
+	return nil
 }
 
 func (s *Store) rotate() error {

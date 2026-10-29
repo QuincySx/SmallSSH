@@ -24,6 +24,9 @@ type Event struct {
 	Client   string `json:"client,omitempty"`
 	HostName string `json:"hostName,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// Prev is the SHA256 of the record written before this one, so removing or
+	// editing a record in the middle breaks the chain and Verify reports it.
+	Prev string `json:"prev,omitempty"`
 }
 
 type Query struct {
