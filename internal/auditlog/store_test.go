@@ -417,3 +417,50 @@ func readLines(t *testing.T, path string) [][]byte {
 	}
 	return bytes.Split(trimmed, []byte("\n"))
 }
+
+// The vault anchor is a prefix commitment: a record the vault stored must stay
+// findable even after rotation moved it into the archive, and a digest that is
+// gone from the retained history must be reported as missing.
+func TestAnchorDigestStaysFindableAcrossRotation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.jsonl")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.maxBytes = 600 // rotate every few records
+	for i := 0; i < 3; i++ {
+		appendEvent(t, s, i)
+	}
+	anchor := s.Head()
+	if anchor == "" {
+		t.Fatal("no head after writing records")
+	}
+	for i := 3; i < 7; i++ {
+		appendEvent(t, s, i)
+	}
+	if _, err = os.Stat(path + ".1"); err != nil {
+		t.Fatal("expected a rotated archive")
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if found, err := s.Contains(anchor); err != nil || !found {
+		t.Fatalf("Contains(anchored record) = %v, %v; want true", found, err)
+	}
+	if s.Head() == anchor {
+		t.Fatal("the anchor should be a prefix, not the head, after later records")
+	}
+	missing := "00" + anchor[2:]
+	if found, err := s.Contains(missing); err != nil || found {
+		t.Fatalf("Contains(unknown digest) = %v, %v; want false", found, err)
+	}
+	if found, err := s.Contains(""); err != nil || found {
+		t.Fatalf("Contains(empty) = %v, %v; want false", found, err)
+	}
+}

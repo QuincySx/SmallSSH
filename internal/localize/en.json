@@ -596,6 +596,7 @@
   "已运行 ": "Running for ",
   "已锁定": "Locked",
   "已锁定，连接与授权已撤销": "Locked; connections and grants revoked",
+  "已锁定，连接与授权已撤销；审计锚点未写入": "Locked; connections and grants revoked. The audit anchor was not written",
   "常用命令": "Saved commands",
   "常用命令列表": "Saved command list",
   "常用命令已加密保存": "Saved commands encrypted and saved",
@@ -1178,5 +1179,9 @@
   "续期限定目录访问": "Renew access to specified directories",
   "允许限定目录访问": "Allow access to specified directories",
   "会话已过期，允许续期？（连续第 %d 次）": "Session expired. Allow renewal? (renewal %d)",
-  "连续第 %d 次续期\n": "Renewal %d\n"
+  "连续第 %d 次续期\n": "Renewal %d\n",
+  "操作内容": "Operation",
+  "容器 / 项目": "Container / project",
+  "操作摘要": "Operation digest",
+  "选择一行查看完整内容": "Select a row to read the full command"
 }

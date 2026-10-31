@@ -98,6 +98,9 @@ type Server struct {
 	audit          *audit
 	auditFault     atomic.Bool
 	roots          protectedRootCache
+	conns          connPool
+	sealOnce       sync.Once
+	sealErr        error
 }
 
 // Open takes exclusive ownership of the vault until Close. The caller reads the
@@ -135,6 +138,26 @@ func openSession(dir string, v *vault.Session, now func() time.Time) (*Server, e
 		release()
 		return nil, e
 	}
+	// A log rewritten as a whole is internally consistent. The head the vault
+	// stored is what makes that visible: the retained history must still contain
+	// that record. Everything after it is a tail nobody committed — a crash, or a
+	// lock that could not seal the vault — so it is not a rewrite. Losing the
+	// anchored record is, and that stops the app here.
+	if want := v.AuditHead(); want != "" {
+		if got := log.head(); got != want {
+			found, err := log.contains(want)
+			if err != nil || !found {
+				log.close()
+				l.Close()
+				v.Close()
+				release()
+				if err != nil {
+					return nil, err
+				}
+				return nil, errors.New("审计历史的锚点已不存在：记录可能被整体重写或截断，请从备份恢复审计历史后再解锁")
+			}
+		}
+	}
 	if e = log.write("unlocked", nil); e != nil {
 		log.close()
 		l.Close()
@@ -157,6 +180,9 @@ func openSession(dir string, v *vault.Session, now func() time.Time) (*Server, e
 			case <-t.C:
 				s.Approvals.Sweep()
 				s.auditExpiries()
+				// A pooled connection whose profile is never used again has no
+				// other chance to expire.
+				s.conns.sweep()
 			}
 		}
 	}()
@@ -188,12 +214,35 @@ func (s *Server) Close() {
 		s.stopMonitorCollectors()
 		s.wg.Wait()
 		s.monitorWG.Wait()
-		s.auditExpiries()
-		s.auditRequest("locked", nil)
+		_ = s.SealAudit()
+		s.conns.clear()
 		s.audit.close()
 		s.Vault.Close()
 		s.release()
 	})
+}
+
+// SealAudit writes the closing record and stores its head in the vault. The
+// desktop calls it while the vault can still be sealed — the signing key is
+// dropped right after, and a sealed vault cannot be written again, which would
+// leave the anchor behind the history it was meant to commit. Close calls it
+// too, and the two cannot both run, so a lock followed by a quit writes one
+// closing record and one anchor.
+func (s *Server) SealAudit() error {
+	s.sealOnce.Do(func() {
+		if s.audit == nil || s.Vault == nil {
+			return
+		}
+		s.auditExpiries()
+		_ = s.auditRequest("locked", nil)
+		head := s.audit.head()
+		if head == "" {
+			return
+		}
+		s.Vault.SetAuditHead(head)
+		s.sealErr = vault.Save(VaultPath(s.dir), s.Vault, false)
+	})
+	return s.sealErr
 }
 func (s *Server) handle(c net.Conn) {
 	defer c.Close()
@@ -717,7 +766,11 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		}
 		return w.Send(result)
 	}
-	fail = func(err error) { _ = finish(Message{Action: "error", Error: err.Error()}) }
+	var opFailed bool
+	fail = func(err error) {
+		opFailed = true
+		_ = finish(Message{Action: "error", Error: err.Error()})
+	}
 	defer func() {
 		if !ended {
 			outcome := "unknown"
@@ -730,12 +783,30 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 	stop := context.AfterFunc(ctx, func() { w.Conn.Close() })
 	defer stop()
 	s.ownerMu.Unlock()
-	c, e := sshconn.Dial(ctx, p)
-	if e != nil {
-		fail(e)
-		return
+	// A short operation reuses the connection the previous one left behind. A
+	// terminal or a stream keeps its own, bound to its own context: revoking it
+	// must still end the transport it opened.
+	key := pooledKey(p.ID, p.Fingerprint)
+	recyclable := pooledKinds[op.Kind]
+	var c *sshconn.Client
+	if recyclable {
+		c = s.conns.take(key)
 	}
-	defer c.Close()
+	if c == nil {
+		if c, e = sshconn.Dial(ctx, p); e != nil {
+			fail(e)
+			return
+		}
+	}
+	defer func() {
+		// A failed operation may leave its channel wedged, so only a clean one
+		// hands the connection on.
+		if recyclable && !opFailed && ctx.Err() == nil {
+			s.conns.put(key, c)
+			return
+		}
+		c.Close()
+	}()
 	writeLocked := false
 	lockWrites := func() {
 		if !writeLocked {

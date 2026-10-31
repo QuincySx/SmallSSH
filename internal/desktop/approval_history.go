@@ -24,6 +24,8 @@ type approvalHistoryState struct {
 	sequence        uint64
 	cancel          context.CancelFunc
 	table           ui.ListState
+	// detail is the chosen row, -1 for none: the row the reader wants explained.
+	detail int
 }
 
 func (a *app) clearApprovalHistory() {
@@ -31,7 +33,7 @@ func (a *app) clearApprovalHistory() {
 	if state.cancel != nil {
 		state.cancel()
 	}
-	a.approvalHistory = approvalHistoryState{sequence: state.sequence + 1}
+	a.approvalHistory = approvalHistoryState{sequence: state.sequence + 1, detail: -1}
 }
 
 // Leave a usable interval between automatic reads so manual refresh and older
@@ -89,6 +91,7 @@ func (a *app) loadApprovalHistory(older bool) {
 				return
 			}
 			state.events, state.next, state.before, state.err = page.Events, page.Next, before, ""
+			state.detail = -1
 			if resetScroll {
 				state.table.ScrollTo(0, ui.Start)
 			}
@@ -143,6 +146,23 @@ func historyOperation(event auditlog.Event) string {
 		return tr(nil, "未记录")
 	}
 	return operationTitle(event.Kind)
+}
+
+// historyDetail is the one-line answer to "what did it do": the command that
+// ran, or the path it touched. A record that kept only its time and result is
+// not something anyone can review.
+func historyDetail(event auditlog.Event) string {
+	switch {
+	case event.Command != "":
+		return reviewText(event.Command)
+	case event.Path != "" && event.Destination != "":
+		return reviewText(event.Path) + " → " + reviewText(event.Destination)
+	case event.Path != "":
+		return reviewText(event.Path)
+	case event.Object != "":
+		return reviewText(event.Object)
+	}
+	return ""
 }
 
 func historyResult(event auditlog.Event) string {
@@ -218,12 +238,22 @@ func (a *app) approvalHistoryView(c *ui.Context) {
 		e := state.events[i]
 		return historyValue(e.HostName) + " · " + historyResult(e)
 	}
+	if state.detail >= len(state.events) {
+		state.detail = -1
+	}
+	// A click chooses a row, and the detail below explains it: which command ran,
+	// on which path. A chosen row is the whole point of the review surface.
+	state.table.Selected = &state.detail
+	chosen := -1
+	if state.detail >= 0 && state.detail < len(state.events) {
+		chosen = state.detail
+	}
 	width, _ := c.Size()
 	navigationWidth := approvalCategoryWidth
 	if a.sidebarHidden {
 		navigationWidth = components.RailWidth
 	}
-	if width-navigationWidth-2*approvalContentPadding < 820 {
+	if width-navigationWidth-2*approvalContentPadding < 900 {
 		c.Key("approval-history-summary-list")
 		components.List(c, &state.table, len(state.events), func(row int) {
 			e := state.events[row]
@@ -234,17 +264,21 @@ func (a *app) approvalHistoryView(c *ui.Context) {
 				})
 				ui.Text(c, historyApplicant(e)).FillWidth().MinWidth(0).FontSize(12).TextColor(c.Theme().TextMuted)
 				ui.Text(c, historyOperation(e)).FillWidth().MinWidth(0).FontSize(12)
+				if detail := historyDetail(e); detail != "" {
+					components.CellText(c, detail)
+				}
 				ui.Text(c, historyResult(e)).FillWidth().MinWidth(0).FontSize(12).TextColor(c.Theme().TextMuted)
 			})
 		}).FillWidth().Grow(1).MinWidth(0).Label(tr(c, "访问历史表格"))
 	} else {
 		c.Key("approval-history-table")
 		components.Table(c, &state.table, []ui.TableColumn{
-			{ID: "time", Title: tr(c, "时间"), Width: 132},
+			{ID: "time", Title: tr(c, "时间"), Width: 120},
 			{ID: "server", Title: tr(c, "服务器"), MinWidth: 110},
-			{ID: "client", Title: tr(c, "申请方"), Width: 130},
-			{ID: "operation", Title: tr(c, "操作"), Width: 140},
-			{ID: "result", Title: tr(c, "结果"), MinWidth: 250},
+			{ID: "client", Title: tr(c, "申请方"), Width: 110},
+			{ID: "operation", Title: tr(c, "操作"), Width: 120},
+			{ID: "detail", Title: tr(c, "操作内容"), MinWidth: 200},
+			{ID: "result", Title: tr(c, "结果"), MinWidth: 220},
 		}, len(state.events), func(row, col int) {
 			e := state.events[row]
 			value := e.Time.Local().Format("01-02 15:04:05")
@@ -256,15 +290,48 @@ func (a *app) approvalHistoryView(c *ui.Context) {
 			case 3:
 				value = historyOperation(e)
 			case 4:
+				value = historyDetail(e)
+			case 5:
 				value = historyResult(e)
 			}
 			components.CellText(c, value)
 		}).FillWidth().Grow(1).MinWidth(0).Label(tr(c, "访问历史表格"))
 	}
+	if chosen >= 0 {
+		a.approvalHistoryDetail(c, state.events[chosen])
+	}
 	ui.Row(c).FillWidth().MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, fmt.Sprintf(tr(c, "本页 %d 条"), len(state.events))).Grow(1).FontSize(11).TextColor(c.Theme().TextMuted)
+		ui.Text(c, fmt.Sprintf(tr(c, "本页 %d 条"), len(state.events))).Grow(1).MinWidth(0).FontSize(11).TextColor(c.Theme().TextMuted)
+		if state.detail < 0 {
+			ui.Text(c, tr(c, "选择一行查看完整内容")).Shrink(0).FontSize(11).TextColor(c.Theme().TextMuted)
+		}
 		if components.Button(c, tr(c, "更早记录")).Disabled(state.loading || cooling || state.next == "").Clicked() {
 			a.loadApprovalHistory(true)
 		}
+	})
+}
+
+// approvalHistoryDetail explains the chosen record: the command that ran at
+// full length, the paths it touched, and the request it belongs to. The table
+// shows a one-line excerpt; this is what the row cannot fit.
+func (a *app) approvalHistoryDetail(c *ui.Context, e auditlog.Event) {
+	ui.Column(c).Key("approval-history-detail").FillWidth().MinWidth(0).Padding(12, 14).
+		Radius(8).Gap(6).Background(c.Theme().Surface).Children(func() {
+		ui.Row(c).FillWidth().MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, tr(c, "详情")).Grow(1).MinWidth(0).FontSize(12).Bold()
+			ui.Text(c, e.Time.Local().Format("2006-01-02 15:04:05")).Shrink(0).FontSize(11).TextColor(c.Theme().TextMuted)
+		})
+		if e.Command != "" {
+			ui.Text(c, tr(c, "完整命令")).FontSize(12).TextColor(c.Theme().TextMuted)
+			ui.Scroll(c).FillWidth().MaxHeight(120).Children(func() {
+				ui.Text(c, reviewText(e.Command)).FillWidth().Padding(10).Radius(6).
+					Background(c.Theme().Background).Font("monospace").FontSize(12).Selectable()
+			})
+		}
+		reviewRow(c, tr(c, "路径"), e.Path)
+		reviewRow(c, tr(c, "目标路径"), e.Destination)
+		reviewRow(c, tr(c, "容器 / 项目"), e.Object)
+		reviewRow(c, tr(c, "请求 ID"), e.RequestID)
+		reviewRow(c, tr(c, "操作摘要"), e.OperationHash)
 	})
 }

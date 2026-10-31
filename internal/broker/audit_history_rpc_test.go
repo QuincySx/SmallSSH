@@ -190,9 +190,14 @@ func TestAuditHistorySurvivesBrokerRestart(t *testing.T) {
 		t.Fatal("restart lost denied operation or policy refusal", page)
 	}
 	b, _ := os.ReadFile(filepath.Join(dir, "audit.jsonl"))
-	for _, secret := range []string{r.Operation.Command, policyOp.Path, p.Password, ticket, r.Nonce} {
+	for _, secret := range []string{p.Password, ticket, r.Nonce} {
 		if bytes.Contains(b, []byte(secret)) {
-			t.Fatal("history persisted operation content or authority")
+			t.Fatal("history persisted a credential, ticket or nonce")
+		}
+	}
+	for _, kept := range []string{r.Operation.Command, policyOp.Path} {
+		if !bytes.Contains(b, []byte(kept)) {
+			t.Fatal("history lost the operation the owner reviewed", kept)
 		}
 	}
 	if fixture.Auths.Load() != 0 {

@@ -18,8 +18,8 @@ import (
 
 func historyUIFixture() *app {
 	return &app{approvalTab: 2, approvalHistory: approvalHistoryState{loaded: true, next: "older-page", events: []auditlog.Event{
-		{Time: time.Date(2026, 10, 24, 8, 1, 0, 0, time.UTC), Host: "server", HostName: "Example server", Client: "Assistant", Kind: "exec", Event: "denied", Reason: "uncontrolled_operation"},
-		{Time: time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC), Host: "old", Kind: "put", Event: "denied", Reason: "scope_denied"},
+		{Time: time.Date(2026, 10, 24, 8, 1, 0, 0, time.UTC), Host: "server", HostName: "Example server", Client: "Assistant", Kind: "exec", Event: "denied", Reason: "uncontrolled_operation", Command: "systemctl restart nginx", RequestID: "generated-request"},
+		{Time: time.Date(2026, 10, 24, 8, 0, 0, 0, time.UTC), Host: "old", Kind: "put", Event: "denied", Reason: "scope_denied", Path: "/generated/target.conf"},
 	}}}
 }
 
@@ -293,5 +293,46 @@ func TestApprovalHistoryAutomaticReadsLeaveManualNavigationAvailable(t *testing.
 	h.a.refreshApprovalHistoryIfDue()
 	if state.loading || !state.lastAttempt.Equal(lastAttempt) || state.before != "fixture-older-page" {
 		t.Fatal("automatic refresh replaced the page the user was reading")
+	}
+}
+
+// The record has to answer "what did it do". A row that keeps only its time and
+// result cannot be reviewed: the command, or the path, is the record.
+func TestApprovalHistoryShowsWhatRanAndExplainsTheChosenRow(t *testing.T) {
+	for _, width := range []int{1100, 560} {
+		a := historyUIFixture()
+		tt := ui.NewTester(a.approvalView, width, 760)
+		for _, want := range []string{"systemctl restart nginx", "/generated/target.conf"} {
+			if !tt.HasText(want) {
+				t.Fatalf("width %d hid the operation content %q", width, want)
+			}
+		}
+	}
+	detail := historyUIFixture()
+	detail.approvalHistory.detail = 0
+	tt := ui.NewTester(detail.approvalView, 1100, 760)
+	for _, want := range []string{"详情", "完整命令", "systemctl restart nginx", "请求 ID", "generated-request"} {
+		if !tt.HasText(want) {
+			t.Fatal("chosen record was not explained", want, tt.Texts())
+		}
+	}
+	if pager, ok := tt.Find("更早记录"); !ok || pager.Y+pager.H > 761 {
+		t.Fatal("history detail pushed the pager out of the viewport", pager)
+	}
+	narrow := historyUIFixture()
+	narrow.approvalHistory.detail = 0
+	nt := ui.NewTester(narrow.approvalView, 560, 760)
+	if !nt.HasText("完整命令") {
+		t.Fatal("the narrow layout hid the chosen command")
+	}
+	if pager, ok := nt.Find("更早记录"); !ok || pager.Y+pager.H > 761 {
+		t.Fatal("narrow history detail pushed the pager out of the viewport", pager)
+	}
+	// A stale choice past the end of a reloaded page is dropped, not explained.
+	stale := historyUIFixture()
+	stale.approvalHistory.detail = 7
+	st := ui.NewTester(stale.approvalView, 1100, 760)
+	if st.HasText("完整命令") || stale.approvalHistory.detail != -1 {
+		t.Fatal("a stale selection survived the page")
 	}
 }

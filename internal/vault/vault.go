@@ -81,15 +81,20 @@ type payload struct {
 	Profiles []Profile             `json:"profiles"`
 	Snippets []Snippet             `json:"snippets,omitempty"`
 	Notes    map[string]ServerNote `json:"serverNotes,omitempty"`
+	// AuditHead is the last audit record the broker saw before it closed. It
+	// lives inside the encrypted vault on purpose: a log that was rewritten whole
+	// no longer agrees with it, and rewriting this copy needs the master password.
+	AuditHead string `json:"auditHead,omitempty"`
 }
 type Session struct {
-	mu       sync.Mutex
-	header   Header
-	key      []byte
-	profiles []Profile
-	snippets []Snippet
-	notes    map[string]ServerNote
-	closed   bool
+	mu        sync.Mutex
+	header    Header
+	key       []byte
+	profiles  []Profile
+	snippets  []Snippet
+	notes     map[string]ServerNote
+	auditHead string
+	closed    bool
 }
 
 func derive(pass []byte, salt []byte) []byte { return argon2.IDKey(pass, salt, 3, 64*1024, 1, 32) }
@@ -145,7 +150,7 @@ func OpenKey(data, key []byte) (*Session, error) {
 		wipe(key)
 		return nil, ErrUnlock
 	}
-	return &Session{header: e.Header, key: key, profiles: p.Profiles, snippets: p.Snippets, notes: p.Notes}, nil
+	return &Session{header: e.Header, key: key, profiles: p.Profiles, snippets: p.Snippets, notes: p.Notes, auditHead: p.AuditHead}, nil
 }
 func (s *Session) Seal() ([]byte, error) {
 	s.mu.Lock()
@@ -153,7 +158,7 @@ func (s *Session) Seal() ([]byte, error) {
 	if s.closed {
 		return nil, errors.New("保险库已锁定")
 	}
-	plain, err := json.Marshal(payload{Profiles: s.profiles, Snippets: s.snippets, Notes: s.notes})
+	plain, err := json.Marshal(payload{Profiles: s.profiles, Snippets: s.snippets, Notes: s.notes, AuditHead: s.auditHead})
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +232,21 @@ func (s *Session) Summaries() []Summary {
 	}
 	return out
 }
+
+// AuditHead is the last audit record this vault saw the broker write.
+func (s *Session) AuditHead() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.auditHead
+}
+
+// SetAuditHead records the last audit record, to be written on the next save.
+func (s *Session) SetAuditHead(head string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.auditHead = head
+}
+
 func (s *Session) UnlockKey() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

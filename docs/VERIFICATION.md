@@ -1286,3 +1286,64 @@ CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮
 
 未做：Windows 命名管道尚未取对端进程（退回按标签计）；连接复用（P2）未开始。
 
+## 审计链锚点、连接复用、Windows 对端进程 · 2026-10-30
+
+零信任复查剩下的三条做完：
+
+- **审计链锚点**：代理正常关闭时把链头写入加密保险库的新字段 `auditHead`；下次解锁先比对文件链头，不一致即拒绝启动。整份日志重写虽能自造自洽的链，但造不出保险库里那一份；重写保险库需要主密码。测试构造"重写成一条自洽的单行日志"并确认重开被拒。已知限制写进文档：删除锚点等同于首次运行。
+- **连接复用**：受控的短操作把已校验 SSH 连接留给下一次（列目录、文件属性、exec、rename 等白名单），空闲 15 秒或超出每键两条即关闭；终端与流式操作不参与；失败的操作关闭自己的连接。同时修掉了 `sshconn.Dial` 把连接生命周期绑在**拨号上下文**上的问题——那个 `AfterFunc` 会在操作结束时关掉底层连接，复用本来不可能成立。测试用 testserver 的认证计数确认三次列目录只发生一次认证，两次终端则是两次。
+- **Windows 对端进程**：`GetNamedPipeClientProcessId` 取管道对端 pid，配额在 Windows 上也按进程计，不再退回按标签计。
+
+验证：`go run ./tools check -serial` 通过（`build/logs/check-20261030-001832.log`）；新增 `TestRewrittenAuditHistoryIsRefusedOnNextUnlock`、`TestQuickOperationsReuseOneVerifiedConnection`、`TestTerminalDoesNotShareTheReusedConnection`、`TestConnPoolDropsIdleConnections`、`TestConnPoolCapsEachKeyAndClears`；五平台交叉编译通过。
+
+未做：没有真机观察复用带来的实际时延改善；没有在 Windows 上实测命名管道对端 pid。
+
+## 审计锚点与连接复用的复查修复 · 2026-10-30
+
+复查上一节，四处要改，其中一处会把用户锁在门外。上一节关于锚点的描述也已在 `docs/SECURITY.md` 改写成实际语义（前缀承诺）。
+
+- **锚点曾让保险库永久打不开**：上一节要求"文件链头等于保险库里的锚点"，但锚点只在 `Server.Close()` 写，`vault.Save` 的错误被 `_ =` 丢弃。桌面的锁定路径先 `s.Vault.Close()` 再异步 `s.Close()`，封好的保险库写不进去，锚点就停在上一次干净退出的链头上；下一次解锁比较失败即拒绝启动，而且没有出口——删掉 `audit.jsonl` 也不行（文件头变空同样不等于锚点）。同样的拒绝出现在崩溃、强杀、断电，以及关闭时保存失败（磁盘满、只读卷）之后。
+- 锚点改为**前缀承诺**：`auditlog.Store.Contains` 在保留的历史（归档 + 当前文件）里查找这条记录，找到说明其后的记录只是没人提交的尾段，接受；找不到才按整体重写 / 截断拒绝。新增 `Server.SealAudit`，桌面在**丢弃签名密钥之前**同步写收尾记录并落锚；`Close()` 复用它（`sync.Once`，锁定后再退出不会写两条收尾记录）。锁定路径写失败时状态栏显示"审计锚点未写入"，不再静默。
+- **Cmd-Q 从来不关代理**：`shutdown()` 只挂在窗口关闭事件上，Cmd-Q 走的是停 run loop，收尾记录与锚点从来没写过，等于上一节的防重写检查在真实使用里从未生效。`RunWithOptions` 增加退出时的兜底关闭。
+- **连接与操作的上下文**：上一节在 `sshconn.Dial` 返回前就 `stop()`，把所有操作与传输的绑定一起摘掉了。`Exec`、终端、`ExecStream` 各自有关 session 的钩子所以看不出来，但下载、上传、列目录这些 SFTP 路径没有钩子：撤销 / 到期不再中断卡住的 I/O，持有 `writes` 锁的操作可能一直占着写锁。现在 `Detach()` 只发生在入池时；终端与流式操作不再从池里取连接，撤销 / 到期照旧关闭自己的传输。
+- **空闲 15 秒**：`take` 只清理自己那个键，某个资料不再使用后连接会一直保持认证到应用退出，`SECURITY.md` 的描述不成立。代理的每秒 tick 现在顺带 `conns.sweep()`。
+
+验证：
+
+- 新增 `TestUncommittedTailAfterACrashStillUnlocks`、`TestLockCommitsTheAnchorBeforeTheVaultCloses`、`TestStaleAnchorIsAcceptedAsAPrefix`、`TestAnchorDigestStaysFindableAcrossRotation`、`TestConnPoolSweepsConnectionsNoOperationTouches`，以及桌面级的 `TestLockCommitsTheAuditAnchorBeforeTheKeyGoesAway`（建真保险库与真代理，调 `a.lock()`，再重开保险库与代理）。三条锚点用例在旧实现上确认失败：崩溃后报"审计历史与保险库记录不一致"，锁定后解锁同样被拒，桌面用例去掉 `SealAudit()` 后报"locking did not commit an audit anchor"。旧有的 `TestRewrittenAuditHistoryIsRefusedOnNextUnlock` 仍然通过，整份重写照样被拒。
+- `mise exec go@1.27.3 -- go run ./tools check` 通过：`build/logs/check-20261030-181234.log`（vendor 补丁、344 个 Go 文件格式、vet、全量测试）。
+- race：`build/logs/test-20261030-161023-race.log`（`internal/broker`）、`build/logs/test-20261030-175829-race.log`（`internal/desktop`，含新增用例）通过。
+- 新增中英词条"已锁定，连接与授权已撤销；审计锚点未写入"；`internal/localize` 的目录一致性测试随全量检查通过。
+
+未做：没有实机走一遍"解锁 → 锁屏 / 挂起 → 解锁"和 Cmd-Q；没有验证 Windows 上的锚点写入与连接清理；"两次轮转把锚点记录挤出保留范围"只有 `Store.Contains` 的单元覆盖，没有端到端夹具；没有重新交叉编译五个平台。
+## 访问历史记录“做了什么” · 2026-10-31
+
+反馈：授权中心的历史只有时间、服务器、申请方、操作类型和结果，看不到到底执行了哪条命令、动了哪个路径——这样的记录没法审查。
+
+- 审计记录新增操作摘录：`command`（最多 512 字节）、`path` / `destination`（各 512）、`object`（容器 ID 或 Compose 项目与服务的组合，128）。批准、开始、结束、拒绝与策略拒绝都带，事后才能对上"谁在什么时候执行了什么"。此前"不记录原始命令 / 路径"是刻意的设计，现在改成"记录摘录"，因为审查面首先得能认出操作；口令、私钥、输出与票据仍然不写。
+- 读取历史时 `auditlog.bounded` 再截断这些字段，一页 100 条也不会撑破本地帧。
+- 桌面访问历史：宽表新增"操作内容"列（单行 + 悬停看全文），窄卡片也显示同一行；选中一行后下方展开"详情"——完整命令（等宽、可选中、可滚动）、路径、目标路径、容器 / 项目、请求 ID、操作摘要。没选中时提示"选择一行查看完整内容"。内容宽度不足 900 时退回卡片布局，六列不再挤在一起。
+- 旧记录没有摘录，显示为空（服务器 / 申请方仍显示"未记录"），不做回填。
+
+验证：
+
+- 三个原本断言"命令不落盘"的测试按新语义改写：`TestAuditPersistsTheOperationExcerptAndSafeReasonCodes`（批准与拒绝都带命令 / 路径，nonce 与原始错误仍不写）、`TestAuditCompletionRecordsOutcomeAndTheCommandThatRan`（结束记录同时保留结果与命令）、`TestAuditHistoryRequiresExactOneUseOwnerProofAndDoesNotLogReads`（口令 / 票据 / nonce 不泄露，命令与路径保留）。
+- 新增 `TestApprovalHistoryShowsWhatRanAndExplainsTheChosenRow`：1100 与 560 两种宽度都能看到命令和路径；选中一行后详情里有"完整命令"与请求 ID；详情不会把"更早记录"挤出视口；越界的选择被丢弃。
+- `mise exec go@1.27.3 -- go run ./tools check` 通过：`build/logs/check-20261031-121015.log`。
+- race：`build/logs/test-20261031-121257-race.log`（`internal/desktop`）、`build/logs/test-20261031-121641-race.log`（`internal/broker`）。
+- `docs/SECURITY.md` 的"不记录命令 / 路径"改成"保留摘录、仍不记录口令 / 输出 / 票据"，并写明摘录是本机 `0600` 明文。
+
+未做：没有给旧日志回填命令；没有把历史记录和审批弹窗串成可跳转的链路；授权记录仍只写类型与结果，不写"只读 / 完整、读写根目录"这类权限范围（只能在审批弹窗里看）；每条请求约四条记录都带摘录，8 MiB 轮转保存的操作条数相应变少（未实测容量）；没有重新生成离线快照（`preview_qa` 的 approval / security 变体会多出这一列）。
+
+## 本地使用打包与提交前验证 · 2026-10-31
+
+按用户要求整理当前未提交的审计锚点、SSH 连接复用、Windows 对端进程识别与访问历史操作摘录改动，并生成本机 macOS arm64 包。
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261031-234019.log`（vendor 补丁、345 个 Go 文件格式、vet 和全部测试）。
+- 无窗口桌面回归及显式启用的离线快照通过：`build/logs/test-20261031-235207.log`；以 `preview_qa`、`SSH_CLIENT_PREVIEW_QA=1`、`go run ./tools test -pkg ./internal/desktop -timeout 3m` 运行，截图保存在 `build/snapshots/local-release-20261031/`，仅使用隔离夹具。
+- `go run ./tools build -platform darwin/arm64` 打包成功：`build/logs/build-20261031-darwin-arm64.log`。本机使用产物为 `build/darwin-arm64/SmallSSH.app`，未自动启动或安装应用。
+- `go run ./tools build -check -platform darwin/arm64` 确认两份已提交生成文件仍为最新，未改写版本或依赖。包签名的 `codesign --verify --deep --strict` 通过，主程序为 arm64，两份包内原生认证组件的 SHA256 均匹配已提交清单：`build/logs/package-verification-20261031-darwin-arm64.log`。
+- `git diff --check` 通过。推送目标核对为 `origin/main`（`git@quincy-github.com:QuincySx/SmallSSH.git`），使用仓库专用 SSH 身份。初次远端同步因 publickey 认证失败未成功；本地 SSH 公钥 / 代理身份列表诊断被自动审批钩子以受保护目录为由拦截，未绕过，也未更换账号、密钥或传输方式。
+- 已暂存本轮 24 个源码、测试与文档文件；签名提交尝试返回 `1Password: Could not connect to socket. Is the agent running?`，未生成新提交，未推送。等待恢复 1Password SSH 代理连接后继续既有身份的签名与推送，不关闭签名或改用其它身份。
+
+本轮仅验证本机 arm64 构建、包完整性及隔离测试；未对真实服务器、真实保险库执行操作，未启动桌面、真实系统认证、Windows/Linux 实机或其它平台打包。`build/` 和平台资源暂存目录均保持忽略，不纳入提交。

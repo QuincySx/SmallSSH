@@ -105,12 +105,36 @@ func Dial(ctx context.Context, p vault.Profile) (*Client, error) {
 	if nc, ok := agentConn.(net.Conn); ok {
 		nc.SetDeadline(time.Time{})
 	}
+	// The connection stays bound to the operation's context: a revoked or
+	// expired operation closes its own transport instead of leaving a wedged
+	// channel behind. A connection that outlives its operation is detached by
+	// the pool, not here.
 	return &Client{SSH: ssh.NewClient(conn, ch, req), cancel: stop, agent: agentConn}, nil
 }
-func (c *Client) Close() error {
+
+// Detach ends the connection's tie to the operation context, so the pool can
+// hand it to a later operation without the first operation's deadline or
+// cancellation closing it.
+func (c *Client) Detach() {
+	if c == nil || c.cancel == nil {
+		return
+	}
 	c.cancel()
+	c.cancel = nil
+}
+
+func (c *Client) Close() error {
+	if c == nil {
+		return nil
+	}
+	if c.cancel != nil {
+		c.cancel()
+	}
 	if c.agent != nil {
 		defer c.agent.Close()
+	}
+	if c.SSH == nil {
+		return nil
 	}
 	return c.SSH.Close()
 }

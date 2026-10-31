@@ -282,7 +282,7 @@ func TestCompletionAuditFailureRevokesAuthorityBeforeSuccessAndLatches(t *testin
 	}
 }
 
-func TestAuditCompletionRecordsOutcomeWithoutOperationBody(t *testing.T) {
+func TestAuditCompletionRecordsOutcomeAndTheCommandThatRan(t *testing.T) {
 	c, _ := setup(t)
 	r, ticket := request(t, c, approval.Operation{Host: "fixture", Kind: "exec", Command: "exit7", Client: "outcome fixture"})
 	approve(t, c, r)
@@ -305,7 +305,7 @@ func TestAuditCompletionRecordsOutcomeWithoutOperationBody(t *testing.T) {
 			found = event.Outcome == "failed" && event.ExitCode != nil && *event.ExitCode == 7
 		}
 	}
-	if !found || bytes.Contains(data, []byte("exit7")) {
-		t.Fatal("completion outcome missing or command leaked")
+	if !found || !bytes.Contains(data, []byte("exit7")) {
+		t.Fatal("completion outcome missing or the command was not kept for review")
 	}
 }

@@ -106,6 +106,77 @@ func namesPredecessor(prev, previousInFile, carry string) bool {
 	return carry == "" || prev == carry
 }
 
+// Head is the digest of the last record, which the next record names as its Prev.
+func (s *Store) Head() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.head) == 0 {
+		return ""
+	}
+	return hex.EncodeToString(s.head)
+}
+
+// Contains reports whether a record with this digest is still in the retained
+// history. The vault anchor is a prefix commitment, not a promise about the
+// last line: a crash, or a lock that could not seal the vault, leaves records
+// the anchor never saw, and those still start from a record it did see. A
+// record that is no longer in either file cannot be checked, which is why a
+// rewritten or truncated history is refused instead.
+func (s *Store) Contains(want string) (bool, error) {
+	if want == "" {
+		return false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, name := range []string{s.path + ".1", s.path} {
+		f, err := openExisting(name)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		found, err := fileContains(f, want)
+		f.Close()
+		if err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// fileContains walks the same records the verifier accepts and compares their
+// digests with want.
+func fileContains(f *os.File, want string) (bool, error) {
+	reader := bufio.NewReaderSize(f, maxLineBytes)
+	for {
+		line, err := reader.ReadSlice('\n')
+		if errors.Is(err, bufio.ErrBufferFull) {
+			return false, nil // oversized line: the reader stops here too
+		}
+		line = bytes.TrimSuffix(line, []byte("\n"))
+		if len(line) > 0 {
+			var record Event
+			if json.Unmarshal(line, &record) != nil {
+				return false, nil
+			}
+			digest := sha256.Sum256(append([]byte(nil), line...))
+			if hex.EncodeToString(digest[:]) == want {
+				return true, nil
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+}
+
 // openExisting opens a history file for reading without creating or following
 // anything unexpected.
 func openExisting(name string) (*os.File, error) {

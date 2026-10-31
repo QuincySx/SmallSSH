@@ -101,8 +101,10 @@ func samePolicy(a, b accesspolicy.Policy) bool {
 
 func (s *Server) invalidateProfile(old vault.Profile, existed bool, p vault.Profile) {
 	// Canonical roots are the owner's configuration; a policy or address change
-	// must not be served from a cached resolution.
+	// must not be served from a cached resolution, and verified connections to the
+	// old address must not be reused.
 	s.roots.clear()
+	s.conns.clear()
 	if existed && !samePolicy(old.Policy, p.Policy) && old.Host == p.Host && old.Port == p.Port && old.User == p.User &&
 		old.Fingerprint == p.Fingerprint && old.Auth == p.Auth && old.AgentFingerprint == p.AgentFingerprint &&
 		old.Password == p.Password && old.PrivateKey == p.PrivateKey && old.KeyPassphrase == p.KeyPassphrase {

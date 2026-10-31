@@ -25,6 +25,13 @@ type Event struct {
 	Client   string `json:"client,omitempty"`
 	HostName string `json:"hostName,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// Command, Path, Destination and Object are the operation excerpt: what ran
+	// and on what. They are what makes a record reviewable after the fact, and
+	// they are bounded so a long command cannot fill the history or a page.
+	Command     string `json:"command,omitempty"`
+	Path        string `json:"path,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Object      string `json:"object,omitempty"`
 	// Prev is the SHA256 of the record written before this one, so removing or
 	// editing a record in the middle breaks the chain and Verify reports it.
 	Prev string `json:"prev,omitempty"`
@@ -59,6 +66,10 @@ func bounded(v Event) Event {
 	v.Client = text(v.Client, 128)
 	v.HostName = text(v.HostName, 256)
 	v.Reason = text(v.Reason, 64)
+	v.Command = text(v.Command, 512)
+	v.Path = text(v.Path, 512)
+	v.Destination = text(v.Destination, 512)
+	v.Object = text(v.Object, 128)
 	return v
 }
 

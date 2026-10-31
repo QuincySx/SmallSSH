@@ -78,3 +78,18 @@ func Listen(dir string) (net.Listener, error) {
 func Dial(ctx context.Context, dir string) (net.Conn, error) {
 	return winio.DialPipeContext(ctx, pipeName(dir))
 }
+
+// PeerPID asks the kernel which process is on the other end of the named pipe.
+// The pipe's DACL already limits who may connect; this is what counts a caller's
+// share of the approval queue by the process rather than by a label it writes.
+func PeerPID(c net.Conn) (int, error) {
+	f, ok := c.(interface{ Fd() uintptr })
+	if !ok {
+		return 0, errors.New("本地连接类型异常")
+	}
+	var pid uint32
+	if e := windows.GetNamedPipeClientProcessId(windows.Handle(f.Fd()), &pid); e != nil {
+		return 0, e
+	}
+	return int(pid), nil
+}

@@ -209,6 +209,14 @@ func RunWithOptions(dir string, opts Options) error {
 	a.create = !broker.Exists(dir)
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	defer a.cancel()
+	// Cmd-Q stops the run loop instead of closing the window, so this is the only
+	// cleanup on that path: without it the broker never writes its closing record
+	// or its audit anchor.
+	defer func() {
+		if a.server != nil {
+			a.server.Close()
+		}
+	}()
 	var control *desktopcontrol.Server
 	var startupErr error
 	defer func() {
@@ -401,14 +409,21 @@ func (a *app) lock() {
 	a.terminalGroupSequence = 0
 	s := a.server
 	a.server = nil
+	lockStatus := tr(nil, "已锁定，连接与授权已撤销")
 	if s != nil {
+		// The closing audit record and its anchor must be written before the
+		// signing key goes away: a sealed vault cannot be saved again, and an
+		// anchor left behind would make the history look rewritten next time.
+		if e := s.SealAudit(); e != nil {
+			lockStatus = tr(nil, "已锁定，连接与授权已撤销；审计锚点未写入")
+		}
 		// Revoke the in-process signing key before asynchronous network cleanup.
 		s.Vault.Close()
 		done := make(chan struct{})
 		a.unlockCleanup = done
 		go func() { defer close(done); s.Close() }()
 	}
-	a.status = tr(nil, "已锁定，连接与授权已撤销")
+	a.status = lockStatus
 	if a.win != nil {
 		a.win.Invalidate()
 	}

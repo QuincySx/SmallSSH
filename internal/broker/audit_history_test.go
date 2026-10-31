@@ -10,7 +10,7 @@ import (
 	"sshclient/internal/auditlog"
 )
 
-func TestAuditPersistsOnlyMetadataAndSafeReasonCodes(t *testing.T) {
+func TestAuditPersistsTheOperationExcerptAndSafeReasonCodes(t *testing.T) {
 	dir := t.TempDir()
 	a, err := openAudit(dir)
 	if err != nil {
@@ -42,11 +42,23 @@ func TestAuditPersistsOnlyMetadataAndSafeReasonCodes(t *testing.T) {
 	if p.Events[0].Reason != "protected_path" || p.Events[0].ParentID != "parent" || p.Events[0].RequestID == "" || p.Events[1].Client != op.Client || p.Events[1].HostName != "Generated host" {
 		t.Fatal(p)
 	}
+	// Both the approval record and the refusal carry what the owner reviews:
+	// the command that would run, and the path it would touch.
+	for _, event := range p.Events {
+		if event.Event != "approved" && event.Event != "denied" {
+			t.Fatalf("unexpected record %+v", event)
+		}
+		if event.Command != op.Command || event.Path != op.Path {
+			t.Fatalf("%s record lost the operation excerpt: %+v", event.Event, event)
+		}
+	}
 	data, err := os.ReadFile(filepath.Join(dir, "audit.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{op.Command, op.Path, r.Nonce, "generated error containing sensitive text"} {
+	// Credentials, tickets and raw errors stay out of the history even though
+	// the operation itself is now kept for review.
+	for _, secret := range []string{r.Nonce, "generated error containing sensitive text"} {
 		if bytes.Contains(data, []byte(secret)) {
 			t.Fatal("persisted operation content")
 		}

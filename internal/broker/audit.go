@@ -7,16 +7,38 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
+
 	"sshclient/internal/approval"
 	"sshclient/internal/auditlog"
 	"time"
 	"unicode/utf8"
 )
 
-// Audit intentionally omits commands, paths, credentials, output and tickets.
-// It is a local operational log, not a tamper-proof forensic ledger.
+// Audit intentionally omits credentials, output and tickets. It keeps the
+// operation excerpt — the command that ran or the path it touched — because a
+// history the owner cannot recognise answers no question worth asking. The file
+// is a private 0600 record in the owner's own data directory, so a command that
+// carries a secret is written there too: keep secrets out of commands.
 type audit struct {
 	store *auditlog.Store
+}
+
+// head is the digest of the last record, kept by the vault as an anchor against a
+// log rewritten as a whole.
+func (a *audit) head() string {
+	if a == nil || a.store == nil {
+		return ""
+	}
+	return a.store.Head()
+}
+
+// contains reports whether the retained history still holds the anchored record.
+func (a *audit) contains(digest string) (bool, error) {
+	if a == nil || a.store == nil {
+		return false, errors.New("审计历史不可用")
+	}
+	return a.store.Contains(digest)
 }
 
 type auditEvent = auditlog.Event
@@ -56,6 +78,7 @@ func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcom
 		v.Kind = auditText(r.Operation.Kind, 64)
 		v.Client = auditText(r.Operation.Client, 128)
 		v.HostName = auditText(hostName, 256)
+		addExcerpt(&v, r.Operation)
 		b, _ := json.Marshal(r.Operation)
 		h := sha256.Sum256(b)
 		v.OperationHash = hex.EncodeToString(h[:])
@@ -77,12 +100,36 @@ func (a *audit) reject(op approval.Operation, parentID, reason, hostName string)
 	}
 	b, _ := json.Marshal(op)
 	h := sha256.Sum256(b)
-	return a.store.Append(auditEvent{
+	rejected := auditEvent{
 		Time: time.Now().UTC(), Event: "denied", RequestID: hex.EncodeToString(id[:]),
 		ParentID: auditText(parentID, 128), Host: auditText(op.Host, 128), Kind: auditText(op.Kind, 64),
 		Client: auditText(op.Client, 128), HostName: auditText(hostName, 256), Reason: reason,
 		OperationHash: hex.EncodeToString(h[:]),
-	})
+	}
+	addExcerpt(&rejected, op)
+	return a.store.Append(rejected)
+}
+
+// Operation excerpts are bounded on write as well, so a long command cannot fill
+// the history it is meant to explain.
+const (
+	auditCommandLimit = 512
+	auditPathLimit    = 512
+)
+
+// addExcerpt records what the owner needs to recognise an operation after the
+// fact: the command that ran, the path it touched, and the container or Compose
+// project it addressed. Credentials, output and tickets still stay out.
+func addExcerpt(v *auditEvent, op approval.Operation) {
+	v.Command = auditText(op.Command, auditCommandLimit)
+	v.Path = auditText(op.Path, auditPathLimit)
+	v.Destination = auditText(op.Destination, auditPathLimit)
+	switch op.Kind {
+	case "docker-logs", "docker-terminal":
+		v.Object = auditText(op.Docker.Target.ID, 128)
+	case "compose-plan", "compose-update":
+		v.Object = auditText(strings.TrimSpace(op.Compose.Project+" "+op.Compose.Services), 128)
+	}
 }
 
 func (a *audit) history(q auditlog.Query) (auditlog.Page, error) { return a.store.History(q) }
