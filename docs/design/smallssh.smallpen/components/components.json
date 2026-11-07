@@ -1779,6 +1779,7 @@
     },
     {
       "axes": [],
+      "deprecated": false,
       "id": "cmp_ucd81d05c",
       "name": "图标按钮",
       "variants": [
@@ -1834,7 +1835,7 @@
                 }
               ],
               "growType": "auto-height",
-              "height": 18,
+              "height": 16,
               "id": "node_ucd81d05c_u99dba154_uf3c2b98c",
               "layout-item-h-sizing": "fill",
               "layout-item-v-sizing": "fix",
@@ -1842,7 +1843,7 @@
               "text": "",
               "textStyle": {
                 "fontFamily": "SmallSSH Icons",
-                "fontSize": 18,
+                "fontSize": 16,
                 "lineHeight": 1,
                 "textAlign": "center"
               },
@@ -1853,7 +1854,7 @@
                 }
               },
               "type": "TEXT",
-              "width": 19,
+              "width": 18,
               "x": 0,
               "y": 0
             }
@@ -1861,7 +1862,8 @@
           "rootId": "node_ucd81d05c_root",
           "selection": {}
         }
-      ]
+      ],
+      "visibility": "public"
     },
     {
       "axes": [

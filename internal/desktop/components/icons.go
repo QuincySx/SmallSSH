@@ -76,6 +76,6 @@ func SVGButton(c *ui.Context, icon *ui.SVG, label string, tooltip ...string) ui.
 	if tip != "" {
 		button.Tooltip(tip)
 	}
-	button.Children(func() { ui.Icon(c, icon).Size(18, 18) })
+	button.Children(func() { ui.Icon(c, icon).Size(16, 16) })
 	return button
 }

@@ -2547,3 +2547,14 @@ SmallPen 通过 CLI 原子修改 18 张工作区画布的重复顶栏按钮，�
 - macOS arm64 打包与生成核对：`build/logs/build-sshyard-canvas-20261107.log`、`build/logs/build-sshyard-canvas-check-20261107.log` 均通过。静默安装 `/Applications/SmallSSH.app`，签名有效，安装二进制与构建 SHA256 一致；安装日志 `build/logs/install-20261107-221124.log`，旧包留在用户废纸篓。
 
 限制：运行与渲染证据属于本机 macOS / headless UI Tester；未自动打开、退出、重启或激活 SmallSSH / SmallPen 进行原生鼠标实机验收。SmallPen Web 原端口 HTTP 200 仅证明服务可访问。当前源不提供任意 x/y 叠放的无限画布；采用与参考相同的分栏卡片，并增加标签聚合。其他未完成业务仍按 REQUIREMENTS 原编号记账，不因 UI 改版算作已完成。摘要与指纹：`build/logs/sshyard-canvas-20261107-summary.json`。
+
+
+## 2026-11-07 — 缩小共享操作图标
+
+共享 SVGButton 的图形尺寸从 18×18 调为 16×16 DIP，覆盖画布右侧开关、面板动作和应用工具栏。按钮本身的 32×32 或面板指定的 24×24 点击范围、位置和业务动作不变；14 DIP 标题类型图标保持原尺寸。SmallPen 通过 CLI 同步“图标按钮”的图标字号，源修订 `3110842adcf0ba880efd693c0d5eb73faeb7c13968973dbcfeef3c11738dc2c3`，无需改变页面入口或状态映射。
+
+- 仓库 gate：`build/logs/check-20261107-233931.log` 通过，含 vendor 补丁、格式、vet、全量测试。
+- 真实 Go 视图离屏：`build/logs/test-20261107-233933.log` 通过；画布、局部 tab 和 560 DIP 窄窗的明暗 6 张图在 `build/snapshots/compact-icons-20261107/`，已目视检查浅色画布。没有新增仅镜像常量的测试。
+- SmallPen 明暗各 88/88 目标完成，数据有效；仍为既有 6 条设置窗口控制叠放 info、642 项跳过，coverage=false。报告：`build/logs/compact-icons-smallpen-light-20261107.json` 和对应 dark 文件。
+
+仅变更图标视觉尺寸，未触发真实服务器、系统认证或原生窗口交互；离屏证据属于本机，不等同于所有平台实机验收。打包、安装及产物摘要随后写入 `build/logs/compact-icons-20261107-summary.json`，不自动启动或重启用户窗口。

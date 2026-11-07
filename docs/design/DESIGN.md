@@ -117,3 +117,8 @@ SmallPen 新增共享“工作区标签”的普通、选中和非焦点状态�
 保存修订 `c68562874c6afb38aaaa1d4a2529136d24052f6d808f3818fd4dd7de0c626882`：65 页、11 个组件、23 个变体、39 个 Token、26 条链接。明暗各 88/88 目标完成，数据有效，无 warning；各有 6 条既有设置原生控制叠放 info 和 642 项跳过检查，coverage=false。CLI 原生图抽查了深色四卡片与浅色局部标签混排，实际 Go 视图的 12 张明暗画布 / 混排 / 聚合 / 底部 / 右侧 / 窄窗截图在 `build/snapshots/sshyard-canvas-20261107/`。本轮未做 SmallPen App 全流程或逐像素验收。
 
 报告及产物摘要：`build/logs/sshyard-canvas-20261107-summary.json`；完整设计检查在 `build/logs/sshyard-canvas-design-light-20261107.json` 和 dark 对应文件。App 已实现、打包并静默安装到 `/Applications/SmallSSH.app`，未自动启动或重启正在使用的窗口。
+
+
+## 操作图标缩小（2026-11-07）
+
+共享 SVG 操作图标由 18 DIP 调为 16 DIP，SmallPen 的“图标按钮 / 图标”同步 16；32 DIP 普通按钮和 24 DIP 面板按钮的点击范围不变，标题类型图标仍为 14 DIP。布局、文字和窗口动作不变。保存修订 `3110842adcf0ba880efd693c0d5eb73faeb7c13968973dbcfeef3c11738dc2c3`。明暗各 88/88 目标检查完成，保留既有 6 条设置窗口叠放 info、642 项跳过，coverage=false。真实 Go 画布、混排和窄窗的 6 张明暗图在 `build/snapshots/compact-icons-20261107/`。
