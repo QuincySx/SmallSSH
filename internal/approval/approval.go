@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/fileattrs"
 	"sshclient/internal/serverops"
 	"sync"
@@ -21,6 +22,7 @@ import (
 var ErrDenied = errors.New("请求未获批准、已到期或已撤销")
 
 type Operation struct {
+	Tunnel          connectcfg.Tunnel        `json:"tunnel,omitzero"`
 	Docker          serverops.DockerRequest  `json:"docker,omitzero"`
 	Compose         serverops.ComposeRequest `json:"compose,omitzero"`
 	Attributes      fileattrs.Change         `json:"attributes,omitzero"`
@@ -43,6 +45,17 @@ type Operation struct {
 	PathProtection  bool                     `json:"pathProtection,omitempty"`
 	Client          string                   `json:"client"`
 }
+
+// Peer is the process the local socket reported, not a caller-written label.
+// It is filled by the broker before the owner reviews the request.
+type Peer struct {
+	PID      int    `json:"peerPid,omitempty"`
+	Path     string `json:"peerPath,omitempty"`
+	Bundle   string `json:"peerBundle,omitempty"`
+	Instance string `json:"instance,omitempty"`
+	CodeID   string `json:"codeId,omitempty"`
+}
+
 type Request struct {
 	Renewal bool `json:"renewal,omitempty"`
 	// Renewals counts how many times this grant has been extended. An authority
@@ -53,6 +66,7 @@ type Request struct {
 	OwnerSession bool      `json:"ownerSession,omitempty"`
 	ID           string    `json:"id"`
 	Nonce        string    `json:"nonce"`
+	Peer         Peer      `json:"peer,omitzero"`
 	Operation    Operation `json:"operation"`
 	Expires      time.Time `json:"expires"`
 	Status       string    `json:"status"`
@@ -115,10 +129,43 @@ func (m *Manager) CreateFrom(op Operation, ttl time.Duration, bucket string) (Re
 	return m.create(op, ttl, false, bucket)
 }
 
+// CreateFromPeer is CreateFrom for a caller the broker identified on the local
+// socket: the owner sees the process, not only the label it typed.
+func (m *Manager) CreateFromPeer(op Operation, ttl time.Duration, bucket string, peer Peer) (Request, string, error) {
+	r, t, err := m.create(op, ttl, false, bucket)
+	if err != nil {
+		return r, t, err
+	}
+	m.mu.Lock()
+	if e := m.pending[r.ID]; e != nil {
+		e.request.Peer = peer
+		r.Peer = peer
+	}
+	m.mu.Unlock()
+	return r, t, nil
+}
+
 // CreateOwner is reached only after the broker verifies a signed one-use
 // owner challenge. Caller labels cannot select this scope.
 func (m *Manager) CreateOwner(op Operation) (Request, string, error) {
 	return m.create(op, 15*time.Minute, true, "")
+}
+
+// CreateOwnerFromPeer is CreateOwner for a caller the broker identified on the
+// local socket. The peer is supplied from the accepted connection, never from
+// an operation or request field written by the client.
+func (m *Manager) CreateOwnerFromPeer(op Operation, peer Peer) (Request, string, error) {
+	r, t, err := m.create(op, 15*time.Minute, true, "")
+	if err != nil {
+		return r, t, err
+	}
+	m.mu.Lock()
+	if e := m.pending[r.ID]; e != nil {
+		e.request.Peer = peer
+		r.Peer = peer
+	}
+	m.mu.Unlock()
+	return r, t, nil
 }
 
 func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket string) (Request, string, error) {
@@ -147,6 +194,10 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket str
 		return Request{}, "", errors.New("普通操作不能携带 Compose 目标")
 	}
 	switch op.Kind {
+	case "tunnel":
+		if e := op.Tunnel.Validate(); e != nil {
+			return Request{}, "", e
+		}
 	case "docker-logs", "docker-terminal":
 		if err := op.Docker.Validate(op.Kind); err != nil {
 			return Request{}, "", err
@@ -244,7 +295,7 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket str
 			}
 		}
 	}
-	r := Request{OwnerIssued: owner, OwnerSession: owner && (op.Kind == "shell" || op.Kind == "docker-terminal" || op.Kind == "docker-logs" && op.Docker.Follow), ID: token(), Nonce: token(), Operation: op, Expires: m.now().Add(ttl).UTC(), Status: "pending"}
+	r := Request{OwnerIssued: owner, OwnerSession: owner && (op.Kind == "shell" || op.Kind == "tunnel" || op.Kind == "docker-terminal" || op.Kind == "docker-logs" && op.Docker.Follow), ID: token(), Nonce: token(), Operation: op, Expires: m.now().Add(ttl).UTC(), Status: "pending"}
 	t := token()
 	m.pending[r.ID] = &entry{request: r, ticketHash: sha256.Sum256([]byte(t)), bucket: bucket}
 	return r, t, nil
@@ -370,6 +421,16 @@ func (m *Manager) GetForTicket(id, ticket string) (Request, error) {
 }
 func Proof(r Request, prove func([]byte) ([]byte, error)) ([]byte, error) { return prove(canonical(r)) }
 func (m *Manager) Decide(id string, allow bool, proof []byte) error {
+	return m.DecideWithLifetime(id, allow, 0, 0, proof)
+}
+
+// MaxGrantLifetime bounds a session the owner grants in one decision. The
+// owner chooses the duration; a caller's request only suggests one.
+const MaxGrantLifetime = 24 * 60 * 60
+
+// DecideWithLifetime verifies the owner's chosen duration on a copy before
+// committing the decision. A zero lifetime keeps the requested one.
+func (m *Manager) DecideWithLifetime(id string, allow bool, lifetimeSeconds, idleSeconds int, proof []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune()
@@ -377,7 +438,25 @@ func (m *Manager) Decide(id string, allow bool, proof []byte) error {
 	if !ok || e.request.Status != "pending" {
 		return ErrDenied
 	}
-	message := append(canonical(e.request), byte(0))
+	reviewed := e.request
+	if allow && lifetimeSeconds > 0 {
+		if reviewed.Operation.Kind != "grant" || lifetimeSeconds < 60 || lifetimeSeconds > MaxGrantLifetime {
+			return ErrDenied
+		}
+		scope := reviewed.Operation.Grant
+		scope.LifetimeSeconds = lifetimeSeconds
+		if idleSeconds > 0 && idleSeconds <= lifetimeSeconds {
+			scope.IdleSeconds = idleSeconds
+		}
+		if scope.IdleSeconds > lifetimeSeconds {
+			scope.IdleSeconds = lifetimeSeconds
+		}
+		reviewed.Operation.Grant = scope
+	}
+	if allow && reviewed.Operation.Kind == "grant" && reviewed.Operation.Grant.Validate() != nil {
+		return ErrDenied
+	}
+	message := append(canonical(reviewed), byte(0))
 	if allow {
 		message[len(message)-1] = 1
 	}
@@ -385,6 +464,7 @@ func (m *Manager) Decide(id string, allow bool, proof []byte) error {
 	if err != nil || !hmac.Equal(expected, proof) {
 		return ErrDenied
 	}
+	e.request = reviewed
 	if allow {
 		e.request.Status = "approved"
 		if e.request.Operation.Kind == "grant" {

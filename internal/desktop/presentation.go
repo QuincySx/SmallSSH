@@ -28,6 +28,12 @@ func reviewText(s string) string {
 }
 
 func operationTitle(kind string) string {
+	if kind == "route-probe" {
+		return tr(nil, "连接路径探测")
+	}
+	if kind == "tunnel" {
+		return tr(nil, "SSH 隧道")
+	}
 	switch kind {
 	case "docker-logs":
 		return tr(nil, "读取容器日志")

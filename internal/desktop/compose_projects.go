@@ -155,9 +155,9 @@ func (a *app) composeProjectCard(c *ui.Context, p monitor.ComposeProject, d *mon
 			})
 		})
 	})
-	card.ContextMenu(func(m *ui.Menu) {
+	card.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) {
 		a.composeProjectMenu(c, p, d, state, m)
-	})
+	}))
 	if card.Clicked() {
 		state.composeProject, state.composeEngine, state.composeSocket = p.Name, d.EngineID, d.Socket
 		state.composeContainers = ui.GridState{}

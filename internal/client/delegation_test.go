@@ -1,88 +1,101 @@
 package client
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
-	"runtime"
+	"sync"
 	"testing"
+
+	"sshclient/internal/approval"
+	"sshclient/internal/localipc"
 )
 
-func fileDelegation(t *testing.T) *Delegation {
-	t.Helper()
+func TestSessionCannotBeSavedSerializedOrRestored(t *testing.T) {
+	dir := t.TempDir()
+	d := &Delegation{ParentID: "synthetic-session", Directory: dir, Ticket: "copied-ticket", PublicKey: "public-key"}
+	path := filepath.Join(dir, "session.json")
+	if err := d.Save(path); !errors.Is(err, ErrSessionNotExportable) {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("created a reusable session file", err)
+	}
+	if _, err := json.Marshal(d); !errors.Is(err, ErrSessionNotExportable) {
+		t.Fatal("serialized session authority", err)
+	}
+	// JSON receives both addressable pointers and unaddressable values in callers.
+	if _, err := json.Marshal(*d); !errors.Is(err, ErrSessionNotExportable) {
+		t.Fatal("session value bypassed the non-exportable contract", err)
+	}
+	if err := json.Unmarshal([]byte(`{"key":"copied key","ticket":"copied ticket"}`), d); !errors.Is(err, ErrSessionNotExportable) {
+		t.Fatal("decoded old session credentials", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"key":"copied key"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadDelegation(path, dir); !errors.Is(err, ErrSessionNotExportable) {
+		t.Fatal("restored persisted authority", err)
+	}
+	if err := d.Validate(dir); err == nil {
+		t.Fatal("metadata became authority without a live channel")
+	}
+	d.Close()
+}
+
+func TestSessionCopiesShareCloseAndSigningState(t *testing.T) {
 	pub, key, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	if err = os.Chmod(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	return &Delegation{ParentID: "generated-parent", Directory: dir, Key: key, Ticket: "generated-client-withdraw-ticket", Permission: "read", Host: "fixture", PublicKey: base64.RawURLEncoding.EncodeToString(pub)}
-}
-
-func TestDelegationFilePrivateRoundtripAndNoOverwrite(t *testing.T) {
-	d := fileDelegation(t)
-	d.ReadRoot = "/srv/project"
+	a, b := net.Pipe()
+	defer b.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	h := &requestChannel{wire: &localipc.Wire{Conn: a}, ctx: ctx, cancel: cancel, id: "copy-session", ticket: "synthetic"}
+	d := &Delegation{Directory: t.TempDir(), ParentID: h.id, Ticket: h.ticket, state: &delegationState{key: key, control: h, pid: os.Getpid()}}
 	defer d.Close()
-	if err := d.Save("ai.json"); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.Save("ai.json"); err == nil {
-		t.Fatal("overwrote another session")
-	}
-	got, err := ReadDelegation("ai.json", d.Directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer got.Close()
-	if !ed25519.PrivateKey(got.Key).Equal(ed25519.PrivateKey(d.Key)) || got.ParentID != d.ParentID || got.ReadRoot != d.ReadRoot || got.WriteRoot != d.WriteRoot {
-		t.Fatal("roundtrip changed client authority")
-	}
-	if err = got.Validate(t.TempDir()); err == nil {
-		t.Fatal("client authority moved to another broker directory")
-	}
-	st, err := os.Stat(filepath.Join(d.Directory, "client-sessions", "ai.json"))
-	if err != nil || runtime.GOOS != "windows" && st.Mode().Perm() != 0600 {
-		t.Fatal("session file has unsafe permissions", err)
-	}
-	got.Close()
-	if len(got.Key) != 0 || got.Ticket != "" {
-		t.Fatal("closed client retained its authority")
-	}
-}
-
-func TestDelegationFileRejectsPublicPathsSymlinksAndCorruptKey(t *testing.T) {
-	d := fileDelegation(t)
-	defer d.Close()
-	for _, path := range []string{"", ".", "..", "../outside.json", filepath.Join(t.TempDir(), "outside.json")} {
-		if err := d.Save(path); err == nil {
-			t.Fatal("saved authority outside the private directory", path)
+	copy := *d
+	message := []byte("synthetic signing/close interleaving")
+	for _, session := range []*Delegation{d, &copy} {
+		if err := session.Validate(d.Directory); err != nil {
+			t.Fatal("value copy lost its live authority", err)
+		}
+		if sig, err := session.sign(message); err != nil || !ed25519.Verify(pub, message, sig) {
+			t.Fatal("value copy could not sign before close", err)
 		}
 	}
-	if err := d.Save("original.json"); err != nil {
-		t.Fatal(err)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for _, session := range []*Delegation{d, &copy} {
+		wg.Go(func() {
+			<-start
+			for range 100 {
+				sig, err := session.sign(message)
+				if err == nil && !ed25519.Verify(pub, message, sig) {
+					t.Error("close raced with signing and produced a corrupt signature")
+				}
+			}
+		})
 	}
-	if runtime.GOOS != "windows" {
-		link := filepath.Join(d.Directory, "client-sessions", "link.json")
-		if err := os.Symlink(filepath.Join(d.Directory, "client-sessions", "original.json"), link); err != nil {
-			t.Fatal(err)
+	close(start)
+	copy.Close()
+	wg.Wait()
+	for _, session := range []*Delegation{d, &copy} {
+		if !errors.Is(session.Validate(d.Directory), approval.ErrDenied) {
+			t.Fatal("closing a copy left another copy valid")
 		}
-		if _, err := ReadDelegation("link.json", d.Directory); err == nil {
-			t.Fatal("followed a session-file symlink")
-		}
-		path := filepath.Join(d.Directory, "client-sessions", "original.json")
-		if err := os.Chmod(path, 0644); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := ReadDelegation("original.json", d.Directory); err == nil {
-			t.Fatal("accepted an exposed session file")
+		if _, err := session.sign(message); !errors.Is(err, approval.ErrDenied) {
+			t.Fatal("closing a copy left another copy able to sign", err)
 		}
 	}
-	d.Key[len(d.Key)-1] ^= 1
-	if err := d.Validate(d.Directory); err == nil {
-		t.Fatal("accepted a corrupt Ed25519 private/public pair")
+	for _, value := range key {
+		if value != 0 {
+			t.Fatal("shared key bytes survived close")
+		}
 	}
 }

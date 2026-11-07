@@ -38,9 +38,15 @@ func TestConnectionModalKeepsWorkspaceAndProtectsDraft(t *testing.T) {
 				t.Fatal("focus escaped to the terminal workspace")
 			}
 		}
+		focused := ""
+		for _, label := range tt.Texts() {
+			if tt.Focused(label) {
+				focused = label
+			}
+		}
 		tt.Key(0, ui.KeyEscape)
 		if !a.prompt.open || a.page != 0 || a.form.Password == "" {
-			t.Fatal("Escape silently discarded the draft")
+			t.Fatal("Escape did not protect the draft", focused, a.page, a.prompt.open, a.form.Name, a.form.Password == "", a.connection.section)
 		}
 		tt.Key(0, ui.KeyEscape)
 		if a.prompt.open || a.form.Name != "待保存" || a.form.Password == "" {
@@ -171,6 +177,13 @@ func TestUnlockedSessionSavesWithoutPasswordAndCannotApproveOtherRequests(t *tes
 	h.a.selected = id
 	h.a.editConnection()
 	h.ui.Frame()
+	h.wait(func() bool { return h.a.connection.notes != nil && !h.a.connection.notes.loading })
+	if h.a.connection.notes == nil {
+		t.Fatal("connection notes did not start")
+	}
+	if h.a.connection.notes.loadError != "" {
+		t.Fatal("connection notes failed to load", h.a.connection.notes.loadError)
+	}
 	h.input("名称", "修改后")
 	h.click("保存连接")
 	h.wait(func() bool { return h.a.page == 1 || h.a.connection.phase == "" })
@@ -197,7 +210,7 @@ func TestUnlockedSessionSavesWithoutPasswordAndCannotApproveOtherRequests(t *tes
 
 func TestEveryTabHasAdjacentCloseAndClosingInactivePreservesSelection(t *testing.T) {
 	a := &app{ctx: context.Background(), online: true, edit: &editor.State{Buffer: editor.NewBuffer("")}, sessions: []*session{{name: "生产", host: "prod"}, {name: "测试", host: "test"}, {name: "开发", host: "dev"}}, active: 1, selected: "sidebar-only"}
-	tt := ui.NewTester(a.sessionStage, 900, 450)
+	tt := ui.NewTester(a.workspaceHeader, 900, 450)
 	for _, name := range []string{"生产", "测试", "开发"} {
 		label, ok := tt.Find(name)
 		if !ok {
@@ -221,7 +234,6 @@ func TestEveryTabHasAdjacentCloseAndClosingInactivePreservesSelection(t *testing
 	r, _ := tt.Find("关闭标签：生产")
 	tt.Press(r.X+r.W/2, r.Y+r.H/2)
 	a.sessions[0].monitorStatus = "刚刚更新"
-	a.sessions[0].draft = "changed command draft"
 	tt.Frame()
 	tt.Release(r.X+r.W/2, r.Y+r.H/2)
 	if len(a.sessions) != 2 || a.sessions[a.active].host != "test" || a.selected != "sidebar-only" {
@@ -239,20 +251,27 @@ func TestEveryTabHasAdjacentCloseAndClosingInactivePreservesSelection(t *testing
 	if len(a.sessions) != 1 || a.selected != "sidebar-only" {
 		t.Fatal("active close did not choose remaining tab")
 	}
-	a.editPath = "/tmp/example.txt"
-	a.editShown = true
+	windows := fakeEditorFactory(a)
+	a.installEditor(localEndpoint, "/tmp/example.txt", "", "")
 	a.edit.Insert("unsaved")
 	tt.Frame()
 	if err := tt.Click("关闭标签：测试"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.editShown || len(a.sessions) != 0 {
-		t.Fatal("terminal close switched away from editor")
+	if a.editShown || len(a.sessions) != 0 || a.editPath == "" || len(*windows) != 1 || (*windows)[0].hidden != 0 {
+		t.Fatal("terminal close affected the standalone editor")
 	}
-	if err := tt.Click("关闭标签：编辑: example.txt ·"); err != nil {
+	ed := ui.NewTester(a.editorWindowView, 900, 600)
+	if err := ed.Click("关闭"); err != nil {
 		t.Fatal(err)
 	}
 	if !a.prompt.open || a.editPath == "" {
 		t.Fatal("modified editor closed without confirmation")
+	}
+	if err := ed.Click("取消"); err != nil {
+		t.Fatal(err)
+	}
+	if a.prompt.open || a.editPath == "" || a.edit.Buffer.String() != "unsaved" || len(a.sessions) != 0 || (*windows)[0].hidden != 0 {
+		t.Fatal("canceling editor close lost the document or changed terminal state")
 	}
 }

@@ -15,7 +15,6 @@ import (
 	"runtime"
 	"sort"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/client"
 	"sshclient/internal/localipc"
 	"sshclient/internal/vault"
@@ -24,19 +23,26 @@ import (
 )
 
 type Job struct {
-	ID        string    `json:"id"`
-	Host      string    `json:"host"`
-	Direction string    `json:"direction"`
-	Local     string    `json:"local"`
-	Remote    string    `json:"remote"`
-	Hash      string    `json:"hash"`
-	Size      int64     `json:"size"`
-	Bytes     int64     `json:"bytes"`
-	Speed     float64   `json:"speed"`
-	State     string    `json:"state"`
-	Error     string    `json:"error,omitempty"`
-	RequestID string    `json:"requestId,omitempty"`
-	Created   time.Time `json:"created"`
+	ID              string    `json:"id"`
+	Host            string    `json:"host"`
+	Direction       string    `json:"direction"`
+	Local           string    `json:"local"`
+	Remote          string    `json:"remote"`
+	Hash            string    `json:"hash"`
+	Size            int64     `json:"size"`
+	Bytes           int64     `json:"bytes"`
+	Speed           float64   `json:"speed"`
+	State           string    `json:"state"`
+	Error           string    `json:"error,omitempty"`
+	RequestID       string    `json:"requestId,omitempty"`
+	Created         time.Time `json:"created"`
+	Directory       bool      `json:"directory,omitempty"`
+	ParentID        string    `json:"parentId,omitempty"`
+	Endpoint        string    `json:"endpoint,omitempty"`
+	HostFingerprint string    `json:"hostFingerprint,omitempty"`
+	Phase           string    `json:"phase,omitempty"`
+	FilesDone       int       `json:"filesDone,omitempty"`
+	FilesTotal      int       `json:"filesTotal,omitempty"`
 }
 type Manager struct {
 	dir    string
@@ -44,6 +50,13 @@ type Manager struct {
 	mu     sync.Mutex
 	active map[string]context.CancelFunc
 	live   map[string]Job
+}
+
+func (j Job) checkTarget(actual approval.Operation) error {
+	if actual.Host != j.Host || j.Endpoint != "" && actual.Endpoint != j.Endpoint || j.HostFingerprint != "" && actual.HostFingerprint != j.HostFingerprint {
+		return errors.New("连接目标已变化，请重新创建传输任务")
+	}
+	return nil
 }
 
 var validID = regexp.MustCompile(`^[A-Za-z0-9_-]{24}$`)
@@ -98,7 +111,7 @@ func (m *Manager) read(id string) (Job, error) {
 	if e = json.NewDecoder(io.LimitReader(f, 65537)).Decode(&j); e != nil {
 		return j, e
 	}
-	if j.ID != id || (j.Direction != "upload" && j.Direction != "download") || !filepath.IsAbs(j.Local) || j.Size < 0 {
+	if j.ID != id || (j.Direction != "upload" && j.Direction != "download") || !filepath.IsAbs(j.Local) || j.Size < 0 || j.Directory && (j.Direction != "download" || j.ParentID != "") || j.ParentID != "" && !validID.MatchString(j.ParentID) {
 		return j, errors.New("传输记录无效")
 	}
 	return j, nil
@@ -174,6 +187,9 @@ func (m *Manager) List() []Job {
 				j.Error = "上次传输未完成，可继续"
 			}
 		}
+		if j.ParentID != "" {
+			continue
+		}
 		out = append(out, j)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Created.Before(out[j].Created) })
@@ -211,8 +227,8 @@ func (m *Manager) Run(parent context.Context, id, label string) (err error) {
 
 // RunWithOwner is only used by a human-facing in-process frontend. The public
 // CLI Run path never obtains an owner session and still waits for approval.
-func (m *Manager) RunWithOwner(parent context.Context, id, label string, owner *vault.Session) error {
-	if owner == nil {
+func (m *Manager) RunWithOwner(parent context.Context, id, label string, owner client.OwnerProof) error {
+	if !client.HasOwnerProof(owner) {
 		return errors.New("保险库已锁定")
 	}
 	return m.run(parent, id, label, owner)
@@ -220,11 +236,17 @@ func (m *Manager) RunWithOwner(parent context.Context, id, label string, owner *
 
 // freshUploadFallback reports whether a refused resumed upload may be retried as
 // a bounded first-time upload: never for the owner, never for a download.
-func freshUploadFallback(kind string, owner *vault.Session, direction string, err error) bool {
-	return kind == "put-resume" && owner == nil && direction == "upload" && errors.Is(err, client.ErrAutomationPolicy)
+func freshUploadFallback(kind string, owner client.OwnerProof, direction string, err error) bool {
+	return kind == "put-resume" && !client.HasOwnerProof(owner) && direction == "upload" && errors.Is(err, client.ErrAutomationPolicy)
 }
 
-func (m *Manager) run(parent context.Context, id, label string, owner *vault.Session) (err error) {
+type runOptions struct {
+	root     *os.Root
+	base     string
+	progress func(Job)
+}
+
+func (m *Manager) run(parent context.Context, id, label string, owner client.OwnerProof, options ...runOptions) (err error) {
 	if !validID.MatchString(id) {
 		return errors.New("无效传输 ID")
 	}
@@ -239,6 +261,13 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 	}
 	if j.State == "done" {
 		return nil
+	}
+	var option runOptions
+	if len(options) != 0 {
+		option = options[0]
+	}
+	if j.ParentID != "" && option.root == nil {
+		return errors.New("目录内文件只能从所属下载任务继续")
 	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -273,6 +302,9 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 		m.mu.Lock()
 		m.live[id] = j
 		m.mu.Unlock()
+		if option.progress != nil {
+			option.progress(j)
+		}
 		if flush {
 			return m.save(j)
 		}
@@ -296,6 +328,18 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 			err = e
 		}
 	}()
+	if j.Directory {
+		return m.downloadDirectory(ctx, &j, label, owner, update)
+	}
+	localName := j.Local
+	lstat, open, openFile, link, remove := os.Lstat, os.Open, os.OpenFile, os.Link, os.Remove
+	if option.root != nil {
+		localName, e = filepath.Rel(option.base, j.Local)
+		if e != nil || !filepath.IsLocal(localName) {
+			return errors.New("目录下载路径越界")
+		}
+		lstat, open, openFile, link, remove = option.root.Lstat, option.root.Open, option.root.OpenFile, option.root.Link, option.root.Remove
+	}
 	var local *os.File
 	var offset int64
 	prefix := ""
@@ -314,14 +358,14 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 			return errors.New("本地源文件大小已变化，请新建任务")
 		}
 	} else {
-		part = filepath.Join(filepath.Dir(j.Local), "."+filepath.Base(j.Local)+".ssh-part-"+j.ID)
-		if st, statErr := os.Lstat(j.Local); statErr == nil {
+		part = filepath.Join(filepath.Dir(localName), "."+filepath.Base(localName)+".ssh-part-"+j.ID)
+		if st, statErr := lstat(localName); statErr == nil {
 			// Recover a crash after no-clobber commit but before the final state
 			// write. Only an already complete, hash-matching target is accepted.
 			if !st.Mode().IsRegular() || st.Size() != j.Size || j.Hash == "" {
 				return errors.New("本地目标已存在，不会覆盖")
 			}
-			f, err := os.Open(j.Local)
+			f, err := open(localName)
 			if err != nil {
 				return err
 			}
@@ -334,21 +378,21 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 			if hex.EncodeToString(h.Sum(nil)) != j.Hash {
 				return errors.New("本地目标已存在且内容不同，不会覆盖")
 			}
-			if partial, err := os.Lstat(part); err == nil && os.SameFile(st, partial) {
-				_ = os.Remove(part)
+			if partial, err := lstat(part); err == nil && os.SameFile(st, partial) {
+				_ = remove(part)
 			}
 			return nil
 		} else if !os.IsNotExist(statErr) {
 			return statErr
 		}
-		st, e := os.Lstat(part)
+		st, e := lstat(part)
 		if os.IsNotExist(e) {
-			local, e = os.OpenFile(part, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+			local, e = openFile(part, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 		} else if e == nil {
 			if !st.Mode().IsRegular() || (runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0) {
 				return errors.New("本地部分文件类型或权限不安全")
 			}
-			local, e = os.OpenFile(part, os.O_RDWR, 0)
+			local, e = openFile(part, os.O_RDWR, 0)
 		}
 		if e != nil {
 			return e
@@ -367,16 +411,16 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 		prefix = hex.EncodeToString(h.Sum(nil))
 	}
 	kind := "put"
-	if owner != nil || j.Bytes > 0 {
+	if client.HasOwnerProof(owner) || j.Bytes > 0 {
 		kind = "put-resume"
 	}
 	if j.Direction == "download" {
 		kind = "get-resume"
 	}
-	op := approval.Operation{Host: j.Host, Kind: kind, Path: j.Remote, Client: label, TransferID: j.ID, Size: j.Size, Offset: offset, ContentHash: j.Hash, PrefixHash: prefix}
+	op := approval.Operation{Host: j.Host, Endpoint: j.Endpoint, HostFingerprint: j.HostFingerprint, Kind: kind, Path: j.Remote, Client: label, TransferID: j.ID, Size: j.Size, Offset: offset, ContentHash: j.Hash, PrefixHash: prefix}
 	var r approval.Request
 	var ticket string
-	if owner != nil {
+	if client.HasOwnerProof(owner) {
 		r, ticket, e = m.client.RequestWithOwner(ctx, op, owner)
 	} else {
 		r, ticket, e = m.client.Request(ctx, op, 15*time.Minute)
@@ -398,20 +442,18 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 			return e
 		}
 	}
-	defer func() {
-		if ctx.Err() != nil {
-			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_, _ = m.client.Call(cleanup, broker.Message{Action: "withdraw", ID: r.ID, Ticket: ticket})
-		}
-	}()
+	if e = j.checkTarget(r.Operation); e != nil {
+		return e
+	}
+	// ctx owns the private request connection. Cancelling it revokes authority
+	// at the broker; a new connection with the old ticket cannot withdraw it.
 	j.State = "waiting"
 	j.RequestID = r.ID
 	j.Error = ""
 	if e = update(true); e != nil {
 		return e
 	}
-	if owner != nil {
+	if client.HasOwnerProof(owner) {
 		if e = m.client.DecideWithOwner(ctx, r.ID, true, false, owner); e != nil {
 			return e
 		}
@@ -445,6 +487,9 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 	} else {
 		if meta.Offset != offset || (j.Hash != "" && meta.Hash != j.Hash) {
 			return errors.New("远程源文件在两次传输之间发生变化")
+		}
+		if j.ParentID != "" && meta.Size != j.Size {
+			return errors.New("目录内源文件大小已变化，请新建下载任务")
 		}
 		j.Hash = meta.Hash
 		j.Size = meta.Size
@@ -516,10 +561,10 @@ func (m *Manager) run(parent context.Context, id, label string, owner *vault.Ses
 		if e = local.Close(); e != nil {
 			return e
 		}
-		if e = os.Link(part, j.Local); e != nil {
+		if e = link(part, localName); e != nil {
 			return fmt.Errorf("本地无覆盖提交失败，部分文件保留: %w", e)
 		}
-		if e = os.Remove(part); e != nil {
+		if e = remove(part); e != nil {
 			return e
 		}
 	}

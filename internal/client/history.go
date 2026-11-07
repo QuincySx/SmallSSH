@@ -5,12 +5,11 @@ import (
 	"errors"
 	"sshclient/internal/auditlog"
 	"sshclient/internal/broker"
-	"sshclient/internal/vault"
 )
 
 // History reads a bounded page with the already-unlocked owner's exact proof.
-func (c Client) History(ctx context.Context, q auditlog.Query, owner *vault.Session) (auditlog.Page, error) {
-	if owner == nil {
+func (c Client) History(ctx context.Context, q auditlog.Query, owner OwnerProof) (auditlog.Page, error) {
+	if !HasOwnerProof(owner) {
 		return auditlog.Page{}, errors.New("保险库已锁定")
 	}
 	challenge, err := c.Call(ctx, broker.Message{Action: "profileChallenge"})

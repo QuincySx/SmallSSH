@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const MaxFrame = 1 << 20
@@ -24,13 +25,18 @@ func DefaultDir() string {
 }
 
 // Wire is length framed; malformed lengths are rejected before allocation.
+// A failed frame closes the transport: partial frames cannot be resynchronized.
 // One reader and any number of writers may use it concurrently.
 type Wire struct {
 	Conn net.Conn
-	mu   sync.Mutex
+	// Verify runs before each send and after each complete receive.
+	Verify func() error
+	// WriteTimeout bounds each framed write independently of read/idle timeouts.
+	WriteTimeout time.Duration
+	mu           sync.Mutex
 }
 
-func (w *Wire) Send(v any) error {
+func (w *Wire) Send(v any) (err error) {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -40,6 +46,22 @@ func (w *Wire) Send(v any) error {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	defer func() {
+		if err != nil {
+			_ = w.Close()
+		}
+	}()
+	if w.Verify != nil {
+		if err = w.Verify(); err != nil {
+			return err
+		}
+	}
+	if w.WriteTimeout > 0 {
+		if err := w.Conn.SetWriteDeadline(time.Now().Add(w.WriteTimeout)); err != nil {
+			return err
+		}
+		defer w.Conn.SetWriteDeadline(time.Time{})
+	}
 	var h [4]byte
 	binary.BigEndian.PutUint32(h[:], uint32(len(b)))
 	if err = writeAll(w.Conn, h[:]); err != nil {
@@ -60,7 +82,12 @@ func writeAll(w io.Writer, b []byte) error {
 	}
 	return nil
 }
-func (w *Wire) Receive(v any) error {
+func (w *Wire) Receive(v any) (err error) {
+	defer func() {
+		if err != nil {
+			_ = w.Close()
+		}
+	}()
 	var h [4]byte
 	if _, e := io.ReadFull(w.Conn, h[:]); e != nil {
 		return e
@@ -72,6 +99,11 @@ func (w *Wire) Receive(v any) error {
 	b := make([]byte, n)
 	if _, e := io.ReadFull(w.Conn, b); e != nil {
 		return e
+	}
+	if w.Verify != nil {
+		if err := w.Verify(); err != nil {
+			return err
+		}
 	}
 	return json.Unmarshal(b, v)
 }

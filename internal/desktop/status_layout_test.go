@@ -87,14 +87,40 @@ func TestVirtualInterfaceGridAccountsForDisclosureIndent(t *testing.T) {
 	a := assessedStatusDemo()
 	a.fileExpanded = true
 	a.statusMetric = "网络"
-	tt := ui.NewTester(a.view, 1090, 1600)
-	for _, width := range []int{1090, 1091, 1090} {
+	tt := ui.NewTester(a.view, 1000, 1600)
+	cards := func(width int) (ui.Rect, ui.Rect) {
+		t.Helper()
 		tt.SetSize(width, 1600)
 		first, found := tt.Find("网卡 docker0")
 		second, ok := tt.Find("网卡 lo")
-		if !found || !ok || (first.Y == second.Y) != (width == 1091) || width == 1091 && first.W < 420 {
-			t.Fatal("virtual cards split before two minimum widths fit below the disclosure", width, first, second)
+		if !found || !ok {
+			t.Fatal("virtual interface cards missing", width, first, second)
 		}
+		return first, second
+	}
+	// Locate the first two-column width from actual laid-out cards, so changes
+	// to workspace chrome do not become hard-coded window breakpoints.
+	low, high := 1000, 1200
+	for high-low > 1 {
+		mid := (low + high) / 2
+		first, second := cards(mid)
+		if first.Y == second.Y {
+			high = mid
+		} else {
+			low = mid
+		}
+	}
+	before, next := cards(low)
+	if before.Y == next.Y || before.W < 847 || before.W >= 848 {
+		t.Fatal("single-column disclosure width is not just below two cards plus their gap", low, before, next)
+	}
+	first, second := cards(high)
+	if first.Y != second.Y || first.W < 420 || second.W < 420 || second.X-first.X-first.W < 7 || second.X-first.X-first.W > 9 {
+		t.Fatal("virtual cards split before two minimum widths fit below the disclosure", high, first, second)
+	}
+	first, second = cards(low)
+	if first.Y == second.Y {
+		t.Fatal("virtual cards did not return to one column", low, first, second)
 	}
 }
 

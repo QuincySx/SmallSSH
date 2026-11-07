@@ -3,6 +3,7 @@ package sshconn
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/pkg/sftp"
@@ -44,7 +45,12 @@ func (c *Client) Mutate(ctx context.Context, kind, p, destination string, mode u
 			return e
 		}
 		if st.IsDir() {
-			return s.RemoveDirectory(p)
+			// SFTP v3 often returns only a generic failure. Do not list an
+			// entire directory merely to guess the cause of a failed remove.
+			if err := s.RemoveDirectory(p); err != nil {
+				return fmt.Errorf("无法删除目录，请检查目录是否为空及权限: %w", err)
+			}
+			return nil
 		}
 		return s.Remove(p)
 	case "rename":

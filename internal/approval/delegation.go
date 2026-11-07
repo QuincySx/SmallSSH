@@ -33,8 +33,9 @@ func (s GrantScope) Validate() error {
 		return errors.New("只读授权不能包含写入根目录")
 	}
 	key, err := base64.RawURLEncoding.DecodeString(s.PublicKey)
-	if err != nil || len(key) != ed25519.PublicKeySize || (s.Permission != "read" && s.Permission != "full") || s.LifetimeSeconds < 60 || s.LifetimeSeconds > 8*60*60 || s.IdleSeconds < 60 || s.IdleSeconds > 30*60 || s.IdleSeconds > s.LifetimeSeconds {
-		return errors.New("会话授权需指定客户端公钥、只读或完整权限、1分钟至8小时期限和不超过30分钟的闲置期限")
+	// An idle deadline equal to the absolute lifetime disables early idle expiry.
+	if err != nil || len(key) != ed25519.PublicKeySize || (s.Permission != "read" && s.Permission != "full") || s.LifetimeSeconds < 60 || s.LifetimeSeconds > MaxGrantLifetime || s.IdleSeconds < 60 || s.IdleSeconds > s.LifetimeSeconds || s.IdleSeconds > 30*60 && s.IdleSeconds != s.LifetimeSeconds {
+		return errors.New("会话授权需指定客户端公钥、只读或完整权限、1分钟至24小时期限；闲置期限不超过30分钟，或等于总期限表示闲置不断开")
 	}
 	return nil
 }
@@ -51,6 +52,7 @@ func (s GrantScope) PairingCode() string {
 
 type DelegationChallenge struct {
 	ID         string    `json:"id"`
+	Channel    string    `json:"channel,omitempty"`
 	ParentID   string    `json:"parentId"`
 	Operation  Operation `json:"operation"`
 	TTLSeconds int       `json:"ttlSeconds"`
@@ -96,6 +98,10 @@ func (s GrantScope) allowsPath(op Operation) bool {
 }
 
 func (m *Manager) DelegationChallenge(parentID string, op Operation, ttl time.Duration) (DelegationChallenge, error) {
+	return m.DelegationChallengeForChannel(parentID, op, ttl, "")
+}
+
+func (m *Manager) DelegationChallengeForChannel(parentID string, op Operation, ttl time.Duration, channel string) (DelegationChallenge, error) {
 	if err := validateFields(op); err != nil {
 		return DelegationChallenge{}, err
 	}
@@ -136,9 +142,15 @@ func (m *Manager) DelegationChallenge(parentID string, op Operation, ttl time.Du
 	if len(m.delegations) >= 128 {
 		return DelegationChallenge{}, errors.New("待签名授权过多")
 	}
-	c := DelegationChallenge{ID: token(), ParentID: parentID, Operation: op, TTLSeconds: int(ttl / time.Second), Expires: m.now().Add(30 * time.Second).UTC()}
+	c := DelegationChallenge{ID: token(), Channel: channel, ParentID: parentID, Operation: op, TTLSeconds: int(ttl / time.Second), Expires: m.now().Add(30 * time.Second).UTC()}
 	m.delegations[c.ID] = c
 	return c, nil
+}
+
+func (m *Manager) DelegationChannel(id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.delegations[id].Channel
 }
 
 // MintDelegated consumes a signed, one-use challenge. The final locked check
@@ -174,6 +186,7 @@ func (m *Manager) MintDelegated(id string, signature []byte) (Request, string, e
 		return Request{}, "", ErrDenied
 	}
 	child.request.ParentID = c.ParentID
+	child.request.Peer = parent.request.Peer
 	child.request.Status = "approved"
 	child.request.Expires = minTime(child.request.Expires, parent.request.Expires)
 	parent.lastUsed = m.now()
@@ -189,7 +202,7 @@ func minTime(a, b time.Time) time.Time {
 
 func (m *Manager) cancelChildren(parent string) {
 	for _, e := range m.pending {
-		if e.request.ParentID == parent {
+		if e.request.ParentID == parent && (e.request.Status == "pending" || e.request.Status == "approved" || e.request.Status == "running") {
 			e.request.Status = "revoked"
 			if e.cancel != nil {
 				e.cancel()

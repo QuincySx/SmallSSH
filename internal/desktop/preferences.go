@@ -13,6 +13,7 @@ import (
 type layoutPreferences struct {
 	Version            int     `json:"version"`
 	Right              bool    `json:"right"`
+	Edge               string  `json:"edge,omitempty"`
 	Hidden             bool    `json:"hidden"`
 	Tab                int     `json:"tab"`
 	TerminalShare      float32 `json:"terminalShare"`
@@ -36,6 +37,10 @@ func (a *app) loadLayout() {
 		return
 	}
 	a.toolsRight, a.toolsHidden = p.Right, p.Hidden
+	a.toolsEdge = ""
+	if p.Version > 1 && (p.Edge == "top" || p.Edge == "left") {
+		a.toolsEdge, a.toolsRight = p.Edge, false
+	}
 	if p.Version == 1 {
 		// The preview's previous three-column preset used a right dock. Move
 		// that layout to the standard terminal-above-tools workspace once.
@@ -67,7 +72,7 @@ func (a *app) saveLayout() error {
 	if e := localipc.Prepare(a.dir); e != nil {
 		return e
 	}
-	p := layoutPreferences{Version: 3, Right: a.toolsRight, Hidden: a.toolsHidden, Tab: a.dock,
+	p := layoutPreferences{Version: 3, Right: a.toolsRight, Edge: a.toolsEdge, Hidden: a.toolsHidden, Tab: a.dock,
 		TerminalShare: a.terminalShare, TerminalWidthShare: a.terminalWidthShare, Sidebar: a.sidebarWidth, SidebarHidden: a.sidebarHidden, LocaleChoice: a.languageChoice,
 		Zoom: a.viewZoom()}
 	f, e := os.CreateTemp(a.dir, ".layout-")

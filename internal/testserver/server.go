@@ -32,6 +32,7 @@ type Server struct {
 	Auths      atomic.Int32
 	Sizes      chan [2]uint32
 	Started    chan struct{}
+	Requests   chan string
 	mu         sync.Mutex
 	conns      []net.Conn
 	wg         sync.WaitGroup
@@ -57,17 +58,27 @@ func New(t testing.TB) *Server {
 	return NewWithExec(t, nil)
 }
 
+func NewWithPassword(t testing.TB, password string) *Server {
+	return newServer(t, nil, nil, serverOptions{password: &password})
+}
+
 // NewWithExec supplies an isolated command fixture. The default server never
 // runs arbitrary commands on the developer's computer.
 func NewWithExec(t testing.TB, execute func(string) (string, string, int)) *Server {
-	return newServer(t, execute, nil)
+	return newServer(t, execute, nil, serverOptions{})
 }
 
 func NewWithStreamExec(t testing.TB, execute func(context.Context, string, io.Reader, io.Writer, io.Writer) int) *Server {
-	return newServer(t, nil, execute)
+	return newServer(t, nil, execute, serverOptions{})
 }
 
-func newServer(t testing.TB, execute func(string) (string, string, int), streamExec func(context.Context, string, io.Reader, io.Writer, io.Writer) int) *Server {
+// NewWithSessionGate can leave a channel-open request unanswered to model a
+// server that stalls before an exec or SFTP session has been established.
+func NewWithSessionGate(t testing.TB, accept func() bool) *Server {
+	return newServer(t, nil, nil, serverOptions{sessionGate: accept})
+}
+
+func newServer(t testing.TB, execute func(string) (string, string, int), streamExec func(context.Context, string, io.Reader, io.Writer, io.Writer) int, options serverOptions) *Server {
 	t.Helper()
 	_, priv, e := ed25519.GenerateKey(rand.Reader)
 	if e != nil {
@@ -77,7 +88,11 @@ func newServer(t testing.TB, execute func(string) (string, string, int), streamE
 	_, key, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(key)
 	block, _ := ssh.MarshalPrivateKey(key, "")
-	s := &Server{Host: host, Key: signer, PrivateKey: string(pem.EncodeToMemory(block)), Sizes: make(chan [2]uint32, 16), Started: make(chan struct{}, 16), password: vault.ShortID(), exec: execute, streamExec: streamExec}
+	password := vault.ShortID()
+	if options.password != nil {
+		password = *options.password
+	}
+	s := &Server{Host: host, Key: signer, PrivateKey: string(pem.EncodeToMemory(block)), Sizes: make(chan [2]uint32, 16), Started: make(chan struct{}, 16), Requests: make(chan string, 64), password: password, exec: execute, streamExec: streamExec}
 	config := &ssh.ServerConfig{PasswordCallback: func(_ ssh.ConnMetadata, p []byte) (*ssh.Permissions, error) {
 		s.Auths.Add(1)
 		if string(p) != s.password {
@@ -86,7 +101,11 @@ func newServer(t testing.TB, execute func(string) (string, string, int), streamE
 		return nil, nil
 	}, PublicKeyCallback: func(_ ssh.ConnMetadata, k ssh.PublicKey) (*ssh.Permissions, error) {
 		s.Auths.Add(1)
-		if string(k.Marshal()) != string(s.Key.PublicKey().Marshal()) {
+		expected := s.Key.PublicKey()
+		if options.publicKey != nil {
+			expected = options.publicKey
+		}
+		if string(k.Marshal()) != string(expected.Marshal()) {
 			return nil, io.EOF
 		}
 		return nil, nil
@@ -112,10 +131,20 @@ func newServer(t testing.TB, execute func(string) (string, string, int), streamE
 					return
 				}
 				defer conn.Close()
-				go ssh.DiscardRequests(req)
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				go func() { conn.Wait(); cancel() }()
+				s.wg.Go(func() { s.handleRequests(ctx, conn, req, options) })
 				for ch := range chans {
+					if options.forwarding && ch.ChannelType() == "direct-tcpip" {
+						s.wg.Go(func() { s.directForward(ctx, ch) })
+						continue
+					}
 					if ch.ChannelType() != "session" {
 						ch.Reject(ssh.UnknownChannelType, "unsupported")
+						continue
+					}
+					if options.sessionGate != nil && !options.sessionGate() {
 						continue
 					}
 					c, r, e := ch.Accept()

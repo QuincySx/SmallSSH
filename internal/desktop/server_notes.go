@@ -12,22 +12,22 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/desktop/components"
 	"sshclient/internal/servernotes"
 	"sshclient/internal/vault"
 )
 
 type serverNotesState struct {
-	target                                         vault.Summary
-	original, draft                                vault.ServerNote
-	error                                          string
-	scanning, saving, expanded, discard, detached  bool
-	ctx                                            context.Context
-	cancel, scanCancel                             context.CancelFunc
-	generation                                     int
-	scanSequence                                   uint64
-	summarySource, detailsSource, summary, details string
+	target                                                 vault.Summary
+	original, draft                                        vault.ServerNote
+	error, loadError                                       string
+	loading, scanning, saving, expanded, discard, detached bool
+	ctx                                                    context.Context
+	cancel, scanCancel                                     context.CancelFunc
+	generation                                             int
+	loadSequence                                           uint64
+	scanSequence                                           uint64
+	summarySource, detailsSource, summary, details         string
 }
 
 func (s *serverNotesState) snapshotText() (string, string) {
@@ -75,13 +75,46 @@ func (a *app) openServerNotes(id string) {
 		a.status = tr(nil, "请先选择服务器")
 		return
 	}
-	note, err := owner.ServerNote(id)
-	if err != nil {
-		a.status = err.Error()
+	ctx, cancel := context.WithCancel(a.operationContext())
+	s := &serverNotesState{target: target, ctx: ctx, cancel: cancel, generation: a.generation, loading: true, detached: a.toolsWindowFocused()}
+	a.serverNotes = s
+	a.loadServerNotes(s, owner, target.ID)
+}
+
+func (a *app) loadServerNotes(s *serverNotesState, owner *vault.Session, targetID string) {
+	cli, windowCtx := a.client, s.ctx
+	s.loadSequence++
+	sequence := s.loadSequence
+	s.loading, s.loadError = true, ""
+	go func() {
+		ctx, cancel := context.WithTimeout(windowCtx, 10*time.Second)
+		defer cancel()
+		note, err := cli.ServerNote(ctx, targetID, owner)
+		a.postUI(func() {
+			if !a.notesCurrent(s) || s.loadSequence != sequence {
+				return
+			}
+			s.loading = false
+			if err != nil {
+				s.loadError = err.Error()
+				return
+			}
+			s.loadError = ""
+			s.original, s.draft = note, note
+		})
+	}()
+}
+
+func (a *app) retryServerNotes(s *serverNotesState) {
+	if !a.notesCurrent(s) || s.loading || s.loadError == "" {
 		return
 	}
-	ctx, cancel := context.WithCancel(a.operationContext())
-	a.serverNotes = &serverNotesState{target: target, original: note, draft: note, ctx: ctx, cancel: cancel, generation: a.generation, detached: a.toolsWindowFocused()}
+	owner, err := a.unlockedOwner()
+	if err != nil {
+		s.loadError = err.Error()
+		return
+	}
+	a.loadServerNotes(s, owner, s.target.ID)
 }
 
 func (a *app) closeServerNotes() {
@@ -148,14 +181,20 @@ func (a *app) serverNotesDialog(c *ui.Context) {
 			ui.Text(c, tr(c, "手写备注和新生成的概览尚未保存。")).FillWidth()
 			return
 		}
-		ui.TextArea(c, &s.draft.Manual).FillWidth().Height(88).Placeholder(tr(c, "用途、维护事项，或提醒以后的自己…")).Label(tr(c, "服务器备注输入")).Disabled(s.saving)
+		if s.loading {
+			ui.Text(c, tr(c, "正在读取服务器备注…")).FillWidth().FontSize(12)
+		}
+		if s.loadError != "" {
+			ui.Text(c, tr(c, "读取服务器备注失败：")+reviewText(s.loadError)).FillWidth().FontSize(12).TextColor(c.Theme().Danger)
+		}
+		ui.TextArea(c, &s.draft.Manual).FillWidth().Height(88).Placeholder(tr(c, "用途、维护事项，或提醒以后的自己…")).Label(tr(c, "服务器备注输入")).Disabled(s.saving || s.loading || s.loadError != "")
 		ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Spacer(c).Grow(1)
 			label := tr(c, "检测服务和域名")
 			if s.draft.Discovered != "" {
 				label = tr(c, "重新检测")
 			}
-			if components.Button(c, label, components.ButtonOptions{Variant: components.Quiet, Busy: s.scanning, Disabled: s.saving || a.notesScanWait(s.target) > 0}).Tooltip(tr(c, "按需检测；同一服务器每分钟最多一次")).Clicked() {
+			if components.Button(c, label, components.ButtonOptions{Variant: components.Quiet, Busy: s.scanning, Disabled: s.saving || s.loading || s.loadError != "" || a.notesScanWait(s.target) > 0}).Tooltip(tr(c, "按需检测；同一服务器每分钟最多一次")).Clicked() {
 				a.scanServerNotes(s)
 			}
 			if s.scanning && components.Button(c, tr(c, "取消检测")).Clicked() && s.scanCancel != nil {
@@ -191,7 +230,10 @@ func (a *app) serverNotesDialog(c *ui.Context) {
 		if components.Button(c, tr(c, "关闭")).Disabled(s.saving).Clicked() {
 			a.requestCloseNotes(s)
 		}
-		if components.Button(c, tr(c, "保存备注"), components.ButtonOptions{Variant: components.Primary, Busy: s.saving, Disabled: s.scanning || s.draft == s.original}).Clicked() {
+		if s.loadError != "" && components.Button(c, tr(c, "重试读取"), components.ButtonOptions{Variant: components.Quiet}).Clicked() {
+			a.retryServerNotes(s)
+		}
+		if components.Button(c, tr(c, "保存备注"), components.ButtonOptions{Variant: components.Primary, Busy: s.saving, Disabled: s.scanning || s.loading || s.loadError != "" || s.draft == s.original}).Clicked() {
 			a.saveServerNotes(s)
 		}
 	})
@@ -201,7 +243,7 @@ func (a *app) serverNotesDialog(c *ui.Context) {
 }
 
 func (a *app) saveServerNotes(s *serverNotesState) {
-	if !a.notesCurrent(s) || s.saving || s.scanning {
+	if !a.notesCurrent(s) || s.saving || s.scanning || s.loading || s.loadError != "" {
 		return
 	}
 	owner, err := a.unlockedOwner()
@@ -209,10 +251,12 @@ func (a *app) saveServerNotes(s *serverNotesState) {
 		s.error = err.Error()
 		return
 	}
-	note, dir := s.draft, a.dir
+	note, targetID, cli := s.draft, s.target.ID, a.client
+	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
 	s.saving, s.error = true, ""
 	go func() {
-		err := owner.SaveServerNote(broker.VaultPath(dir), s.target.ID, note)
+		defer cancel()
+		err := cli.SaveServerNote(ctx, targetID, note, owner)
 		a.postUI(func() {
 			if !a.notesCurrent(s) {
 				return
@@ -228,7 +272,7 @@ func (a *app) saveServerNotes(s *serverNotesState) {
 }
 
 func (a *app) scanServerNotes(s *serverNotesState) {
-	if !a.notesCurrent(s) || s.scanning || s.saving || a.notesScanWait(s.target) > 0 {
+	if !a.notesCurrent(s) || s.scanning || s.saving || s.loading || s.loadError != "" || a.notesScanWait(s.target) > 0 {
 		return
 	}
 	owner, err := a.unlockedOwner()

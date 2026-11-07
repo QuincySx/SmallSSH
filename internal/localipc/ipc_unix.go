@@ -114,6 +114,8 @@ func PeerPID(c net.Conn) (int, error) {
 	return pid, credErr
 }
 
+func ServerPID(c net.Conn) (int, error) { return PeerPID(c) }
+
 // peerUID asks the kernel who is on the other end of a local connection.
 func peerUID(c net.Conn) (uint32, error) {
 	sc, ok := c.(*net.UnixConn)

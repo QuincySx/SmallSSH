@@ -9,8 +9,8 @@ import (
 	"sshclient/internal/desktop/components"
 )
 
-// Each session belongs to one editor-style group. The two groups retain their
-// own selected tab; only the focused group drives shared tools and keyboard.
+// Leaves own tabs. A branch owns only a split, so moving a view never replaces
+// its SSH session, document or file browser.
 type terminalGroup struct {
 	id             uint64
 	sessions       []*session
@@ -19,18 +19,28 @@ type terminalGroup struct {
 	headerWidth    float32
 	revealedTab    *session
 	revealedEditor bool
+	split          *terminalLayoutNode
+	tools          []*workspaceToolTab
+	selectedTool   *workspaceToolTab
+	tabOrder       []workspaceTab
+	revealedTool   *workspaceToolTab
 }
 
 type terminalLayoutNode struct {
 	left, right *terminalGroup
 	share       float32
+	vertical    bool
 }
 
 func (n *terminalLayoutNode) sessions() []*session {
 	if n == nil {
 		return nil
 	}
-	return append(append([]*session(nil), n.left.sessions...), n.right.sessions...)
+	var out []*session
+	for _, g := range layoutGroups(n) {
+		out = append(out, g.sessions...)
+	}
+	return out
 }
 
 func (a *app) currentTerminal() *session {
@@ -38,6 +48,10 @@ func (a *app) currentTerminal() *session {
 		return a.sessions[a.active]
 	}
 	return nil
+}
+
+func (a *app) terminalFocusWanted() bool {
+	return a.activeTerminalGroup == nil || a.activeTerminalGroup.selectedTool == nil && !a.activeTerminalGroup.editorSelected
 }
 
 func (a *app) sessionIndex(s *session) int { return slices.Index(a.sessions, s) }
@@ -49,7 +63,7 @@ func (a *app) newTerminalGroup() *terminalGroup {
 
 func (a *app) terminalGroups() []*terminalGroup {
 	if a.terminalLayout != nil {
-		return []*terminalGroup{a.terminalLayout.left, a.terminalLayout.right}
+		return layoutGroups(a.terminalLayout)
 	}
 	if a.singleTerminalGroup != nil {
 		return []*terminalGroup{a.singleTerminalGroup}
@@ -94,7 +108,7 @@ func (a *app) ensureTerminalGroups() {
 			}
 		}
 	}
-	if a.editPath == "" {
+	if a.editPath == "" || a.editorWin != nil || a.editorWindowPending {
 		a.editorTerminalGroup = nil
 		for _, g := range groups {
 			g.editorSelected = false
@@ -111,20 +125,10 @@ func (a *app) ensureTerminalGroups() {
 			a.activeTerminalGroup = current.group
 		}
 	}
-	if a.terminalLayout != nil {
-		for _, g := range groups {
-			if len(g.sessions) == 0 && a.editorTerminalGroup != g {
-				other := groups[0]
-				if other == g {
-					other = groups[1]
-				}
-				a.singleTerminalGroup, a.terminalLayout = other, nil
-				if a.activeTerminalGroup == g {
-					a.activeTerminalGroup = other
-				}
-				break
-			}
-		}
+	a.reconcileWorkspaceTools()
+	a.normalizeWorkspaceTree()
+	if groups = a.terminalGroups(); !slices.Contains(groups, a.activeTerminalGroup) {
+		a.activeTerminalGroup = groups[0]
 	}
 	a.lastActiveTerminal = a.currentTerminal()
 }
@@ -143,7 +147,16 @@ func (a *app) activateTerminal(s *session, focus bool) {
 	if index := a.sessionIndex(s); index >= 0 {
 		a.ensureTerminalGroups()
 		a.active = index
+		if focus && a.fileExpanded {
+			a.fileExpanded = false
+			a.workspaceRevision++
+		}
 		a.activeTerminalGroup, s.group.active = s.group, s
+		if s.group.selectedTool != nil {
+			a.workspaceRevision++
+		}
+		s.group.selectedTool = nil
+		a.filesTabSelected = false
 		s.group.editorSelected, a.editShown = false, false
 		a.lastActiveTerminal = s
 		a.syncFollowingFilePanes()
@@ -157,7 +170,8 @@ func (a *app) rightTerminalGroup() *terminalGroup {
 	if a.terminalLayout == nil {
 		a.terminalLayout = &terminalLayoutNode{left: a.singleTerminalGroup, right: a.newTerminalGroup(), share: 50}
 	}
-	return a.terminalLayout.right
+	groups := a.terminalGroups()
+	return groups[len(groups)-1]
 }
 
 func (a *app) removeTerminalFromGroups(s *session) {
@@ -205,6 +219,14 @@ func (a *app) moveTerminalTab(s *session, destination *terminalGroup, before *se
 		index = len(destination.sessions)
 	}
 	destination.sessions = slices.Insert(destination.sessions, index, s)
+	tab := workspaceTab{session: s}
+	order := slices.Clone(a.workspaceTabs(destination))
+	order = slices.DeleteFunc(order, func(candidate workspaceTab) bool { return candidate == tab })
+	position := slices.Index(order, workspaceTab{session: before})
+	if position < 0 {
+		position = len(order)
+	}
+	destination.tabOrder = slices.Insert(order, position, tab)
 	s.group, destination.active = destination, s
 	a.activateTerminal(s, true)
 	a.ensureTerminalGroups()
@@ -220,7 +242,7 @@ func (a *app) splitExistingTerminal(s *session) {
 	}
 	destination := a.rightTerminalGroup()
 	if s.group == destination {
-		destination = a.terminalLayout.left
+		destination = a.terminalGroups()[0]
 	}
 	a.moveTerminalTab(s, destination, nil)
 }
@@ -233,11 +255,11 @@ func (a *app) newSplitTerminal(source *session) {
 		return
 	}
 	a.openShellForHostAfter(source.host, true, func(added *session) {
-		if a.currentTerminal() == source && a.page == 1 && !a.editShown {
+		if a.workspaceTerminalSelected(source) && a.page == 1 {
 			a.ensureTerminalGroups()
 			destination := a.rightTerminalGroup()
 			if source.group == destination {
-				destination = a.terminalLayout.left
+				destination = a.terminalGroups()[0]
 			}
 			a.moveTerminalTab(added, destination, nil)
 		}
@@ -252,27 +274,59 @@ func (a *app) mergeTerminalViews() {
 	if a.terminalLayout == nil {
 		return
 	}
-	left, right := a.terminalLayout.left, a.terminalLayout.right
-	left.sessions = append(left.sessions, right.sessions...)
+	groups := a.terminalGroups()
+	left := groups[0]
+	selectedTool := a.activeTerminalGroup.selectedTool
+	var order []workspaceTab
+	for _, g := range groups {
+		order = append(order, a.workspaceTabs(g)...)
+		if g != left {
+			left.sessions = append(left.sessions, g.sessions...)
+			left.tools = append(left.tools, g.tools...)
+		}
+	}
+	left.tabOrder, left.selectedTool = order, selectedTool
 	for _, s := range left.sessions {
 		s.group = left
 	}
-	if a.editorTerminalGroup == right {
+	for _, tool := range left.tools {
+		tool.group = left
+	}
+	if a.editorTerminalGroup != nil {
 		a.editorTerminalGroup = left
 	}
 	left.editorSelected, left.active = a.editShown, a.currentTerminal()
 	a.singleTerminalGroup, a.activeTerminalGroup, a.terminalLayout = left, left, nil
-	a.contentFocus = true
+	a.workspaceRevision++
+	a.syncWorkspaceFileFlags()
+	a.contentFocus = selectedTool == nil
 }
 
 func (a *app) terminalLayoutMenu(c *ui.Context) {
-	components.SVGButton(c, components.SplitTerminalIcon, tr(c, "终端分栏")).Tooltip(tr(c, "左右分组与合并")).Menu(func(m *ui.Menu) {
-		s := a.currentTerminal()
+	s, g, generation := a.currentTerminal(), a.activeTerminalGroup, a.generation
+	tab := a.selectedWorkspaceTab(g)
+	components.SVGButton(c, components.SplitTerminalIcon, tr(c, "终端分栏")).Tooltip(tr(c, "拖动标签到四边拆分，或合并分组")).Menu(func(m *ui.Menu) {
+		if !a.online || a.generation != generation {
+			return
+		}
 		if m.Item(tr(c, "新建终端到另一组")).Disabled(s == nil || s.closed || a.connecting[s.host] != nil).Chosen() {
 			a.newSplitTerminal(s)
 		}
-		if m.Item(tr(c, "移动当前标签到另一组")).Disabled(s == nil || len(a.sessions) < 2).Chosen() {
-			a.splitExistingTerminal(s)
+		count := 0
+		for _, group := range a.terminalGroups() {
+			count += len(a.workspaceTabs(group))
+		}
+		if m.Item(tr(c, "移动当前标签到另一组")).Disabled(count < 2).Chosen() {
+			if len(a.terminalGroups()) == 1 {
+				a.dropWorkspaceTab(a.workspaceTabPayload(tab), g, workspaceTab{}, "right")
+			} else {
+				groups := a.terminalGroups()
+				target := groups[len(groups)-1]
+				if target == g {
+					target = groups[0]
+				}
+				a.dropWorkspaceTab(a.workspaceTabPayload(tab), target, workspaceTab{}, "")
+			}
 		}
 		m.Separator()
 		if m.Item(tr(c, "合并全部分组")).Disabled(a.terminalLayout == nil).Chosen() {
@@ -290,7 +344,7 @@ func (a *app) terminalTabMenu(m *ui.Menu, s *session) {
 	}
 	m.Separator()
 	label := tr(nil, "移到右侧组")
-	if a.terminalLayout != nil && s.group == a.terminalLayout.right {
+	if groups := a.terminalGroups(); len(groups) > 1 && s.group == groups[len(groups)-1] {
 		label = tr(nil, "移到左侧组")
 	}
 	if m.Item(label).Disabled(len(a.sessions) < 2).Chosen() {
@@ -314,7 +368,7 @@ func (a *app) newTerminalTab(source *session) {
 		return
 	}
 	a.openShellForHostAfter(source.host, true, func(added *session) {
-		if a.currentTerminal() == source && a.page == 1 && !a.editShown {
+		if a.workspaceTerminalSelected(source) && a.page == 1 {
 			a.activateTerminal(added, true)
 		}
 	})
@@ -332,10 +386,20 @@ func (a *app) replaceClosedTerminal(old, added *session) {
 			group.sessions[i] = added
 		}
 	}
+	for i, tab := range group.tabOrder {
+		if tab.session == old {
+			group.tabOrder[i] = workspaceTab{session: added}
+		}
+	}
 	if group.active == old {
 		group.active = added
 	}
 	added.group, added.name = group, old.name
+	for _, tool := range a.workspaceTools {
+		if tool.source == old {
+			tool.source = added
+		}
+	}
 	a.detachServerStatus(old)
 	old.closed = true
 	if old.term != nil {
@@ -362,6 +426,10 @@ func (a *app) reconnectTerminal(source *session) {
 	if source == nil || !source.closed || !a.hasSession(source) {
 		return
 	}
+	if source.term == nil && source.connectionState != "" {
+		a.retryPendingTerminal(source)
+		return
+	}
 	if source.target.Kind == "docker-terminal" {
 		name := source.containerName
 		if name == "" {
@@ -372,7 +440,7 @@ func (a *app) reconnectTerminal(source *session) {
 	}
 	a.activateTerminal(source, false)
 	a.openShellForHostAfter(source.host, true, func(added *session) {
-		focused := a.currentTerminal() == source && a.page == 1 && !a.editShown
+		focused := a.workspaceTerminalSelected(source) && a.page == 1
 		a.replaceClosedTerminal(source, added)
 		if focused {
 			a.activateTerminal(added, true)
@@ -385,10 +453,28 @@ type terminalTabDrag struct {
 	generation int
 	session    *session
 	document   *editor.State
+	tool       *workspaceToolTab
+	fromDock   bool
+	dockKind   int
+	toolSource *session
 }
 
 func (a *app) validTerminalDrag(d terminalTabDrag) bool {
-	return d.owner == a && d.generation == a.generation && (d.session != nil && a.hasSession(d.session) || d.document != nil && d.document == a.edit && a.editPath != "")
+	if d.fromDock {
+		kind := d.dockKind == toolFiles || d.dockKind == toolCommands || d.dockKind == toolDiagnostics
+		return d.owner == a && d.generation == a.generation && kind && a.workspaceTools[d.dockKind] == nil &&
+			d.session == nil && d.document == nil && d.tool == nil && (d.toolSource == nil || a.hasSession(d.toolSource))
+	}
+	count := 0
+	for _, present := range []bool{d.session != nil, d.document != nil, d.tool != nil} {
+		if present {
+			count++
+		}
+	}
+	if count != 1 {
+		return false
+	}
+	return d.owner == a && d.generation == a.generation && (d.session != nil && a.hasSession(d.session) || d.document != nil && d.document == a.edit && a.editPath != "" || d.tool != nil && a.workspaceTools[d.tool.kind] == d.tool)
 }
 
 func (a *app) dropTerminalTab(d terminalTabDrag, destination *terminalGroup, before *session, createRight bool) {
@@ -420,6 +506,8 @@ func (a *app) dropTerminalTab(d terminalTabDrag, destination *terminalGroup, bef
 }
 
 func (a *app) activateGroupEditor(g *terminalGroup) {
+	g.selectedTool = nil
+	a.filesTabSelected = false
 	a.activeTerminalGroup, g.editorSelected, a.editShown = g, true, true
 	a.contentFocus = true
 }

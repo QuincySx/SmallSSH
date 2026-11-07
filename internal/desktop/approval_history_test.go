@@ -113,7 +113,7 @@ func TestApprovalHistoryLoadsSilentDenialsPaginatesAndSurvivesRestart(t *testing
 		t.Fatal(err)
 	}
 	for range 55 {
-		if _, _, err := h.a.client.Request(h.ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "printf isolated-fixture", Client: "Fixture assistant"}, time.Minute); err == nil {
+		if _, _, err := h.a.client.Request(h.ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "rm -rf /", Client: "Fixture assistant"}, time.Minute); err == nil {
 			t.Fatal("protected arbitrary command reached approval")
 		}
 	}
@@ -133,11 +133,11 @@ func TestApprovalHistoryLoadsSilentDenialsPaginatesAndSurvivesRestart(t *testing
 	}
 	found := false
 	for _, event := range state.events {
-		if event.Client == "Fixture assistant" && event.Event == "denied" && event.Reason == "uncontrolled_operation" {
+		if event.Client == "Fixture assistant" && event.Event == "denied" && event.Reason == "destructive_command" {
 			found = true
 		}
 	}
-	if !found || !h.ui.HasText("已拒绝 · 保护模式不开放此操作") {
+	if !found || !h.ui.HasText("已拒绝 · 破坏性命令被护栏拦截") {
 		t.Fatal("silent policy denial did not survive broker and app restart")
 	}
 	viewport, ok := h.ui.Find("访问历史表格")

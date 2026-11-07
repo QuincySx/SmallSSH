@@ -119,19 +119,22 @@ func TestOverviewOnlyShowsSummaryCardsAndFitsScrollbarGutter(t *testing.T) {
 	a := responsiveWorkspaceDemo()
 	a.fileExpanded, a.sidebarHidden = true, true
 	tt := ui.NewTester(a.view, 1280, 900)
-	for _, config := range []struct{ width, columns int }{{360, 1}, {397, 1}, {398, 2}, {585, 2}, {586, 3}, {773, 3}, {774, 4}, {1280, 4}, {360, 1}} {
-		// These breakpoints describe content width; compact navigation now
-		// deliberately retains its 48px rail beside the resource viewport.
-		tt.SetSize(config.width+48, 900)
+	seenColumns := map[int]bool{}
+	for _, width := range []int{416, 453, 454, 641, 642, 829, 830, 1336, 416} {
+		tt.SetSize(width, 900)
 		viewport, _ := tt.Find("服务器资源内容")
+		// Each complete column needs a 180px card and an 8px gap, except
+		// the last. Calculate from the measured viewport after its gutter.
+		columns := min(4, max(1, int((viewport.W-statusScrollGutter+8)/188)))
+		seenColumns[columns] = true
 		var cards []ui.Rect
 		for i, name := range []string{"CPU详情", "内存详情", "网络详情", "磁盘详情"} {
 			card, found := tt.Find(name)
 			if !found || card.W < 180 || card.X < viewport.X || card.X+card.W > viewport.X+viewport.W-statusScrollGutter+1 {
-				t.Fatal("summary card is missing, compressed, or under the scrollbar", config, name, card, viewport)
+				t.Fatal("summary card is missing, compressed, or under the scrollbar", width, name, card, viewport)
 			}
-			if i > 0 && (card.Y == cards[0].Y) != (i < config.columns) {
-				t.Fatal("overview did not fit complete columns before wrapping", config, cards, card)
+			if i > 0 && (card.Y == cards[0].Y) != (i < columns) {
+				t.Fatal("overview did not fit complete columns before wrapping", width, cards, card)
 			}
 			cards = append(cards, card)
 		}
@@ -142,6 +145,11 @@ func TestOverviewOnlyShowsSummaryCardsAndFitsScrollbarGutter(t *testing.T) {
 			if _, found := tt.Find(label); found {
 				t.Fatal("overview still expands detail sections", label)
 			}
+		}
+	}
+	for columns := 1; columns <= 4; columns++ {
+		if !seenColumns[columns] {
+			t.Fatal("test did not exercise overview column count", columns)
 		}
 	}
 	for _, check := range []struct{ card, detail string }{{"CPU详情", "逻辑核心网格"}, {"网络详情", "网卡 eth0"}, {"磁盘详情", "文件系统容量卡片"}} {

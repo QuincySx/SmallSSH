@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sshclient/internal/approval"
 	"sshclient/internal/broker"
@@ -20,7 +21,7 @@ func (c Client) Decide(ctx context.Context, id string, allow, revoke bool, pass 
 	return c.DecideWithOwner(ctx, id, allow, revoke, v)
 }
 
-func (c Client) DecideWithOwner(ctx context.Context, id string, allow, revoke bool, v *vault.Session) error {
+func (c Client) DecideWithOwner(ctx context.Context, id string, allow, revoke bool, v OwnerProof) error {
 	r, e := c.CallWithOwner(ctx, broker.Message{Action: "status", ID: id}, v)
 	if e != nil && revoke {
 		r, e = c.CallWithOwner(ctx, broker.Message{Action: "sessionStatus", ID: id}, v)
@@ -45,9 +46,33 @@ func (c Client) DecideReviewed(ctx context.Context, r approval.Request, allow, r
 	return c.DecideReviewedWithOwner(ctx, r, allow, revoke, v)
 }
 
-func (c Client) DecideReviewedWithOwner(ctx context.Context, r approval.Request, allow, revoke bool, v *vault.Session) error {
-	if v == nil {
+func (c Client) DecideReviewedWithOwner(ctx context.Context, r approval.Request, allow, revoke bool, v OwnerProof) error {
+	return c.DecideReviewedWithLifetime(ctx, r, allow, revoke, 0, 0, v)
+}
+
+// DecideReviewedWithLifetime applies the owner's chosen session duration to
+// the copy that is signed and to the broker's stored request. Zero keeps the
+// requester's value; revoking ignores it.
+func (c Client) DecideReviewedWithLifetime(ctx context.Context, r approval.Request, allow, revoke bool, lifetimeSeconds, idleSeconds int, v OwnerProof) error {
+	if !HasOwnerProof(v) {
 		return approval.ErrDenied
+	}
+	if allow && !revoke && lifetimeSeconds > 0 {
+		if r.Operation.Kind != "grant" {
+			// A one-shot operation has no session duration; ignore the value
+			// instead of refusing an otherwise valid decision.
+			lifetimeSeconds = 0
+		} else {
+			r.Operation.Grant.LifetimeSeconds = lifetimeSeconds
+			if idleSeconds > 0 && idleSeconds <= lifetimeSeconds {
+				r.Operation.Grant.IdleSeconds = idleSeconds
+			}
+			if r.Operation.Grant.IdleSeconds > lifetimeSeconds {
+				r.Operation.Grant.IdleSeconds = lifetimeSeconds
+			}
+		}
+	} else {
+		lifetimeSeconds = 0
 	}
 	var proof []byte
 	var e error
@@ -61,7 +86,7 @@ func (c Client) DecideReviewedWithOwner(ctx context.Context, r approval.Request,
 	if e != nil {
 		return e
 	}
-	_, e = c.Call(ctx, broker.Message{Action: action, ID: r.ID, Allow: allow, Proof: proof})
+	_, e = c.Call(ctx, broker.Message{Action: action, ID: r.ID, Allow: allow, TTL: lifetimeSeconds, Idle: idleSeconds, Proof: proof})
 	return e
 }
 
@@ -89,6 +114,13 @@ func (c Client) PutProfile(ctx context.Context, p vault.Profile, pass []byte) er
 }
 
 func Describe(r approval.Request) string {
+	if r.Operation.Kind == "tunnel" {
+		spec := r.Operation.Tunnel
+		r.Operation.Kind = "SSH 隧道（" + spec.Kind + "）"
+		r.Operation.Path = spec.Listen
+		r.Operation.Destination = spec.Target
+		return "监听端口对其所在机器的其他进程开放；动态 SOCKS5 可访问任意 TCP 目标。关闭 / 撤销 / 到期会关闭监听及现有连接。\n" + Describe(r)
+	}
 	if r.Renewal && r.Renewals > 1 {
 		return fmt.Sprintf("连续第 %d 次续期\n", r.Renewals) + describeOperation(r)
 	}
@@ -131,7 +163,7 @@ func describeOperation(r approval.Request) string {
 		if o.Grant.Permission == "full" {
 			permission = "完整：此 SSH 账号的全部权限，包括任意命令与文件写入"
 			if o.PathProtection {
-				permission = "读写：受服务器路径保护限制，不开放任意命令、终端、属性或续传写入"
+				permission = "读写：受服务器策略限制，仅拦截常见破坏性命令；护栏不能替代核对，交互终端、属性与续传写入不开放"
 			}
 		}
 		if o.Grant.ReadRoot != "" || o.Grant.WriteRoot != "" {
@@ -154,10 +186,17 @@ func describeOperation(r approval.Request) string {
 	if o.Kind == "shell" && o.ServerStatus {
 		o.Kind = "终端连接＋自动读取服务器状态（固定只读命令，随连接停止）"
 	}
-	return fmt.Sprintf("申请方（未验证）: %q\n服务器 ID: %q\n连接目标: %q\n主机指纹: %q\n操作: %q\n命令: %q\n远程路径: %q\n目标路径: %q\n权限: %03o\n新内容 SHA256: %q\n原文件 SHA256: %q\n传输 ID: %q\n大小 / 偏移: %d / %d\n到期: %s\n授权 ID: %s", o.Client, o.Host, o.Endpoint, o.HostFingerprint, o.Kind, o.Command, o.Path, o.Destination, o.Mode, o.ContentHash, o.OriginalHash, o.TransferID, o.Size, o.Offset, expires, r.ID)
+	peer := ""
+	if r.Peer.PID > 0 {
+		peer = fmt.Sprintf("进程 ID: %d\n进程路径: %q\n进程实例: %s\n程序摘要: %s\n", r.Peer.PID, r.Peer.Path, r.Peer.Instance, r.Peer.CodeID)
+	}
+	return peer + fmt.Sprintf("申请方（未验证）: %q\n服务器 ID: %q\n连接目标: %q\n主机指纹: %q\n操作: %q\n命令: %q\n远程路径: %q\n目标路径: %q\n权限: %03o\n新内容 SHA256: %q\n原文件 SHA256: %q\n传输 ID: %q\n大小 / 偏移: %d / %d\n到期: %s\n授权 ID: %s", o.Client, o.Host, o.Endpoint, o.HostFingerprint, o.Kind, o.Command, o.Path, o.Destination, o.Mode, o.ContentHash, o.OriginalHash, o.TransferID, o.Size, o.Offset, expires, r.ID)
 }
 
-func (c Client) PutDetails(ctx context.Context, d vault.Summary, owner *vault.Session) error {
+func (c Client) PutDetails(ctx context.Context, d vault.Summary, owner OwnerProof) error {
+	if !HasOwnerProof(owner) {
+		return errors.New("保险库已锁定")
+	}
 	challenge, e := c.Call(ctx, broker.Message{Action: "profileChallenge"})
 	if e != nil {
 		return e
@@ -171,7 +210,10 @@ func (c Client) PutDetails(ctx context.Context, d vault.Summary, owner *vault.Se
 	return e
 }
 
-func (c Client) DeleteProfile(ctx context.Context, id string, owner *vault.Session) error {
+func (c Client) DeleteProfile(ctx context.Context, id string, owner OwnerProof) error {
+	if !HasOwnerProof(owner) {
+		return errors.New("保险库已锁定")
+	}
 	challenge, e := c.Call(ctx, broker.Message{Action: "profileChallenge"})
 	if e != nil {
 		return e

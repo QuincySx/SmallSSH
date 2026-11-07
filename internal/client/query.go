@@ -5,11 +5,10 @@ import (
 	"errors"
 
 	"sshclient/internal/broker"
-	"sshclient/internal/vault"
 )
 
-func (c Client) CallWithOwner(ctx context.Context, q broker.Message, owner *vault.Session) (broker.Message, error) {
-	if owner == nil || !broker.OwnerQueryAction(q.Action) {
+func (c Client) CallWithOwner(ctx context.Context, q broker.Message, owner OwnerProof) (broker.Message, error) {
+	if !HasOwnerProof(owner) || !broker.OwnerQueryAction(q.Action) {
 		return broker.Message{}, errors.New("此查询需要所有者证明")
 	}
 	var result broker.Message

@@ -39,7 +39,7 @@ func (a *app) containerCard(c *ui.Context, row monitor.Container, d *monitor.Doc
 				a.openContainerDetails(row, d)
 			}
 			ui.Text(c, conditionText(row)).FontSize(10).TextColor(color).Tooltip(row.Status)
-			components.IconButton(c, "⋯", tr(c, "容器操作 ")+row.Names).Size(22, 22).Menu(func(m *ui.Menu) { a.containerMenu(m, row, d) })
+			components.IconButton(c, "⋯", tr(c, "容器操作 ")+row.Names).Size(22, 22).Menu(a.workspaceBoundMenu(func(m *ui.Menu) { a.containerMenu(m, row, d) }))
 		})
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 			value := "—"
@@ -87,7 +87,7 @@ func (a *app) containerCard(c *ui.Context, row monitor.Container, d *monitor.Doc
 		}
 		ui.Text(c, reviewText(strings.Join(parts, " · "))).FontSize(10).SingleLine().TextColor(c.Theme().TextMuted).Tooltip(strings.Join(parts, " · ") + " · " + row.Ports)
 	})
-	card.ContextMenu(func(m *ui.Menu) { a.containerMenu(m, row, d) })
+	card.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) { a.containerMenu(m, row, d) }))
 }
 
 func composeProject(row monitor.Container) string { return monitor.ComposeProjectName(row) }

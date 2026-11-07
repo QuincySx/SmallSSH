@@ -3,11 +3,9 @@ package desktop
 import (
 	"fmt"
 	"sshclient/internal/desktop/components"
-	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-	"sshclient/internal/broker"
 	"sshclient/internal/vault"
 )
 
@@ -56,6 +54,8 @@ func (a *app) deleteConnection(d vault.Summary) {
 					a.editHash = ""
 					a.editHost = ""
 					a.editShown = false
+					a.cancelEditorRead()
+					a.closeEditorWindow()
 					a.edit = &editor.State{Buffer: editor.NewBuffer("")}
 				}
 				if a.selected == d.ID {
@@ -96,12 +96,15 @@ func filterConnections(values []vault.Summary, id string) []vault.Summary {
 }
 
 type promptState struct {
+	host                                         dialogHost
 	docker                                       *dockerDialogState
 	properties                                   *filePropertiesState
+	snippet                                      *snippetRunState
 	open                                         bool
 	detached                                     bool
 	title, target, message, value, field, accept string
 	secret, multiline                            bool
+	width, multilineHeight                       float32
 	danger                                       bool
 	error                                        string
 	generation                                   int
@@ -112,7 +115,7 @@ type promptState struct {
 func (a *app) ask(title, target, message, field, value, accept string, fn func(string)) {
 	a.cancelFileProperties()
 	a.cancelDockerDialog()
-	a.prompt = promptState{open: true, detached: a.toolsWindowFocused(), title: title, target: target, message: message, field: field, value: value, accept: accept, confirm: fn, generation: a.generation}
+	a.prompt = promptState{open: true, host: a.currentDialogHost(), detached: a.toolsWindowFocused(), title: title, target: target, message: message, field: field, value: value, accept: accept, confirm: fn, generation: a.generation}
 	a.invalidateWindows()
 }
 
@@ -125,11 +128,28 @@ func (a *app) promptView(c *ui.Context) {
 		a.filePropertiesView(c)
 		return
 	}
+	if a.prompt.snippet != nil {
+		a.snippetRunDialog(c)
+		return
+	}
 	submit := false
 	components.Dialog(c, &a.prompt.open, components.DialogOptions{
-		Title: a.prompt.title, Target: reviewText(a.prompt.target), Description: a.prompt.message,
+		Title: a.prompt.title, Target: reviewText(a.prompt.target), Description: a.prompt.message, Width: a.prompt.width,
 	}, func() {
 		if a.prompt.field != "" {
+			if a.prompt.multiline && a.prompt.multilineHeight > 0 {
+				ui.Column(c).FillWidth().Gap(components.FormGap).Children(func() {
+					ui.Text(c, a.prompt.field).FontSize(13)
+					area := ui.TextArea(c, &a.prompt.value).Height(a.prompt.multilineHeight).FillWidth().Label(a.prompt.field).AutoFocus()
+					if area.Changed() {
+						a.prompt.error = ""
+					}
+					if a.prompt.error != "" {
+						ui.Text(c, a.prompt.error).FillWidth().FontSize(12).TextColor(c.Theme().Danger)
+					}
+				})
+				return
+			}
 			ui.Field(c, a.prompt.field, func() {
 				if a.prompt.multiline {
 					ui.TextArea(c, &a.prompt.value).Height(140).FillWidth().Label(a.prompt.field)
@@ -187,20 +207,27 @@ func (a *app) workspaceView(c *ui.Context) {
 	}
 	a.ensurePanes()
 	c.Key("workbench-navigation-split")
-	components.SidebarSplit(c, &a.sidebarWidth, a.sidebarHidden, func() {
-		a.connectionSidebar(c, a.sidebarHidden)
-	}, func() {
-		a.workspaceContent(c, page)
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(0, 8, 8, 8).Children(func() {
+		components.SidebarSplit(c, &a.sidebarWidth, a.sidebarHidden, func() {
+			a.connectionSidebar(c, a.sidebarHidden)
+		}, func() {
+			a.workspaceContent(c, page)
+		})
 	})
 }
 
 type workspaceLayout struct {
 	sidebarHidden, toolsHidden, toolsRight, expanded, detached bool
+	filesSelected                                              bool
 	terminals                                                  *terminalLayoutNode
+	edge                                                       string
+	revision                                                   uint64
 }
 
 func (a *app) currentWorkspaceLayout() workspaceLayout {
-	return workspaceLayout{a.sidebarHidden, a.toolsHidden, a.toolsRight, a.fileExpanded, a.toolsDetached, a.terminalLayout}
+	return workspaceLayout{sidebarHidden: a.sidebarHidden, toolsHidden: a.toolsHidden, toolsRight: a.toolsRight,
+		expanded: a.fileExpanded, detached: a.toolsDetached, filesSelected: a.filesTabSelected,
+		terminals: a.terminalLayout, edge: a.toolsEdge, revision: a.workspaceRevision}
 }
 
 func (a *app) contentLayoutReady() bool { return a.layoutRendered == a.currentWorkspaceLayout() }
@@ -218,20 +245,36 @@ func (a *app) setToolsHidden(hidden bool) {
 	a.toolsHidden, a.fileExpanded = hidden, false
 	a.toolsLayoutOpen = false
 	if a.page == 1 {
-		a.contentFocus = true
+		a.contentFocus = a.terminalFocusWanted()
 	}
 }
 
 func (a *app) setToolsDock(right bool) {
+	side := "bottom"
+	if right {
+		side = "right"
+	}
+	a.setToolsDockSide(side)
+}
+
+func (a *app) setToolsDockSide(side string) {
+	if side != "top" && side != "left" && side != "right" {
+		side = "bottom"
+	}
 	if a.toolsDetached {
 		a.closeToolsWindow()
 		a.toolsDetached = false
 		a.resetToolPresentation()
 		a.moveToolDialogsToMain()
 	}
-	a.toolsRight, a.toolsHidden, a.fileExpanded = right, false, false
+	a.toolsEdge = ""
+	if side == "left" || side == "top" {
+		a.toolsEdge = side
+	}
+	a.toolsRight, a.toolsHidden, a.fileExpanded = side == "right", false, false
 	a.toolsLayoutOpen = false
-	a.contentFocus = true
+	a.contentFocus = a.terminalFocusWanted()
+	a.workspaceRevision++
 }
 
 func (a *app) toolsToggle(c *ui.Context) {
@@ -259,7 +302,7 @@ func (a *app) sidebarToggle(c *ui.Context) {
 	if components.SVGButton(c, components.SidebarIcon, label).Clicked() {
 		a.sidebarHidden = !a.sidebarHidden
 		if a.page == 1 {
-			a.contentFocus = true
+			a.contentFocus = a.terminalFocusWanted()
 		}
 	}
 }
@@ -293,45 +336,76 @@ func (a *app) workspaceContent(c *ui.Context, page int) {
 
 func (a *app) terminalWorkspace(c *ui.Context, width, height float32) {
 	a.syncFollowingFilePanes()
-	if a.toolsDetached {
-		a.sessionStage(c)
+	terminal := func() { a.sessionStage(c) }
+	tools := func() { a.roundedWorkspacePanel(c, func() { a.fileArea(c) }) }
+	if a.toolsDetached || a.toolsHidden {
+		terminal()
 		return
 	}
-	if a.fileExpanded && !a.toolsHidden {
-		a.fileArea(c)
+	if a.fileExpanded {
+		tools()
 		return
 	}
-	if a.toolsHidden {
-		a.sessionStage(c)
-		return
-	}
-	if a.toolsDockRight(c) {
-		// Before the first layout, keep a previously fitted share until the
-		// workspace width is known instead of imposing a different minimum.
+	side := a.effectiveToolsDockSide(c)
+	if side == "right" || side == "left" {
 		limits := components.SplitLimits{Min: 1, Max: 80, Default: 65}
-		// The native splitter clamps only to 40 px. Keep the dock controls
-		// usable when the window or the connection sidebar changes size.
-		if width > 1 {
-			room := width - 1
+		if width > 8 {
+			room := width - 8
 			minimum := min(50, 300*100/room)
 			maximum := max(minimum, (room-340)*100/room)
 			limits.Min, limits.Max = minimum, min(80, maximum)
 		}
-		components.SplitPercent(c, &a.terminalWidthShare, limits, func() { ui.Column(c).Fill().Children(func() { a.sessionStage(c) }) }, func() { ui.Column(c).Fill().Children(func() { a.fileArea(c) }) }).Fill()
+		if side == "right" {
+			components.SplitPercent(c, &a.terminalWidthShare, limits, func() {
+				ui.Column(c).Fill().Padding(0, 4, 0, 0).Children(terminal)
+			}, func() { ui.Column(c).Fill().Padding(0, 0, 0, 3).Children(tools) }).Fill()
+		} else {
+			share := 100 - limits.Clamp(a.terminalWidthShare)
+			components.SplitPercent(c, &share, components.SplitLimits{Min: 100 - limits.Max, Max: 100 - limits.Min, Default: 35},
+				func() { ui.Column(c).Fill().Padding(0, 4, 0, 0).Children(tools) },
+				func() { ui.Column(c).Fill().Padding(0, 0, 0, 3).Children(terminal) }).Fill()
+			a.terminalWidthShare = 100 - share
+		}
 	} else {
 		limits := components.SplitLimits{Min: 30, Max: 90, Default: 72}
-		if height > 1 {
+		if height > 8 {
 			room := height - 1
-			limits.Min = max(30, min(50, 160*100/room))
-			limits.Max = max(limits.Min, min(90, (room-160)*100/room))
+			limits.Min = max(30, min(50, 166*100/room))
+			limits.Max = max(limits.Min, min(90, (room-165)*100/room))
 		}
-		components.SplitVerticalPercent(c, &a.terminalShare, limits, func() { ui.Column(c).Fill().Children(func() { a.sessionStage(c) }) }, func() { a.fileArea(c) }).Fill()
+		if side == "bottom" {
+			components.SplitVerticalPercent(c, &a.terminalShare, limits, func() {
+				ui.Column(c).Fill().Padding(0, 0, 4, 0).Children(terminal)
+			}, func() { ui.Column(c).Fill().Padding(3, 0, 0, 0).Children(tools) }).Fill()
+		} else {
+			share := 100 - limits.Clamp(a.terminalShare)
+			components.SplitVerticalPercent(c, &share, components.SplitLimits{Min: 100 - limits.Max, Max: 100 - limits.Min, Default: 28},
+				func() { ui.Column(c).Fill().Padding(0, 0, 4, 0).Children(tools) },
+				func() { ui.Column(c).Fill().Padding(3, 0, 0, 0).Children(terminal) }).Fill()
+			a.terminalShare = 100 - share
+		}
 	}
 }
 
 // A narrow main window cannot fit a useful terminal and a right-hand tool pane.
 // Fall back to bottom docking for this frame without changing the saved choice.
 func (a *app) toolsDockRight(c *ui.Context) bool {
+	side := a.effectiveToolsDockSide(c)
+	return side == "left" || side == "right"
+}
+
+func (a *app) savedToolsDockSide() string {
+	if a.toolsEdge == "top" || a.toolsEdge == "left" {
+		return a.toolsEdge
+	}
+	if a.toolsRight {
+		return "right"
+	}
+	return "bottom"
+}
+
+func (a *app) effectiveToolsDockSide(c *ui.Context) string {
+	side := a.savedToolsDockSide()
 	w, _ := c.Size()
 	if a.sidebarHidden {
 		w -= components.RailWidth
@@ -342,7 +416,10 @@ func (a *app) toolsDockRight(c *ui.Context) bool {
 		}
 		w -= width
 	}
-	return a.toolsRight && w >= 640
+	if (side == "left" || side == "right") && w < 640 {
+		return "bottom"
+	}
+	return side
 }
 
 func (a *app) newConnection() {
@@ -357,6 +434,7 @@ func (a *app) newConnection() {
 	a.connection.returnPage = page
 	a.details = nil
 	a.form = vault.Profile{ID: vault.ShortID(), Auth: "password", Port: 22}
+	a.formNote, a.formNoteOriginal = vault.ServerNote{}, vault.ServerNote{}
 	a.port = "22"
 	a.ownerPass = ""
 	a.page = 0
@@ -375,14 +453,16 @@ func (a *app) editConnection() {
 		if d.ID == a.selected {
 			copy := d
 			a.details = &copy
-			a.form = vault.Profile{ID: d.ID, Name: d.Name, Group: d.Group, Host: d.Host, Port: d.Port, User: d.User, Fingerprint: d.Fingerprint, Auth: d.Auth, AgentFingerprint: d.AgentFingerprint, Policy: d.Policy}
+			a.form = vault.Profile{ID: d.ID, Name: d.Name, Group: d.Group, Host: d.Host, Port: d.Port, User: d.User, Fingerprint: d.Fingerprint, Auth: d.Auth, AgentFingerprint: d.AgentFingerprint, Policy: d.Policy, Terminal: d.Terminal, Network: d.Network, Hardware: d.Hardware}
 			a.form.Policy.ProtectedPaths = append([]string(nil), d.Policy.ProtectedPaths...)
+			a.formNote, a.formNoteOriginal = vault.ServerNote{}, vault.ServerNote{}
 			a.port = fmt.Sprint(d.Port)
 			a.ownerPass = ""
 			a.connection.authLabel = authLabel(d.Auth)
 			a.connection.trustedTarget = targetID(d.Host, d.Port)
 			a.connection.connect = false
 			a.page = 0
+			a.startConnectionNotes(d.ID)
 			return
 		}
 	}
@@ -419,19 +499,51 @@ func (a *app) sessionStageContent(c *ui.Context, width float32) {
 		}
 	}()
 	if layout := a.terminalLayout; layout != nil {
-		if width > 1 {
-			minimum := min(50, 220*100/(width-1))
-			layout.share = max(minimum, min(100-minimum, layout.share))
-		}
-		ui.SplitPercent(c, &layout.share,
-			func() { a.terminalGroupView(c, layout.left, true, false) },
-			func() { a.terminalGroupView(c, layout.right, false, true) }).Fill()
+		a.workspaceSplitView(c, layout)
 	} else {
-		a.terminalGroupView(c, a.singleTerminalGroup, true, true)
+		a.roundedWorkspacePanel(c, func() { a.terminalGroupView(c, a.singleTerminalGroup, true, true) })
+	}
+}
+
+func (a *app) workspaceSplitView(c *ui.Context, node *terminalLayoutNode) {
+	branch := func(g *terminalGroup, first bool) func() {
+		return func() {
+			padding := [4]float32{}
+			if node.vertical {
+				if first {
+					padding[2] = 4
+				} else {
+					padding[0] = 3
+				}
+			} else {
+				if first {
+					padding[1] = 4
+				} else {
+					padding[3] = 3
+				}
+			}
+			ui.Column(c).Fill().MinWidth(0).MinHeight(0).Padding(padding[:]...).Children(func() {
+				if g.split != nil {
+					a.workspaceSplitView(c, g.split)
+				} else {
+					a.roundedWorkspacePanel(c, func() { a.terminalGroupView(c, g, false, false) })
+				}
+			})
+		}
+	}
+	limits := components.SplitLimits{Min: 10, Max: 90, Default: 50}
+	if node.vertical {
+		components.SplitVerticalPercent(c, &node.share, limits, branch(node.left, true), branch(node.right, false)).Fill()
+	} else {
+		components.SplitPercent(c, &node.share, limits, branch(node.left, true), branch(node.right, false)).Fill()
 	}
 }
 
 func (a *app) sessionTerminal(c *ui.Context, s *session) {
+	if s.connectionState != "" {
+		a.pendingTerminalView(c, s)
+		return
+	}
 	if s.term != nil {
 		if s.closed {
 			ui.Row(c).FillWidth().Padding(5, 10).Gap(10).AlignItems(ui.Center).Children(func() {
@@ -458,6 +570,10 @@ func (a *app) closeSessionAt(index int) {
 		return
 	}
 	a.detachServerStatus(s)
+	if s.connectionCancel != nil {
+		s.connectionCancel()
+		s.connectionCancel = nil
+	}
 	s.closed = true
 	if s.term != nil {
 		s.term.Close()
@@ -471,11 +587,17 @@ func (a *app) closeSessionAt(index int) {
 	a.restoreTerminalSelection(current)
 	a.ensureTerminalGroups()
 	a.syncFollowingFilePanes()
-	a.contentFocus = true
+	a.contentFocus = a.terminalFocusWanted()
 }
 
 func (a *app) closeEditor() {
+	if a.edit != nil && a.editorSaving == a.edit {
+		a.status = tr(nil, "正在保存，请稍后关闭")
+		return
+	}
+	standalone := a.editorWin != nil || a.editorWindowPending
 	close := func(string) {
+		a.cancelEditorRead()
 		a.editorSequence++
 		if a.editorTerminalGroup != nil {
 			a.editorTerminalGroup.editorSelected = false
@@ -486,7 +608,8 @@ func (a *app) closeEditor() {
 		a.editHost = ""
 		a.editShown = false
 		a.edit = &editor.State{Buffer: editor.NewBuffer("")}
-		a.contentFocus = true
+		a.closeEditorWindow()
+		a.contentFocus = !standalone && a.terminalFocusWanted()
 	}
 	if a.edit != nil && a.edit.Buffer.Modified() {
 		a.ask(tr(nil, "关闭未保存的文件？"), a.editPath, tr(nil, "放弃修改后关闭。需要保留修改时，请取消并先保存。"), "", "", tr(nil, "放弃并关闭"), close)
@@ -495,6 +618,10 @@ func (a *app) closeEditor() {
 	}
 }
 func (a *app) editorStage(c *ui.Context) {
+	if a.editorRead != nil {
+		a.editorReadView(c, a.editorRead)
+		return
+	}
 	ui.Row(c).FillWidth().Padding(5, 8).Gap(6).Children(func() {
 		label := a.hostName(a.editHost)
 		if a.editLocal {
@@ -524,139 +651,9 @@ func (a *app) editorStage(c *ui.Context) {
 	}
 }
 
-func (a *app) confirmDraft(s *session) {
-	body := s.draft
-	a.ask(tr(nil, "执行常用命令"), a.hostName(s.host), body, "", "", tr(nil, "执行"), func(string) {
-		for _, current := range a.sessions {
-			if current == s && s.term != nil {
-				select {
-				case <-s.term.Done():
-					a.status = tr(nil, "终端已断开，请重新连接")
-					return
-				default:
-				}
-				s.term.Send([]byte(strings.ReplaceAll(body, "\r\n", "\n") + "\r"))
-				s.draft = ""
-				a.status = tr(nil, "命令已发送到 ") + sessionDisplayName(nil, s)
-				return
-			}
-		}
-		a.status = tr(nil, "原终端已关闭，命令未发送")
-	})
-}
-
-func (a *app) commandsView(c *ui.Context) {
-	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(8).Gap(7).Children(func() {
-		ui.Row(c).FillWidth().Gap(6).Children(func() {
-			ui.TextInput(c, &a.snippetSearch).Grow(1).Label(tr(c, "搜索常用命令")).Placeholder(tr(c, "搜索命令"))
-			if components.IconButton(c, "＋", tr(c, "新建常用命令")).Clicked() {
-				a.snippetForm = vault.Snippet{ID: vault.ShortID(), Group: "日常维护"}
-				a.snippetOpen = true
-				a.snippetDetached = a.toolsWindowFocused()
-				a.invalidateWindows()
-			}
-		})
-		items := make([]vault.Snippet, 0, len(a.snippets))
-		query := strings.ToLower(a.snippetSearch)
-		for _, v := range a.snippets {
-			if strings.Contains(strings.ToLower(v.Name+" "+v.Group+" "+v.Body), query) {
-				items = append(items, v)
-			}
-		}
-		a.snippetTable.Selected = &a.snippetSelected
-		a.snippetTable.Key = func(i int) any { return items[i].ID }
-		a.snippetTable.Label = func(i int) string { return items[i].Name }
-		list := components.List(c, &a.snippetTable, len(items), func(i int) {
-			v := items[i]
-			row := ui.Column(c).FillWidth().Padding(6, 8).Gap(3).Children(func() {
-				ui.Text(c, v.Name).FontSize(12).SingleLine()
-				ui.Text(c, v.Body).FontSize(11).SingleLine().TextColor(c.Theme().TextMuted)
-			})
-			row.ContextMenu(func(m *ui.Menu) {
-				if m.Item(tr(c, "填入终端")).Chosen() {
-					a.fillSnippet(v)
-				}
-				if m.Item(tr(c, "编辑")).Chosen() {
-					a.snippetForm = v
-					a.snippetOpen = true
-					a.snippetDetached = a.toolsWindowFocused()
-					a.invalidateWindows()
-				}
-				if m.Item(tr(c, "删除")).Chosen() {
-					a.ask(tr(c, "删除常用命令？"), v.Name, tr(c, "仅删除命令库中的这条记录。"), "", "", tr(c, "删除"), func(string) { a.persistSnippet(v, true) })
-				}
-			})
-		}).FillWidth().Grow(1).MinHeight(0).Label(tr(c, "常用命令列表"))
-		if list.Submitted() && a.snippetSelected >= 0 && a.snippetSelected < len(items) {
-			a.fillSnippet(items[a.snippetSelected])
-		}
-		if len(items) == 0 {
-			ui.Text(c, tr(c, "暂无常用命令")).FontSize(11).TextColor(c.Theme().TextMuted)
-		}
-		if a.active >= 0 && a.active < len(a.sessions) {
-			s := a.sessions[a.active]
-			if s.draft != "" {
-				ui.Text(c, tr(c, "目标: ")+sessionDisplayName(c, s)).FontSize(11).TextColor(c.Theme().TextMuted)
-				ui.Row(c).FillWidth().Gap(6).Children(func() {
-					ui.TextInput(c, &s.draft).Label(tr(c, "待执行命令")).Grow(1)
-					if components.Button(c, tr(c, "执行")).Disabled(s.term == nil).Clicked() {
-						a.confirmDraft(s)
-					}
-				})
-			}
-		}
-	})
-}
 func (a *app) activeTerminalName() string {
 	if a.active >= 0 && a.active < len(a.sessions) {
 		return sessionDisplayName(nil, a.sessions[a.active])
 	}
 	return tr(nil, "请先连接终端")
-}
-func (a *app) fillSnippet(v vault.Snippet) {
-	if a.active < 0 || a.active >= len(a.sessions) {
-		a.status = tr(nil, "请先打开终端")
-		return
-	}
-	a.sessions[a.active].draft = v.Body
-	a.editShown = false
-	a.page = 1
-	a.dock = toolCommands
-	a.toolsHidden = false
-	a.status = tr(nil, "已填入 ") + sessionDisplayName(nil, a.sessions[a.active]) + tr(nil, "，确认后点执行")
-}
-func (a *app) snippetDialog(c *ui.Context) {
-	components.Dialog(c, &a.snippetOpen, components.DialogOptions{Title: tr(c, "保存常用命令"), Width: 550}, func() {
-		ui.TextInput(c, &a.snippetForm.Name).Label(tr(c, "命令名称")).Placeholder(tr(c, "命令名称")).FillWidth().AutoFocus()
-		ui.TextInput(c, &a.snippetForm.Group).Label(tr(c, "命令分组")).Placeholder(tr(c, "分组")).FillWidth()
-		ui.TextArea(c, &a.snippetForm.Body).Label(tr(c, "命令内容")).Height(160).FillWidth()
-	}, func() {
-		if components.Button(c, tr(c, "取消")).Clicked() {
-			a.snippetOpen = false
-		}
-		if components.Button(c, tr(c, "保存命令"), components.ButtonOptions{Variant: components.Primary, Busy: a.busy}).Clicked() {
-			a.persistSnippet(a.snippetForm, false)
-		}
-	})
-	if !a.snippetOpen {
-		a.snippetForm = vault.Snippet{}
-	}
-}
-
-func (a *app) persistSnippet(v vault.Snippet, remove bool) {
-	server, gen := a.server, a.generation
-	if server == nil {
-		return
-	}
-	a.work(func() (func(), error) {
-		e := server.Vault.SaveSnippet(broker.VaultPath(a.dir), v, remove)
-		return func() {
-			if gen != a.generation {
-				return
-			}
-			a.snippets = server.Vault.Snippets()
-			a.snippetOpen = false
-			a.status = tr(nil, "常用命令已加密保存")
-		}, e
-	})
 }

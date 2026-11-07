@@ -24,6 +24,31 @@ func grantFixture(t *testing.T, permission string) (*Manager, Request, string, e
 	}
 	return m, r, ticket, key
 }
+
+func TestGrantIdleLimitAllowsOnlyAnAbsoluteDeadlineBeyondThirtyMinutes(t *testing.T) {
+	_, r, _, _ := grantFixture(t, "full")
+	for _, test := range []struct {
+		lifetime, idle int
+		valid          bool
+	}{
+		{60, 60, true},
+		{3600, 1800, true},
+		{3600, 3600, true},
+		{MaxGrantLifetime, MaxGrantLifetime, true},
+		{3600, 1801, false},
+		{3600, 3599, false},
+		{3600, 3601, false},
+		{3600, 59, false},
+		{MaxGrantLifetime + 1, MaxGrantLifetime + 1, false},
+	} {
+		scope := r.Operation.Grant
+		scope.LifetimeSeconds, scope.IdleSeconds = test.lifetime, test.idle
+		if err := scope.Validate(); (err == nil) != test.valid {
+			t.Fatalf("lifetime %d idle %d: valid=%t, error=%v", test.lifetime, test.idle, test.valid, err)
+		}
+	}
+}
+
 func grantedOperation(r Request, kind string) Operation {
 	op := Operation{Host: r.Operation.Host, Endpoint: r.Operation.Endpoint, HostFingerprint: r.Operation.HostFingerprint, Client: "same label is not authority", Kind: kind}
 	if kind != "monitor" && kind != "shell" && kind != "exec" && kind != "grant" {

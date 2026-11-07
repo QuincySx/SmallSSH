@@ -15,7 +15,7 @@ import (
 	"sshclient/internal/vault"
 )
 
-func prepareServerNotes(t *testing.T, execute func(string) (string, string, int)) *connectionFlowHarness {
+func newServerNotesConnection(t *testing.T, execute func(string) (string, string, int)) *connectionFlowHarness {
 	t.Helper()
 	h := newConnectionFlowHarness(t)
 	if execute != nil {
@@ -27,12 +27,60 @@ func prepareServerNotes(t *testing.T, execute func(string) (string, string, int)
 	h.a.page = 1
 	h.a.connections = h.server.Vault.Summaries()
 	h.a.selected = h.fixture.Profile().ID
+	t.Cleanup(func() {
+		if h.a.serverNotes != nil {
+			h.a.closeServerNotes()
+		}
+	})
+	return h
+}
+
+func waitServerNotesLoaded(t *testing.T, h *connectionFlowHarness, s *serverNotesState) {
+	t.Helper()
+	h.wait(func() bool {
+		return h.a.notesCurrent(s) && !s.loading && s.loadError == ""
+	})
+}
+
+func openServerNotesAndWait(t *testing.T, h *connectionFlowHarness) *serverNotesState {
+	t.Helper()
 	h.a.openServerNotes(h.a.selected)
-	if h.a.serverNotes == nil {
+	s := h.a.serverNotes
+	if s == nil {
 		t.Fatal("note dialog did not open", h.a.status)
 	}
 	h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+	waitServerNotesLoaded(t, h, s)
+	return s
+}
+
+func prepareServerNotes(t *testing.T, execute func(string) (string, string, int)) *connectionFlowHarness {
+	t.Helper()
+	h := newServerNotesConnection(t, execute)
+	openServerNotesAndWait(t, h)
 	return h
+}
+
+func nextServerNotesUpdate(t *testing.T, h *connectionFlowHarness) func() {
+	t.Helper()
+	select {
+	case update := <-h.updates:
+		return update
+	case <-time.After(5 * time.Second):
+		t.Fatal("server notes RPC did not finish")
+		return nil
+	}
+}
+
+func seedServerNote(t *testing.T, h *connectionFlowHarness, manual string) {
+	t.Helper()
+	owner, err := h.a.unlockedOwner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.a.client.SaveServerNote(h.ctx, h.a.selected, vault.ServerNote{Manual: manual}, owner); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestServerNotesSaveWithoutConnectingAndDiscardRequiresChoice(t *testing.T) {
@@ -49,8 +97,7 @@ func TestServerNotesSaveWithoutConnectingAndDiscardRequiresChoice(t *testing.T) 
 	if h.fixture.Auths.Load() != before {
 		t.Fatal("manual notes unexpectedly connected to the server")
 	}
-	h.a.openServerNotes(h.a.selected)
-	s := h.a.serverNotes
+	s := openServerNotesAndWait(t, h)
 	if s.draft.Manual != note.Manual {
 		t.Fatal("saved notes not restored")
 	}
@@ -71,8 +118,7 @@ func TestServerNotesSaveWithoutConnectingAndDiscardRequiresChoice(t *testing.T) 
 	if h.a.serverNotes != nil || s.ctx.Err() == nil || s.draft.Manual != "" {
 		t.Fatal("closing retained note contents or work context")
 	}
-	h.a.openServerNotes(h.a.selected)
-	s = h.a.serverNotes
+	s = openServerNotesAndWait(t, h)
 	h.a.lock()
 	if h.a.serverNotes != nil || s.ctx.Err() == nil || s.draft.Manual != "" {
 		t.Fatal("locking retained private notes")
@@ -237,8 +283,7 @@ func TestServerNotesCooldownSurvivesReopeningAndRepeatedClicks(t *testing.T) {
 		t.Fatal("repeat clicks multiplied the scan", s.error, commands.Load())
 	}
 	h.a.closeServerNotes()
-	h.a.openServerNotes(h.a.selected)
-	s = h.a.serverNotes
+	s = openServerNotesAndWait(t, h)
 	h.a.scanServerNotes(s)
 	if s.scanning || h.a.notesScanWait(s.target) <= 0 || commands.Load() != 1 {
 		t.Fatal("reopening bypassed scan cooldown", commands.Load())
@@ -280,5 +325,204 @@ func TestServerNotesCancelIsQuietAndKeepsPreviousSnapshot(t *testing.T) {
 	}
 	if s.scanning || s.error != "" || s.draft != before {
 		t.Fatal("normal cancellation showed an error or replaced notes", s.error, s.draft)
+	}
+}
+
+func TestServerNotesLoadShowsLoadingWithoutStartingDiscovery(t *testing.T) {
+	const marker = "marker: metadata load only"
+	h := newServerNotesConnection(t, nil)
+	seedServerNote(t, h, marker)
+	beforeBusy := h.a.busy
+	beforeAuths := h.fixture.Auths.Load()
+
+	h.a.openServerNotes(h.a.selected)
+	s := h.a.serverNotes
+	if s == nil || !s.loading {
+		t.Fatal("opening notes did not enter the loading state", h.a.status, s)
+	}
+	if s.original.Manual != "" || s.draft.Manual != "" {
+		t.Fatal("notes were populated before the real load closure was applied", s.original, s.draft)
+	}
+	if h.a.busy != beforeBusy {
+		t.Fatal("opening notes changed global busy state")
+	}
+	h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+	h.ui.Frame()
+	h.a.saveServerNotes(s)
+	h.a.scanServerNotes(s)
+	if s.saving || s.scanning || h.a.notesScanWait(s.target) > 0 {
+		t.Fatal("loading notes accepted save or discovery actions", s.saving, s.scanning)
+	}
+
+	waitServerNotesLoaded(t, h, s)
+	if s.original.Manual != marker || s.draft != s.original {
+		t.Fatal("real metadata load did not apply the broker note exactly", s.original, s.draft)
+	}
+	if h.a.busy != beforeBusy {
+		t.Fatal("loaded notes changed global busy state")
+	}
+	if h.fixture.Auths.Load() != beforeAuths {
+		t.Fatal("loading note metadata started an SSH discovery scan")
+	}
+}
+
+func TestServerNotesStaleLoadCannotRestoreClosedOrReopenedWindow(t *testing.T) {
+	const marker = "marker: stale load must not revive"
+
+	t.Run("close", func(t *testing.T) {
+		h := newServerNotesConnection(t, nil)
+		seedServerNote(t, h, marker)
+		h.a.openServerNotes(h.a.selected)
+		s := h.a.serverNotes
+		if s == nil {
+			t.Fatal("note dialog did not open")
+		}
+		h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+		oldUpdate := nextServerNotesUpdate(t, h)
+		oldCtx := s.ctx
+		h.a.closeServerNotes()
+		oldUpdate()
+		if h.a.serverNotes != nil || oldCtx.Err() == nil || s.original.Manual != "" || s.draft.Manual != "" {
+			t.Fatal("stale load restored a closed note window", h.a.serverNotes, s.original, s.draft)
+		}
+	})
+
+	t.Run("lock", func(t *testing.T) {
+		h := newServerNotesConnection(t, nil)
+		seedServerNote(t, h, marker)
+		h.a.openServerNotes(h.a.selected)
+		s := h.a.serverNotes
+		if s == nil {
+			t.Fatal("note dialog did not open")
+		}
+		h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+		oldUpdate := nextServerNotesUpdate(t, h)
+		oldCtx := s.ctx
+		h.a.lock()
+		oldUpdate()
+		if h.a.serverNotes != nil || oldCtx.Err() == nil || s.original.Manual != "" || s.draft.Manual != "" {
+			t.Fatal("stale load restored notes after locking", h.a.serverNotes, s.original, s.draft)
+		}
+	})
+
+	t.Run("close and reopen", func(t *testing.T) {
+		h := newServerNotesConnection(t, nil)
+		seedServerNote(t, h, marker)
+		h.a.openServerNotes(h.a.selected)
+		oldState := h.a.serverNotes
+		if oldState == nil {
+			t.Fatal("note dialog did not open")
+		}
+		h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+		oldUpdate := nextServerNotesUpdate(t, h)
+		oldCtx := oldState.ctx
+		h.a.closeServerNotes()
+		h.a.openServerNotes(h.a.selected)
+		s := h.a.serverNotes
+		if s == nil || s == oldState || !s.loading {
+			t.Fatal("reopened notes did not create a fresh loading state", s)
+		}
+		h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+		oldUpdate()
+		h.ui.Frame()
+		if h.a.serverNotes != s || !s.loading || s.original.Manual != "" || s.draft.Manual != "" {
+			t.Fatal("stale load changed the reopened window", h.a.serverNotes, s.original, s.draft)
+		}
+		if oldCtx.Err() == nil {
+			t.Fatal("closing the old note window did not cancel its context")
+		}
+
+		waitServerNotesLoaded(t, h, s)
+		if s.original.Manual != marker || s.draft != s.original {
+			t.Fatal("fresh load did not load the broker marker", s.original, s.draft)
+		}
+	})
+}
+
+func TestServerNotesFailedSaveKeepsDialogThenSucceedsAfterRecovery(t *testing.T) {
+	const marker = "marker: original broker note"
+	h := newServerNotesConnection(t, nil)
+	seedServerNote(t, h, marker)
+	s := openServerNotesAndWait(t, h)
+	if s.original.Manual != marker || s.draft != s.original {
+		t.Fatal("broker marker did not load", s.original, s.draft)
+	}
+
+	s.draft.Manual = "edited note kept after failure"
+	edited := s.draft
+	goodDir := h.a.client.Dir
+	h.a.client.Dir = t.TempDir()
+	h.a.saveServerNotes(s)
+	if !s.saving {
+		t.Fatal("save did not enter the saving state")
+	}
+	h.wait(func() bool { return !s.saving })
+	if h.a.serverNotes != s || s.saving || s.error == "" || s.draft != edited || s.original.Manual != marker {
+		t.Fatal("failed save did not preserve the open dialog and draft", h.a.serverNotes, s.error, s.original, s.draft)
+	}
+	if _, visible := h.ui.Find(reviewText(s.error)); !visible {
+		t.Fatal("save failure was not visible", s.error)
+	}
+	stored, err := h.server.Vault.ServerNote(s.target.ID)
+	if err != nil || stored.Manual != marker {
+		t.Fatal("failed save changed broker storage", stored, err)
+	}
+
+	h.a.client.Dir = goodDir
+	h.a.saveServerNotes(s)
+	if !s.saving {
+		t.Fatal("recovered save did not start")
+	}
+	h.wait(func() bool { return h.a.serverNotes == nil })
+	stored, err = h.server.Vault.ServerNote(s.target.ID)
+	if err != nil || stored.Manual != edited.Manual {
+		t.Fatal("recovered save did not persist and close", stored, err)
+	}
+}
+
+func TestServerNotesLoadFailureBlocksActionsAndRetryLoadsMarker(t *testing.T) {
+	const marker = "marker: retry after metadata failure"
+	h := newServerNotesConnection(t, nil)
+	seedServerNote(t, h, marker)
+	beforeAuths := h.fixture.Auths.Load()
+	goodDir := h.a.client.Dir
+	h.a.client.Dir = t.TempDir()
+
+	h.a.openServerNotes(h.a.selected)
+	s := h.a.serverNotes
+	if s == nil || !s.loading {
+		t.Fatal("notes did not start loading")
+	}
+	h.ui = ui.NewTester(h.a.serverNotesDialog, 760, 650)
+	h.wait(func() bool { return !s.loading })
+	if s.loadError == "" || s.original.Manual != "" || s.draft.Manual != "" {
+		t.Fatal("unreachable client did not produce a clean load error", s.loadError, s.original, s.draft)
+	}
+	if _, visible := h.ui.Find("重试读取"); !visible {
+		t.Fatal("load failure did not expose retry")
+	}
+
+	h.a.saveServerNotes(s)
+	h.a.scanServerNotes(s)
+	if s.saving || s.scanning || s.error != "" || s.original.Manual != "" || s.draft.Manual != "" || h.a.notesScanWait(s.target) > 0 {
+		t.Fatal("load error accepted save or discovery actions", s.saving, s.scanning, s.error, s.draft)
+	}
+	if h.fixture.Auths.Load() != beforeAuths {
+		t.Fatal("failed metadata load started an SSH discovery scan")
+	}
+	if stored, err := h.server.Vault.ServerNote(s.target.ID); err != nil || stored.Manual != marker {
+		t.Fatal("blocked actions changed the broker note", stored, err)
+	}
+
+	h.a.client.Dir = goodDir
+	h.click("重试读取")
+	h.wait(func() bool {
+		return h.a.notesCurrent(s) && !s.loading && s.loadError == ""
+	})
+	if s.original.Manual != marker || s.draft != s.original {
+		t.Fatal("retry did not load the real broker marker", s.original, s.draft)
+	}
+	if h.fixture.Auths.Load() != beforeAuths {
+		t.Fatal("retrying metadata load started an SSH discovery scan")
 	}
 }

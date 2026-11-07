@@ -20,11 +20,15 @@ go run ./tools <任务> [参数]    # 与 go run ./tools/<任务> 等价
 | 任务 | 用途 | 日志 |
 |---|---|---|
 | `check` | `patches/vendor-integrity.json` 校验 + `gofmt -l` + `go vet` + `go test`。**CI 跑的就是这条** | `build/logs/check-<时间>.log` |
-| `test` | 只跑 `go vet` + `go test`（`-race`、`-short`、`-pkg`、`-timeout`、`-serial`） | `build/logs/test-<时间>[-race].log` |
+| `compile` | 只编译 Go / CLI，不打包或启动桌面（`-platform all`、`-pkg`）；产物 `build/compile/<goos>-<goarch>/` | `build/logs/compile-<时间>.log` |
+| `test` | 只跑 `go vet` + `go test`（`-race`、`-short`、`-pkg`、`-run`、`-tags`、`-timeout`、`-serial`） | `build/logs/test-<时间>[-race].log` |
 | `build` | 编译原生组件与各平台 CLI，再调 MyGo 打包（`-platform`、`-check`） | 标准输出 |
 | `dev` | 静默开发进程：`run` / `status` / `show` / `stop`（`-data-dir`） | — |
+| `install` | 将已打包的本机 macOS 版本放入 `/Applications/SmallSSH.app`，校验签名、保留旧版、不启动 | `build/logs/install-<时间>.log` |
 
 CI 必须调用同一批入口；需要新能力时新增一个 `tools/` 任务，而不是在工作流里另写一套命令。
+
+macOS 本机安装使用 `go run ./tools install`。先按本机架构打包；安装任务核对已有应用的 bundle ID，在同一目录暂存完整新包并校验签名，再替换。旧版保留在当前用户废纸篓，发布失败时尝试还原。它不请求管理员权限、不启动或退出应用；没有目录写入权限时直接报错。
 
 ### 开发时的静默重启
 
@@ -42,10 +46,19 @@ go run ./tools dev stop      # 正常退出开发进程和监听器
 终端集成测试默认不参与 `check`：
 
 ```sh
-go test -race -tags terminal_integration -run TestGhostty ./internal/desktop
+go run ./tools test -race -tags terminal_integration -run TestGhostty -pkg ./internal/desktop
 ```
 
 该测试需要 Ghostty 库，MyGo 构建会从其官方发布下载并核对固定 SHA256。
+
+离线界面快照须显式启用，输出仍放在 `build/`，不会打开系统窗口：
+
+```sh
+SSH_CLIENT_PREVIEW_QA=1 SSH_CLIENT_UI_SNAPSHOT_DIR="$PWD/build/snapshots/connection-capabilities" \
+  go run ./tools test -pkg ./internal/desktop -tags preview_qa -run TestConnectionCapabilitiesSnapshotsWithoutWindows
+```
+
+`-tags` 同时传给 vet 和测试；`check` 也接受这些测试参数。PKCS#11 的 macOS / Linux 原生 ABI 与卡住签名回归需要本机 C 编译器，只编译仓库内合成令牌夹具，产物位于 `build/test-fixtures/`。它们不枚举或访问真实硬件。Windows / Linux 的交叉编译不替代各系统的运行验收。
 
 ## 产物与提交边界
 
@@ -55,6 +68,7 @@ go test -race -tags terminal_integration -run TestGhostty ./internal/desktop
 |---|---|---|
 | `build/<platform>/`（`SmallSSH.app`、exe、deb、tar.gz） | `tools build`、MyGo | 否（`/build/`） |
 | `build/logs/`、`build/snapshots/` | `check` / `test` / 无窗口快照测试 | 否（同上） |
+| `build/compile/`、`build/test-fixtures/` | 交叉编译 / 原生测试夹具 | 否（同上） |
 | `resources/<goos>-<goarch>/`（`biometric-helper`、`libsmallssh-auth.dylib`、`cli/smallssh`、`ssh-client`） | `tools build` 暂存 | 否（`/resources/*-*/`） |
 | `internal/systemauth/native-hashes.json` | `tools build` | **是**，app 会拒绝与它不匹配的原生组件 |
 | `resources/THIRD_PARTY_NOTICES.txt` | `tools build` | **是**，随包分发许可证 |

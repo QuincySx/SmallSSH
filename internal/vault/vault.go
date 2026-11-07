@@ -20,6 +20,8 @@ import (
 	"sync"
 
 	"sshclient/internal/accesspolicy"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/snippet"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -30,6 +32,9 @@ const maxFileSize = 32 << 20
 var ErrUnlock = errors.New("保险库解锁失败：密码不正确或文件损坏")
 
 type Profile struct {
+	Terminal         connectcfg.Terminal `json:"terminal,omitzero"`
+	Network          connectcfg.Network  `json:"network,omitzero"`
+	Hardware         connectcfg.Hardware `json:"hardware,omitzero"`
 	Policy           accesspolicy.Policy `json:"automationPolicy,omitempty"`
 	Group            string              `json:"group,omitempty"`
 	ID               string              `json:"id"`
@@ -48,8 +53,9 @@ type Profile struct {
 // A replacement is explicit; blank secret fields never silently erase stored
 // credentials when an owner edits only connection metadata.
 type ProfileChange struct {
-	Profile        Profile `json:"profile"`
-	KeepCredential bool    `json:"keepCredential"`
+	Profile             Profile `json:"profile"`
+	KeepCredential      bool    `json:"keepCredential"`
+	KeepProxyCredential bool    `json:"keepProxyCredential,omitempty"`
 }
 
 func (s *Session) ResolveChange(change ProfileChange) (Profile, error) {
@@ -63,6 +69,19 @@ func (s *Session) ResolveChange(change ProfileChange) (Profile, error) {
 			return Profile{}, errors.New("更换登录方式时需要提供新的登录凭据")
 		}
 		p.Password, p.PrivateKey, p.KeyPassphrase, p.AgentFingerprint = old.Password, old.PrivateKey, old.KeyPassphrase, old.AgentFingerprint
+		if p.Auth == "pkcs11" {
+			p.Hardware = old.Hardware
+		}
+	}
+	if change.KeepProxyCredential {
+		old, e := s.Profile(p.ID)
+		if e != nil {
+			return Profile{}, e
+		}
+		if p.Network.Proxy.Public() != old.Network.Proxy.Public() {
+			return Profile{}, errors.New("更换代理身份时需重新提供代理密码")
+		}
+		p.Network.Proxy.Password = old.Network.Proxy.Password
 	}
 	return p, Validate(p)
 }
@@ -79,7 +98,7 @@ type envelope struct {
 }
 type payload struct {
 	Profiles []Profile             `json:"profiles"`
-	Snippets []Snippet             `json:"snippets,omitempty"`
+	Snippets []snippet.Command     `json:"snippets,omitempty"`
 	Notes    map[string]ServerNote `json:"serverNotes,omitempty"`
 	// AuditHead is the last audit record the broker saw before it closed. It
 	// lives inside the encrypted vault on purpose: a log that was rewritten whole
@@ -91,7 +110,7 @@ type Session struct {
 	header    Header
 	key       []byte
 	profiles  []Profile
-	snippets  []Snippet
+	snippets  []snippet.Command
 	notes     map[string]ServerNote
 	auditHead string
 	closed    bool
@@ -125,32 +144,46 @@ func Open(data, pass []byte) (*Session, error) {
 // OpenKey is used only by an owner frontend after OS-protected key release.
 // There is no public broker API exporting this key.
 func OpenKey(data, key []byte) (*Session, error) {
-	if len(data) > maxFileSize {
+	header, plain, err := openEnvelope(data, key)
+	if err != nil {
+		return nil, err
+	}
+	defer wipe(plain)
+
+	// The session owns this copy; the caller's key is never wiped here.
+	ownedKey := append([]byte(nil), key...)
+	var p payload
+	if json.Unmarshal(plain, &p) != nil {
+		wipe(ownedKey)
 		return nil, ErrUnlock
+	}
+	return &Session{header: header, key: ownedKey, profiles: p.Profiles, snippets: p.Snippets, notes: p.Notes, auditHead: p.AuditHead}, nil
+}
+
+// openEnvelope authenticates the envelope with a temporary key copy. It returns
+// the authenticated header and plaintext, whose ownership passes to the caller.
+func openEnvelope(data, key []byte) (Header, []byte, error) {
+	if len(data) > maxFileSize {
+		return Header{}, nil, ErrUnlock
 	}
 	var e envelope
 	if json.Unmarshal(data, &e) != nil || e.Header.Version != Version || len(e.Header.Salt) != 16 || len(e.Header.ID) != 16 || len(e.Nonce) != 12 {
-		return nil, ErrUnlock
+		return Header{}, nil, ErrUnlock
 	}
 	if len(key) != 32 {
-		return nil, ErrUnlock
+		return Header{}, nil, ErrUnlock
 	}
-	key = append([]byte(nil), key...)
-	block, _ := aes.NewCipher(key)
+	ownedKey := append([]byte(nil), key...)
+	defer wipe(ownedKey)
+	block, _ := aes.NewCipher(ownedKey)
 	aead, _ := cipher.NewGCM(block)
 	aad, _ := json.Marshal(e.Header)
 	plain, err := aead.Open(nil, e.Nonce, e.Ciphertext, aad)
 	if err != nil {
-		wipe(key)
-		return nil, ErrUnlock
+		wipe(plain)
+		return Header{}, nil, ErrUnlock
 	}
-	defer wipe(plain)
-	var p payload
-	if json.Unmarshal(plain, &p) != nil {
-		wipe(key)
-		return nil, ErrUnlock
-	}
-	return &Session{header: e.Header, key: key, profiles: p.Profiles, snippets: p.Snippets, notes: p.Notes, auditHead: p.AuditHead}, nil
+	return e.Header, plain, nil
 }
 func (s *Session) Seal() ([]byte, error) {
 	s.mu.Lock()
@@ -167,9 +200,22 @@ func (s *Session) Seal() ([]byte, error) {
 	aead, _ := cipher.NewGCM(block)
 	nonce := random(aead.NonceSize())
 	aad, _ := json.Marshal(s.header)
-	return json.Marshal(envelope{Header: s.header, Nonce: nonce, Ciphertext: aead.Seal(nil, nonce, plain, aad)})
+	data, err := json.Marshal(envelope{Header: s.header, Nonce: nonce, Ciphertext: aead.Seal(nil, nonce, plain, aad)})
+	if err == nil && len(data) > maxFileSize {
+		return nil, errors.New("保险库数据超过 32 MiB 上限，未写入")
+	}
+	return data, err
 }
 func Validate(p Profile) error {
+	if e := p.Terminal.Validate(); e != nil {
+		return e
+	}
+	if e := p.Network.Validate(); e != nil {
+		return e
+	}
+	if p.Network.Relay == p.ID {
+		return errors.New("连接不能以自身作为中转")
+	}
 	if err := p.Policy.Validate(); err != nil {
 		return err
 	}
@@ -190,9 +236,8 @@ func Validate(p Profile) error {
 	}
 	switch p.Auth {
 	case "password":
-		if p.Password == "" {
-			return errors.New("未提供登录密码")
-		}
+		// An empty password is still an explicit password credential; the
+		// server decides whether to accept it.
 	case "key":
 		if p.PrivateKey == "" {
 			return errors.New("未提供私钥")
@@ -201,6 +246,10 @@ func Validate(p Profile) error {
 		if p.AgentFingerprint == "" {
 			return errors.New("请明确选择SSH代理中的公钥指纹")
 		}
+	case "pkcs11":
+		if e := p.Hardware.Validate(); e != nil {
+			return e
+		}
 	default:
 		return errors.New("不支持的登录方式")
 	}
@@ -208,6 +257,9 @@ func Validate(p Profile) error {
 }
 
 type Summary struct {
+	Terminal         connectcfg.Terminal `json:"terminal,omitzero"`
+	Network          connectcfg.Network  `json:"network,omitzero"`
+	Hardware         connectcfg.Hardware `json:"hardware,omitzero"`
 	Policy           accesspolicy.Policy `json:"automationPolicy,omitempty"`
 	ID               string              `json:"id"`
 	Name             string              `json:"name"`
@@ -228,7 +280,7 @@ func (s *Session) Summaries() []Summary {
 	}
 	out := make([]Summary, 0, len(s.profiles))
 	for _, p := range s.profiles {
-		out = append(out, Summary{ID: p.ID, Name: p.Name, Group: p.Group, Host: p.Host, Port: p.Port, User: p.User, Auth: p.Auth, Fingerprint: p.Fingerprint, AgentFingerprint: p.AgentFingerprint, Policy: p.Policy.Clone()})
+		out = append(out, Summary{ID: p.ID, Name: p.Name, Group: p.Group, Host: p.Host, Port: p.Port, User: p.User, Auth: p.Auth, Fingerprint: p.Fingerprint, AgentFingerprint: p.AgentFingerprint, Policy: p.Policy.Clone(), Terminal: p.Terminal, Network: p.Network.Public(), Hardware: p.Hardware.Public()})
 	}
 	return out
 }
@@ -269,6 +321,11 @@ func (s *Session) SaveDetails(file string, d Summary) error {
 	p.User = d.User
 	p.Fingerprint = d.Fingerprint
 	p.Policy = d.Policy.Clone()
+	p.Terminal = d.Terminal
+	if d.Network.Proxy.Public() == p.Network.Proxy.Public() {
+		d.Network.Proxy.Password = p.Network.Proxy.Password
+	}
+	p.Network = d.Network
 	return s.SaveProfile(file, p)
 }
 func (s *Session) Put(p Profile) error {
@@ -280,6 +337,9 @@ func (s *Session) Put(p Profile) error {
 	defer s.mu.Unlock()
 	if s.closed {
 		return errors.New("保险库已锁定")
+	}
+	if _, e := resolveRoute(p, s.profiles); e != nil {
+		return e
 	}
 	for i := range s.profiles {
 		if s.profiles[i].ID == p.ID {
@@ -302,6 +362,9 @@ func (s *Session) SaveProfile(file string, p Profile) error {
 	if s.closed {
 		return errors.New("保险库已锁定")
 	}
+	if _, e := resolveRoute(p, s.profiles); e != nil {
+		return e
+	}
 	profiles := append([]Profile(nil), s.profiles...)
 	found := false
 	for i := range profiles {
@@ -317,7 +380,7 @@ func (s *Session) SaveProfile(file string, p Profile) error {
 		}
 		profiles = append(profiles, p)
 	}
-	copy := &Session{header: s.header, key: s.key, profiles: profiles, snippets: s.snippets, notes: s.notes}
+	copy := &Session{header: s.header, key: s.key, profiles: profiles, snippets: s.snippets, notes: s.notes, auditHead: s.auditHead}
 	if e := Save(file, copy, false); e != nil {
 		return e
 	}
@@ -358,20 +421,27 @@ func (s *Session) Names() []string {
 	}
 	return out
 }
+func ownerProof(key, id, message []byte) []byte {
+	k := hmac.New(sha256.New, key)
+	k.Write([]byte("ssh-client/owner-approval/v1"))
+	k.Write(id)
+	owner := k.Sum(nil)
+	defer wipe(owner)
+	h := hmac.New(sha256.New, owner)
+	h.Write(message)
+	return h.Sum(nil)
+}
+
 func (s *Session) Proof(message []byte) ([]byte, error) {
+	if s == nil {
+		return nil, errors.New("保险库已锁定")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil, errors.New("保险库已锁定")
 	}
-	k := hmac.New(sha256.New, s.key)
-	k.Write([]byte("ssh-client/owner-approval/v1"))
-	k.Write(s.header.ID)
-	owner := k.Sum(nil)
-	defer wipe(owner)
-	h := hmac.New(sha256.New, owner)
-	h.Write(message)
-	return h.Sum(nil), nil
+	return ownerProof(s.key, s.header.ID, message), nil
 }
 func (s *Session) Close() {
 	s.mu.Lock()
@@ -389,7 +459,10 @@ func wipe(b []byte) {
 	}
 	runtime.KeepAlive(b)
 }
-func Read(path string, pass []byte) (*Session, error) {
+
+var errVaultFilePermissions = errors.New("保险库文件权限必须仅对当前用户开放")
+
+func readVaultFile(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -403,9 +476,17 @@ func Read(path string, pass []byte) (*Session, error) {
 		return nil, ErrUnlock
 	}
 	if runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0 {
-		return nil, errors.New("保险库文件权限必须仅对当前用户开放")
+		return nil, errVaultFilePermissions
 	}
 	data, err := io.ReadAll(io.LimitReader(f, maxFileSize+1))
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func Read(path string, pass []byte) (*Session, error) {
+	data, err := readVaultFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -462,21 +543,12 @@ func ShortID() string            { return base64.RawURLEncoding.EncodeToString(r
 func (p Profile) String() string { return fmt.Sprintf("%s (%s@%s:%d)", p.Name, p.User, p.Host, p.Port) }
 
 func ReadKey(path string, key []byte) (*Session, error) {
-	f, e := os.Open(path)
-	if e != nil {
-		return nil, e
-	}
-	defer f.Close()
-	st, e := f.Stat()
-	if e != nil {
-		return nil, e
-	}
-	if !st.Mode().IsRegular() || st.Size() > maxFileSize || (runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0) {
+	data, err := readVaultFile(path)
+	if err == errVaultFilePermissions {
 		return nil, ErrUnlock
 	}
-	b, e := io.ReadAll(io.LimitReader(f, maxFileSize+1))
-	if e != nil {
-		return nil, e
+	if err != nil {
+		return nil, err
 	}
-	return OpenKey(b, key)
+	return OpenKey(data, key)
 }

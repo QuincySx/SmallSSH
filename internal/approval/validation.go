@@ -5,6 +5,7 @@ import (
 	"errors"
 	"regexp"
 
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/fileattrs"
 	"sshclient/internal/serverops"
 )
@@ -20,6 +21,8 @@ func validateFields(op Operation) error {
 	remaining := op
 	remaining.Host, remaining.Kind, remaining.Client, remaining.Endpoint, remaining.HostFingerprint = "", "", "", "", ""
 	switch op.Kind {
+	case "tunnel":
+		remaining.Tunnel = connectcfg.Tunnel{}
 	case "exec":
 		remaining.Command = ""
 	case "shell":

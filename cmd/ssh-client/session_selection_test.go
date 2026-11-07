@@ -8,10 +8,10 @@ import (
 	"sshclient/internal/approval"
 )
 
-func TestClientSessionEnvironmentIsExplicitAndLimitedToOperations(t *testing.T) {
+func TestLegacySessionEnvironmentIsRecognizedForExplicitRefusal(t *testing.T) {
 	for _, command := range [][]string{{"exec"}, {"shell"}, {"ls"}, {"get"}, {"put"}, {"replace"}, {"monitor"}, {"docker", "logs"}, {"transfer", "resume"}} {
 		if got := sessionForCommand(command, "", false, "my-ai.json"); got != "my-ai.json" {
-			t.Fatal("operation did not reuse explicit client session", command, got)
+			t.Fatal("operation did not recognize the legacy session selection", command, got)
 		}
 		if got := sessionForCommand(command, "other-ai.json", true, "my-ai.json"); got != "other-ai.json" {
 			t.Fatal("explicit flag lost precedence", command, got)

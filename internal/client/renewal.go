@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 
 	"sshclient/internal/approval"
@@ -15,7 +14,7 @@ func (d *Delegation) renewalScopeMatches(op approval.Operation, requested approv
 }
 
 func (c Client) renewDelegation(ctx context.Context, d *Delegation, op approval.Operation) error {
-	r, err := c.Call(ctx, broker.Message{Action: "renewalChallenge", ID: d.ParentID, Ticket: d.Ticket})
+	r, err := c.CallWithSession(ctx, broker.Message{Action: "renewalChallenge", ID: d.ParentID, Ticket: d.Ticket}, d)
 	if err != nil {
 		return err
 	}
@@ -24,8 +23,11 @@ func (c Client) renewDelegation(ctx context.Context, d *Delegation, op approval.
 		if challenge.SessionID != d.ParentID || !d.renewalScopeMatches(challenge.Operation, op) {
 			return errors.New("续期申请的客户端、服务器或权限已变化")
 		}
-		sig := ed25519.Sign(d.Key, approval.RenewalProofMessage(challenge))
-		r, err = c.Call(ctx, broker.Message{Action: "renewSession", ID: challenge.ID, Proof: sig})
+		sig, signErr := d.sign(approval.RenewalProofMessage(challenge))
+		if signErr != nil {
+			return signErr
+		}
+		r, err = c.CallWithSession(ctx, broker.Message{Action: "renewSession", ID: challenge.ID, Proof: sig}, d)
 		if err != nil {
 			return err
 		}

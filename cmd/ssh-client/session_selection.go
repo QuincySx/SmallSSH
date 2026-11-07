@@ -8,8 +8,8 @@ import (
 	"sshclient/internal/client"
 )
 
-// The environment points to an explicit client-held capability file; neither
-// a claimed client name nor a host match can select someone else's session.
+// Recognize legacy selections so operation commands fail closed with migration
+// guidance. Owner management and session serve must remain available.
 func sessionForCommand(args []string, explicit string, flagSet bool, environment string) string {
 	if flagSet {
 		return explicit
@@ -34,5 +34,5 @@ func writeApprovalNotice(w io.Writer, r approval.Request) {
 	if r.Status != "pending" {
 		return
 	}
-	fmt.Fprintf(w, "%s\n单次请求已进入授权中心，也可由人类终端执行 smallssh approve %s。连续操作请先申请 smallssh session 会话授权。\n", client.Describe(r), r.ID)
+	fmt.Fprintf(w, "%s\n单次请求已进入授权中心，也可由人类终端执行 smallssh approve %s。连续操作请运行 smallssh exec 连接ID，复用同一进程的 session 会话授权。\n", client.Describe(r), r.ID)
 }

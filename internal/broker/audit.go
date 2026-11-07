@@ -65,6 +65,9 @@ func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcom
 	v := auditEvent{Time: time.Now().UTC(), Event: event}
 	v.Outcome, v.ExitCode = outcome, code
 	if r != nil {
+		v.PeerPID = r.Peer.PID
+		v.ProcessInstance = auditText(r.Peer.Instance, 128)
+		v.ExecutableID = auditText(r.Peer.CodeID, 128)
 		v.ParentID = auditText(r.ParentID, 128)
 		v.RequestID = auditText(r.ID, 128)
 		if r.Nonce != "" {
@@ -90,7 +93,7 @@ func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcom
 // persisting the operation body. Reasons are codes, never raw error messages.
 func (a *audit) reject(op approval.Operation, parentID, reason, hostName string) error {
 	switch reason {
-	case "automation_disabled", "server_disabled", "protected_path", "uncontrolled_operation", "invalid_policy", "scope_denied", "invalid_authority", "invalid_operation", "owner_required", "path_resolution_failed":
+	case "automation_disabled", "server_disabled", "protected_path", "uncontrolled_operation", "destructive_command", "invalid_policy", "scope_denied", "invalid_authority", "invalid_operation", "owner_required", "path_resolution_failed":
 	default:
 		return errors.New("无效历史拒绝原因")
 	}
@@ -125,6 +128,10 @@ func addExcerpt(v *auditEvent, op approval.Operation) {
 	v.Path = auditText(op.Path, auditPathLimit)
 	v.Destination = auditText(op.Destination, auditPathLimit)
 	switch op.Kind {
+	case "tunnel":
+		v.Path = auditText(op.Tunnel.Listen, auditPathLimit)
+		v.Destination = auditText(op.Tunnel.Target, auditPathLimit)
+		v.Object = op.Tunnel.Kind
 	case "docker-logs", "docker-terminal":
 		v.Object = auditText(op.Docker.Target.ID, 128)
 	case "compose-plan", "compose-update":

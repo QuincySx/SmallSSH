@@ -33,10 +33,11 @@ func TestGrantApprovalShowsScopePairingAndRevokesWithoutAnotherPassword(t *testi
 			if permission == "full" && !h.ui.HasText("可使用此 SSH 账户的全部权限") {
 				t.Fatal("full session looked read-only")
 			}
+			h.click("允许")
 			h.click("保险库主密码")
 			h.ui.Type(string(h.pass))
 			prompt := h.a.inlineApproval
-			h.click(approvalConsentLabel(r))
+			h.ui.Key(0, ui.KeyEnter)
 			if !prompt.busy {
 				t.Fatal("password action did not start authentication")
 			}

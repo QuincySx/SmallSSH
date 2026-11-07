@@ -8,19 +8,22 @@ import (
 )
 
 type Event struct {
-	Outcome       string    `json:"outcome,omitempty"`
-	ExitCode      *int      `json:"exitCode,omitempty"`
-	Generation    string    `json:"generation,omitempty"`
-	ParentID      string    `json:"parentId,omitempty"`
-	OwnerIssued   bool      `json:"ownerIssued,omitempty"`
-	OwnerSession  bool      `json:"ownerSession,omitempty"`
-	Renewals      int       `json:"renewals,omitempty"`
-	Time          time.Time `json:"time"`
-	Event         string    `json:"event"`
-	RequestID     string    `json:"requestId,omitempty"`
-	Host          string    `json:"hostId,omitempty"`
-	Kind          string    `json:"kind,omitempty"`
-	OperationHash string    `json:"operationHash,omitempty"`
+	PeerPID         int       `json:"peerPid,omitempty"`
+	ProcessInstance string    `json:"processInstance,omitempty"`
+	ExecutableID    string    `json:"executableId,omitempty"`
+	Outcome         string    `json:"outcome,omitempty"`
+	ExitCode        *int      `json:"exitCode,omitempty"`
+	Generation      string    `json:"generation,omitempty"`
+	ParentID        string    `json:"parentId,omitempty"`
+	OwnerIssued     bool      `json:"ownerIssued,omitempty"`
+	OwnerSession    bool      `json:"ownerSession,omitempty"`
+	Renewals        int       `json:"renewals,omitempty"`
+	Time            time.Time `json:"time"`
+	Event           string    `json:"event"`
+	RequestID       string    `json:"requestId,omitempty"`
+	Host            string    `json:"hostId,omitempty"`
+	Kind            string    `json:"kind,omitempty"`
+	OperationHash   string    `json:"operationHash,omitempty"`
 	// Client is an unverified caller label, never an authenticated identity.
 	Client   string `json:"client,omitempty"`
 	HostName string `json:"hostName,omitempty"`
@@ -51,6 +54,8 @@ type Page struct {
 // each displayed field so a valid 100-row page also fits the local RPC frame,
 // even when JSON escapes every character. Missing legacy identity stays empty.
 func bounded(v Event) Event {
+	v.ProcessInstance = text(v.ProcessInstance, 128)
+	v.ExecutableID = text(v.ExecutableID, 128)
 	switch v.Outcome {
 	case "success", "failed", "cancelled", "unknown", "":
 	default:

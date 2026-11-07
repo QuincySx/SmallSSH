@@ -22,7 +22,7 @@ func (a *app) languageSettingsWith(c *ui.Context, apply func(string)) {
 	}
 	ui.Column(c).FillWidth().Padding(16, 16, 4, 16).Radius(8).Gap(0).
 		Background(c.Theme().Surface).Label(tr(c, "语言设置")).Children(func() {
-		settingsParameter(c, tr(c, "界面语言"), true, func() {
+		settingsParameter(c, tr(c, "界面语言"), func() {
 			if ui.Select(c, &selected, labels).Width(180).MinWidth(0).Label(tr(c, "界面语言选择")).Changed() {
 				for i, label := range labels {
 					if selected == label {

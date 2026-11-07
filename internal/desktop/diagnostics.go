@@ -26,7 +26,7 @@ func (a *app) diagnosticsView(c *ui.Context) {
 			}
 		}
 		ui.Row(c).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Tabs(c, &a.diagnosticTab, tr(c, "概览"), tr(c, "进程"), tr(c, "自启服务"), tr(c, "系统信息"), "Docker").Grow(1)
+			components.Tabs(c, &a.diagnosticTab, tr(c, "概览"), tr(c, "进程"), tr(c, "自启服务"), tr(c, "系统信息"), "Docker", tr(c, "端口")).Grow(1)
 			if !narrow {
 				controls()
 			}
@@ -52,6 +52,8 @@ func (a *app) diagnosticsView(c *ui.Context) {
 			a.systemInfoView(c, s)
 		case 4:
 			a.dockerView(c, s.Inventory)
+		case 5:
+			a.portsView(c, s.PortSnapshot)
 		default:
 			a.overview(c, sess)
 		}
@@ -69,6 +71,9 @@ func (a *app) hasSession(target *session) bool {
 }
 
 func (a *app) serverStateSession() *session {
+	if a.renderingWorkspaceTool != nil {
+		return a.workspaceToolSource(a.renderingWorkspaceTool)
+	}
 	if a.active >= 0 && a.active < len(a.sessions) {
 		return a.sessions[a.active]
 	}
@@ -101,7 +106,7 @@ func (a *app) processView(c *ui.Context, s *monitor.Stats) {
 	}
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 		ui.TextInput(c, &a.processSearch).Grow(1).Placeholder(tr(c, "搜索进程、PID 或账户")).Label(tr(c, "搜索进程"))
-		actionMenu(c, chosen == nil || state.busy || !a.statusActionsAvailable(), func(m *ui.Menu) {
+		a.actionMenu(c, chosen == nil || state.busy || !a.statusActionsAvailable(), func(m *ui.Menu) {
 			if chosen != nil {
 				a.processMenu(m, *chosen, s)
 			}
@@ -138,12 +143,12 @@ func (a *app) processView(c *ui.Context, s *monitor.Stats) {
 			text = nonEmpty(p.Elapsed)
 		}
 		cell := ui.Row(c).Fill().AlignItems(ui.Center).Children(func() { components.CellText(c, reviewText(text)).Tooltip(text) })
-		cell.ContextMenu(func(m *ui.Menu) {
+		cell.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) {
 			state.processSelected = row
 			state.processChoice.Clear()
 			state.processChoice.Add(processIdentity{p.PID, p.StartTicks, s.BootID})
 			a.processMenu(m, p, s)
-		})
+		}))
 	}).FillWidth().Grow(1).MinHeight(0).Label(tr(c, "进程列表"))
 	note := fmt.Sprintf(tr(c, "高占用进程 %d 项 · CPU 为进程运行期间平均值"), len(processes))
 	if s.ProcessNote != "" {
@@ -183,7 +188,7 @@ func (a *app) startupView(c *ui.Context, i *monitor.Inventory) {
 	ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
 		ui.TextInput(c, &a.serviceSearch).Grow(1).Placeholder(tr(c, "搜索服务")).Label(tr(c, "搜索自启服务"))
 		ui.Text(c, i.Manager).FontSize(10).TextColor(c.Theme().TextMuted)
-		actionMenu(c, chosen == nil || state.busy || !a.statusActionsAvailable(), func(m *ui.Menu) {
+		a.actionMenu(c, chosen == nil || state.busy || !a.statusActionsAvailable(), func(m *ui.Menu) {
 			if chosen != nil {
 				a.serviceMenu(m, *chosen, i.Manager)
 			}
@@ -204,12 +209,12 @@ func (a *app) startupView(c *ui.Context, i *monitor.Inventory) {
 			text = serviceEnabled(s.Enabled)
 		}
 		cell := ui.Row(c).Fill().AlignItems(ui.Center).Children(func() { components.CellText(c, text).Tooltip(s.Description) })
-		cell.ContextMenu(func(m *ui.Menu) {
+		cell.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) {
 			state.serviceSelected = row
 			state.serviceChoice.Clear()
 			state.serviceChoice.Add(s.Name)
 			a.serviceMenu(m, s, i.Manager)
-		})
+		}))
 	}).FillWidth().Grow(1).MinHeight(0).Label(tr(c, "自启服务列表"))
 	note := i.ServiceNote
 	if note == "" {

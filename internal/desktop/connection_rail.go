@@ -22,6 +22,15 @@ type connectionRailModel struct {
 	search      string
 	closed      map[string]bool
 	searchInput ui.Handle
+	focusSearch bool
+}
+
+const connectionRailItemHeight = 36
+
+func (a *app) focusConnectionSearch(c *ui.Context) {
+	a.sidebarHidden = false
+	a.connectionRailCache.focusSearch = true
+	c.Invalidate()
 }
 
 // Keep independent snapshots so in-place edits invalidate the flattened rows,
@@ -115,28 +124,35 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 	if compact {
 		label = tr(c, "连接窄栏")
 	}
+	inset := float32(0)
+	if compact {
+		inset = 6
+	}
 	c.Key("connection-sidebar")
 	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Gap(0).
-		Background(c.Theme().Surface).Label(label).
+		Background(c.Theme().Background).Label(label).
 		Disabled(a.page == 0 && a.connection.phase == "save").Children(func() {
 		c.Key("connection-sidebar-actions")
-		ui.Column(c).FillWidth().Height(36).Shrink(0).Padding(0, 6).Label(tr(c, "连接栏标题")).Children(func() {
+		ui.Column(c).FillWidth().Height(36).Shrink(0).Padding(0, inset).Label(tr(c, "连接栏标题")).Children(func() {
 			if components.NavigationIcon(c, "new-connection", tr(c, "新建连接"), components.PlusIcon, false, compact).Height(components.HeaderHeight).Clicked() {
 				a.navigate(a.newConnection)
 			}
 		})
 		c.Key("connection-sidebar-search-row")
-		ui.Column(c).FillWidth().Height(36).Shrink(0).Padding(0, 6).Justify(ui.Center).Label(tr(c, "连接搜索栏")).Children(func() {
+		ui.Column(c).FillWidth().Height(36).Shrink(0).Padding(0, inset).Justify(ui.Center).Label(tr(c, "连接搜索栏")).Children(func() {
 			if compact {
 				if components.NavigationIcon(c, "connection-sidebar-search", tr(c, "搜索连接"), components.SearchIcon, false, true).Height(components.FormHeight).Clicked() {
-					a.sidebarHidden = false
-					a.connectionRailCache.searchInput.Focus(c)
-					c.Invalidate()
+					a.focusConnectionSearch(c)
 				}
 			} else {
 				c.Key("connection-sidebar-search-input")
-				ui.TextInput(c, &a.search).FillWidth().Height(28).Shrink(0).PaddingY(2).MinWidth(0).
-					Placeholder(tr(c, "搜索名称 / 地址 / 分组")).Label(tr(c, "搜索连接")).Bind(&a.connectionRailCache.searchInput)
+				input := ui.TextInput(c, &a.search).FillWidth().Height(28).Shrink(0).PaddingY(2).MinWidth(0).
+					Placeholder(tr(c, "搜索服务器")).Label(tr(c, "搜索连接")).Tooltip(tr(c, "搜索名称 / 地址 / 分组")).
+					Bind(&a.connectionRailCache.searchInput)
+				if a.connectionRailCache.focusSearch {
+					input.Focus()
+					a.connectionRailCache.focusSearch = false
+				}
 			}
 		})
 		rows := a.connectionRailCache.rowsFor(a.connections, a.search, a.groups)
@@ -172,7 +188,11 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 					Padding(0, 8).Gap(4).AlignItems(ui.Center).Label(tr(c, "连接分组：") + groupLabel).Tooltip(groupLabel)
 				header.Children(func() {
 					if compact {
-						ui.Box(c).FillWidth().Height(1).Shrink(0).Background(c.Theme().Border)
+						arrow := components.ChevronRightIcon
+						if *open {
+							arrow = components.ChevronDownIcon
+						}
+						ui.Icon(c, arrow).Size(12, 12).TextColor(c.Theme().TextMuted)
 					} else {
 						arrow := components.ChevronRightIcon
 						if *open {
@@ -191,8 +211,12 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 			}
 			d := r.connection
 			item := components.NavigationItem(c, "connection:"+d.ID, d.Name, a.selected == d.ID, compact, func() {
-				components.ConnectionAvatar(c, d.ID)
-			}).Tooltip(connectionRailTooltip(d))
+				avatar := ui.Box(c).Size(28, 28).Shrink(0)
+				if !compact {
+					avatar.MarginStart(12)
+				}
+				avatar.Children(func() { components.ConnectionAvatar(c, d.ID) })
+			}).Height(connectionRailItemHeight).Tooltip(connectionRailTooltip(d))
 			if item.DoubleClicked() {
 				a.selected = previous
 				a.navigate(func() { a.switchHost(d.ID); a.openShellMode(true) })
@@ -201,7 +225,7 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 				a.connectionRailList.Focus(c)
 			}
 			item.ContextMenu(func(m *ui.Menu) { a.connectionContextMenu(m, d, previous) })
-		}).FillWidth().Grow(1).MinHeight(0).Padding(0, 6, 6, 6).Gap(4).
+		}).FillWidth().Grow(1).MinHeight(0).Padding(0, inset, 6, inset).Gap(2).
 			Focusable().FocusGroup(ui.Vertical).Label(tr(c, "连接头像列表"))
 		// Scope navigation to the virtual list, not only the avatars currently
 		// built inside its viewport. Group headings never become selections.
@@ -249,6 +273,9 @@ func (a *app) connectionContextMenu(m *ui.Menu, d vault.Summary, previous string
 	if m.Item(tr(nil, "连接终端")).Chosen() {
 		a.selected = previous
 		a.navigate(func() { a.switchHost(d.ID); a.openShell() })
+	}
+	if m.Item(tr(nil, "SSH 隧道…")).Chosen() {
+		a.openTunnels(d.ID)
 	}
 	if m.Item(tr(nil, "编辑连接")).Chosen() {
 		a.selected = previous

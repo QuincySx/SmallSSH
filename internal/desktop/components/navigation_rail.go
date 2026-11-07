@@ -29,8 +29,7 @@ func NavigationSidebar(c *ui.Context, key, label string, expandedWidth float32, 
 	}
 	c.Key(key)
 	return ui.Column(c).Width(width).FillHeight().Shrink(0).MinHeight(0).
-		Background(c.Theme().Surface).BorderWidth(0, 1, 0, 0).
-		BorderColor(c.Theme().Border).Label(label).Children(func() {
+		Background(c.Theme().Surface).Label(label).Children(func() {
 		// Scroll reads its identity during construction, before its children.
 		c.Key("navigation-sidebar-scroll:" + key)
 		ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Label(label + tr(c, "滚动区")).Children(func() {
@@ -43,12 +42,21 @@ func NavigationSidebar(c *ui.Context, key, label string, expandedWidth float32, 
 
 // NavigationItem keeps the icon in a fixed left slot. Expanding appends a text
 // sibling without replacing the button, icon subtree or keyboard focus target.
-func NavigationItem(c *ui.Context, key any, label string, selected, compact bool, content func()) ui.Element {
+func NavigationItem(c *ui.Context, key any, label string, selected, compact bool, content func(), tooltip ...string) ui.Element {
 	t := c.Theme()
 	c.Key(key)
 	item := ui.ButtonBase(c).Height(NavigationItemHeight).Shrink(0).Padding(0).Radius(10).
-		Justify(ui.Start).AlignItems(ui.Center).Label(label).Tooltip(label).
+		Justify(ui.Start).AlignItems(ui.Center).Label(label).
 		Selected(selected).FocusRing(false)
+	// Tooltips are created eagerly. A modal can omit one at construction so
+	// keyboard Escape reaches its draft guard instead of dismissing a tip.
+	tip := label
+	if len(tooltip) > 0 {
+		tip = tooltip[0]
+	}
+	if tip != "" {
+		item.Tooltip(tip)
+	}
 	if compact {
 		item.Width(NavigationIconSlotSize)
 	} else {
@@ -90,8 +98,6 @@ func NavigationItem(c *ui.Context, key any, label string, selected, compact bool
 		item.DrawOver(func(p *ui.Painter, r ui.Rect) {
 			if item.FocusVisible() {
 				p.Stroke(r, t.Accent, 10, 2)
-			} else if selected {
-				p.Stroke(r, t.Accent.Alpha(.65), 10, 1)
 			}
 		})
 	}
@@ -107,7 +113,7 @@ func NavigationItem(c *ui.Context, key any, label string, selected, compact bool
 }
 
 // NavigationIcon shares the same circular icon in expanded and compact modes.
-func NavigationIcon(c *ui.Context, key any, label string, icon *ui.SVG, selected, compact bool) ui.Element {
+func NavigationIcon(c *ui.Context, key any, label string, icon *ui.SVG, selected, compact bool, tooltip ...string) ui.Element {
 	return NavigationItem(c, key, label, selected, compact, func() {
 		background := c.Theme().TextMuted.Alpha(.10)
 		if selected {
@@ -118,7 +124,7 @@ func NavigationIcon(c *ui.Context, key any, label string, icon *ui.SVG, selected
 			Label(label + tr(c, "图标")).Justify(ui.Center).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, icon).Size(NavigationGlyphSize, NavigationGlyphSize)
 		})
-	})
+	}, tooltip...)
 }
 
 // Compact wrappers retain the existing rail API and native button behavior.

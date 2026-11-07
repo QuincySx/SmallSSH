@@ -5,6 +5,7 @@ import (
 	"github.com/egoist/mygo"
 	"runtime"
 	"slices"
+	"sshclient/internal/connectcfg"
 )
 
 type menuAction struct {
@@ -37,10 +38,13 @@ func (a *app) menuGroups() []menuGroup {
 				}
 			}},
 			{"编辑当前连接", "", a.editConnection},
+			{"SSH 隧道", "", func() { a.openTunnels(a.selected) }},
 			{"服务器备注", "", func() { a.openServerNotes(a.selected) }},
 			{"关闭当前标签", closeKey, func() {
-				if a.editShown {
+				if a.editorWindowFocused() || a.editShown {
 					a.closeEditor()
+				} else if g := a.activeTerminalGroup; g != nil && g.selectedTool != nil {
+					a.closeWorkspaceTab(workspaceTab{tool: g.selectedTool})
 				} else {
 					a.closeSession()
 				}
@@ -67,8 +71,8 @@ func (a *app) menuGroups() []menuGroup {
 			{"实际大小", zoomActual, a.zoomActual},
 		}},
 		{"security", "安全", []menuAction{
-			{"授权中心", "", func() { a.page = 3 }},
-			{"设置", "", func() { a.page = 4 }},
+			{"授权中心", "", func() { a.openSettingsWindow(settingsApprovals) }},
+			{"设置", "", func() { a.openSettingsWindow(settingsWorkspace) }},
 			{"立即锁定", "CmdOrCtrl+Shift+L", a.confirmLock},
 		}},
 	}
@@ -132,12 +136,15 @@ func (a *app) navigate(run func()) {
 }
 
 func (a *app) connectionHasChanges() bool {
+	if a.connection.pendingNote != nil {
+		return true
+	}
 	p := a.form
 	if a.details == nil {
-		return p.Name != "" || p.Host != "" || p.User != "" || p.Group != "" || p.Password != "" || a.keyFile != "" || a.port != "22" || p.Policy.Disabled || p.Policy.Unrestricted || len(p.Policy.ProtectedPaths) > 0
+		return p.Name != "" || p.Host != "" || p.User != "" || p.Group != "" || p.Password != "" || a.keyFile != "" || a.port != "22" || p.Policy.Disabled || p.Policy.Unrestricted || len(p.Policy.ProtectedPaths) > 0 || a.formNote.Manual != "" || p.Terminal != (connectcfg.Terminal{}) || p.Network != (connectcfg.Network{}) || p.Hardware != (connectcfg.Hardware{})
 	}
 	d := a.details
-	return p.Name != d.Name || p.Host != d.Host || p.User != d.User || p.Group != d.Group || p.Auth != d.Auth || p.Fingerprint != d.Fingerprint || a.port != fmt.Sprint(d.Port) || a.connection.replace || p.Policy.Disabled != d.Policy.Disabled || p.Policy.Unrestricted != d.Policy.Unrestricted || !slices.Equal(p.Policy.ProtectedPaths, d.Policy.ProtectedPaths)
+	return p.Name != d.Name || p.Host != d.Host || p.User != d.User || p.Group != d.Group || p.Auth != d.Auth || p.Fingerprint != d.Fingerprint || a.port != fmt.Sprint(d.Port) || a.connection.replace || p.Policy.Disabled != d.Policy.Disabled || p.Policy.Unrestricted != d.Policy.Unrestricted || !slices.Equal(p.Policy.ProtectedPaths, d.Policy.ProtectedPaths) || a.formNote.Manual != a.formNoteOriginal.Manual || p.Terminal != d.Terminal || p.Network != d.Network || p.Hardware != d.Hardware || a.connection.replaceProxy
 }
 
 func (a *app) installMenu() {
@@ -146,9 +153,9 @@ func (a *app) installMenu() {
 		children := []*mygo.MenuItem{}
 		for _, action := range group.actions {
 			children = append(children, &mygo.MenuItem{Label: tr(nil, action.label), Accelerator: action.shortcut, Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
-				fromTools, sequence := a.toolsWindowFocused(), a.toolsWindowSequence
+				origin := a.captureWindowMenuOrigin()
 				a.postUI(func() {
-					a.runWindowMenuAction(action, fromTools, sequence)
+					a.runHostedWindowMenuAction(action, origin)
 				})
 			}})
 		}

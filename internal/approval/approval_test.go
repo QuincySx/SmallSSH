@@ -317,3 +317,140 @@ func TestBucketQuotaIgnoresTheReportedLabel(t *testing.T) {
 		t.Fatalf("a second process was blocked: %v", err)
 	}
 }
+
+func lifetimeGrantFixture(t *testing.T, requested int) (*Manager, Request) {
+	t.Helper()
+	m := New(prove)
+	r, _, err := m.Create(Operation{Host: "server", Kind: "grant", Client: "AI",
+		Grant: GrantScope{PublicKey: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", Permission: "full",
+			LifetimeSeconds: requested, IdleSeconds: min(requested, 15*60)}}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m, r
+}
+
+func TestOwnerChosenLifetimeOverridesTheRequest(t *testing.T) {
+	for _, chosen := range []int{60, 15 * 60, 30 * 60, 3600, 6 * 3600, 12 * 3600, MaxGrantLifetime} {
+		m, r := lifetimeGrantFixture(t, 2*3600)
+		reviewed := r
+		reviewed.Operation.Grant.LifetimeSeconds = chosen
+		reviewed.Operation.Grant.IdleSeconds = min(reviewed.Operation.Grant.IdleSeconds, chosen)
+		proof, err := DecisionProof(reviewed, true, prove)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = m.DecideWithLifetime(r.ID, true, chosen, 0, proof); err != nil {
+			t.Fatal("owner duration rejected", chosen, err)
+		}
+		got, err := m.Get(r.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Status != "approved" || got.Operation.Grant.LifetimeSeconds != chosen {
+			t.Fatal("stored grant kept the requested duration", got.Operation.Grant.LifetimeSeconds)
+		}
+		if got.Operation.Grant.IdleSeconds > chosen {
+			t.Fatal("idle window exceeded the chosen duration", got.Operation.Grant.IdleSeconds)
+		}
+		if d := time.Until(got.Expires); d > time.Duration(chosen)*time.Second || d < time.Duration(chosen-60)*time.Second {
+			t.Fatal("expiry did not follow the chosen duration", d)
+		}
+	}
+}
+
+func TestOwnerLifetimeRejectsOutOfRangeAndSignsTheSameRequest(t *testing.T) {
+	m, r := lifetimeGrantFixture(t, 2*3600)
+	proof, _ := DecisionProof(r, true, prove)
+	tooLong := r
+	tooLong.Operation.Grant.LifetimeSeconds = MaxGrantLifetime + 1
+	tooLongProof, _ := DecisionProof(tooLong, true, prove)
+	if err := m.DecideWithLifetime(r.ID, true, MaxGrantLifetime+1, 0, tooLongProof); err == nil {
+		t.Fatal("a duration beyond 24 hours was accepted")
+	}
+	if err := m.DecideWithLifetime(r.ID, true, 30, 0, proof); err == nil {
+		t.Fatal("a duration under one minute was accepted")
+	}
+	// A proof signed for the original request must not authorize a longer one.
+	if err := m.DecideWithLifetime(r.ID, true, 6*3600, 0, proof); err == nil {
+		t.Fatal("a proof for the requested duration authorized another one")
+	}
+	if got, _ := m.Get(r.ID); got != r {
+		t.Fatal("failed decisions changed the request", got)
+	}
+	if err := m.Decide(r.ID, true, proof); err != nil {
+		t.Fatal("failed decisions invalidated the original owner proof", err)
+	}
+}
+
+func TestFailedLifetimeDecisionPreservesTheReviewedRequest(t *testing.T) {
+	m, reviewed := lifetimeGrantFixture(t, 2*3600)
+	proof, err := DecisionProof(reviewed, true, prove)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DecideWithLifetime(reviewed.ID, true, 3600, 60, nil); err == nil {
+		t.Fatal("an empty owner proof was accepted")
+	}
+	if got, err := m.Get(reviewed.ID); err != nil || got != reviewed {
+		t.Fatal("a rejected decision changed the stored request", got, err)
+	}
+	if err := m.Decide(reviewed.ID, true, proof); err != nil {
+		t.Fatal("a rejected decision invalidated the reviewed proof", err)
+	}
+}
+
+func TestOwnerCannotApproveAnInvalidIdleWindow(t *testing.T) {
+	m, r := lifetimeGrantFixture(t, 2*3600)
+	reviewed := r
+	reviewed.Operation.Grant.LifetimeSeconds = 3600
+	reviewed.Operation.Grant.IdleSeconds = 1
+	proof, err := DecisionProof(reviewed, true, prove)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.DecideWithLifetime(r.ID, true, 3600, 1, proof); err == nil {
+		t.Fatal("an invalid idle window was approved with a valid proof")
+	}
+	if got, err := m.Get(r.ID); err != nil || got != r {
+		t.Fatal("invalid idle window changed the pending request", got, err)
+	}
+}
+
+func TestLifetimeSubmissionRequiresARevocableOwnerProof(t *testing.T) {
+	m, r := lifetimeGrantFixture(t, 2*3600)
+	reviewed := r
+	reviewed.Operation.Grant.LifetimeSeconds = 3600
+	proof, _ := DecisionProof(reviewed, true, prove)
+	if err := m.DecideWithLifetime(r.ID, false, 3600, 0, proof); err == nil {
+		t.Fatal("a denial accepted an approval proof")
+	}
+	exec, _, err := m.Create(Operation{Host: "server", Kind: "exec", Command: "id", Client: "AI"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execProof, _ := DecisionProof(exec, true, prove)
+	if err := m.DecideWithLifetime(exec.ID, true, 3600, 0, execProof); err == nil {
+		t.Fatal("a one-shot command accepted a session duration")
+	}
+}
+
+func TestCreateOwnerFromPeerStoresTheBrokerEstablishedProcess(t *testing.T) {
+	m := New(prove)
+	peer := Peer{PID: 4242, Path: "/synthetic/owner", Bundle: "synthetic.app", Instance: "process-generation", CodeID: "sha256:synthetic"}
+	r, ticket, err := m.CreateOwnerFromPeer(Operation{Host: "server", Kind: "shell", Client: "untrusted label"}, peer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ticket == "" || r.OwnerIssued != true || r.OwnerSession != true || r.Peer != peer {
+		t.Fatalf("owner request = %#v, ticket present = %t", r, ticket != "")
+	}
+	stored, err := m.Get(r.ID)
+	if err != nil || stored.Peer != peer || stored.Operation.Client != "untrusted label" {
+		t.Fatalf("stored request = %#v, %v", stored, err)
+	}
+	legacy, _, err := m.CreateOwner(Operation{Host: "server", Kind: "shell", Client: "legacy"})
+	if err != nil || legacy.Peer != (Peer{}) {
+		t.Fatalf("CreateOwner unexpectedly invented a peer: %#v, %v", legacy, err)
+	}
+}

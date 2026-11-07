@@ -27,15 +27,26 @@ type toolsSharedState struct {
 	editShown, prompt, snippet, transfers             bool
 	promptDetached, snippetDetached, transferDetached bool
 	status, title                                     string
+	edge                                              string
+	layoutRevision                                    uint64
 }
 
 func (a *app) sharedToolsState() toolsSharedState {
-	return toolsSharedState{a.online, a.toolsDetached, a.toolsHidden, a.toolsRight, a.fileExpanded,
-		a.page, a.dock, a.serverStateSession(), a.editShown, a.prompt.open, a.snippetOpen, a.transfersOpen,
-		a.prompt.detached, a.snippetDetached, a.transfersDetached, a.status, a.toolsWindowTitle()}
+	return toolsSharedState{online: a.online, detached: a.toolsDetached, hidden: a.toolsHidden,
+		right: a.toolsRight, expanded: a.fileExpanded, page: a.page, dock: a.dock,
+		active: a.serverStateSession(), editShown: a.editShown, prompt: a.prompt.open, snippet: a.snippetOpen,
+		transfers: a.transfersOpen, promptDetached: a.prompt.detached, snippetDetached: a.snippetDetached,
+		transferDetached: a.transfersDetached, status: a.status, title: a.toolsWindowTitle(),
+		edge: a.toolsEdge, layoutRevision: a.workspaceRevision}
 }
 
 func (a *app) invalidateWindows() {
+	if a.settingsWin != nil {
+		a.settingsWin.Invalidate()
+	}
+	if a.editorWin != nil {
+		a.editorWin.Invalidate()
+	}
 	if a.win != nil {
 		a.win.Invalidate()
 	}
@@ -162,6 +173,9 @@ func (a *app) moveToolDialogsToMain() {
 	if a.prompt.detached {
 		a.rebindDockerLogs()
 	}
+	if a.prompt.host == dialogHostTools {
+		a.prompt.host = dialogHostMain
+	}
 	a.prompt.detached, a.snippetDetached = false, false
 	if a.serverNotes != nil {
 		a.serverNotes.detached = false
@@ -184,11 +198,9 @@ func (a *app) detachedToolsView(c *ui.Context) {
 		a.syncFollowingFilePanes()
 		a.fileArea(c)
 		if a.status != "" {
-			ui.Text(c, reviewText(a.status)).FillWidth().Padding(4, 8).FontSize(11).SingleLine().TextColor(c.Theme().TextMuted)
+			ui.Text(c, reviewText(a.status)).FillWidth().Padding(4, 8).FontSize(11).SingleLine().TextColor(c.Theme().TextMuted).Tooltip(reviewText(a.status))
 		}
-		if a.prompt.detached {
-			a.promptView(c)
-		}
+		a.promptForHost(c, dialogHostTools)
 		if a.snippetDetached {
 			a.snippetDialog(c)
 		}
@@ -218,7 +230,7 @@ func (a *app) resetToolPresentation() {
 			}
 		}
 	}
-	rebindToolList(&a.snippetTable)
+	a.snippetGrid = ui.GridState{Handle: a.snippetGrid.Handle, Key: a.snippetGrid.Key, Selected: a.snippetGrid.Selected, Selection: a.snippetGrid.Selection, Label: a.snippetGrid.Label}
 	rebindToolList(&a.transferTable)
 	for _, sess := range a.sessions {
 		if state := sess.management; state != nil {

@@ -52,11 +52,12 @@ type directoryLoad struct {
 	seq      uint64
 }
 type filePane struct {
-	id        uint64
-	endpoint  string
-	states    map[string]*directoryBrowser
-	treeWidth float32
-	follow    bool
+	id         uint64
+	endpoint   string
+	states     map[string]*directoryBrowser
+	treeWidth  float32
+	treeHidden bool
+	follow     bool
 }
 
 func newFilePane(endpoint string, follow bool) *filePane {
@@ -131,6 +132,17 @@ func (a *app) ensurePanes() {
 }
 
 func (a *app) activeFileEndpoint() string {
+	if tool := a.workspaceTools[toolFiles]; tool != nil && tool.source != nil && tool.source.host != "" {
+		if a.hasSession(tool.source) {
+			return tool.source.host
+		}
+		for _, profile := range a.connections {
+			if profile.ID == tool.source.host {
+				return profile.ID
+			}
+		}
+		return localEndpoint
+	}
 	if a.active >= 0 && a.active < len(a.sessions) && a.sessions[a.active].host != "" {
 		return a.sessions[a.active].host
 	}
@@ -163,9 +175,7 @@ func (a *app) chooseFileEndpoint(p *filePane, choice string) {
 }
 func (a *app) initializeWorkspace() {
 	a.ensurePanes()
-	if a.server != nil {
-		a.snippets = a.server.Vault.Snippets()
-	}
+	a.loadSnippets()
 	if a.primaryFilePane.endpoint == "" {
 		a.primaryFilePane.endpoint = localEndpoint
 	}
@@ -233,14 +243,38 @@ func (a *app) applyDirectory(b *directoryBrowser, local bool, dir string, fs []s
 	b.cache[dir] = fs
 	b.indexDirectory(local, dir)
 	if navigate && seq == b.seq {
-		b.dir = dir
-		b.address = dir
-		b.chosen.Clear()
-		b.selected = -1
-		b.anchor = -1
-		b.reveal(local, dir)
+		b.showDirectory(local, dir)
 	}
 }
+
+func (b *directoryBrowser) showDirectory(local bool, dir string) {
+	b.dir = dir
+	b.address = dir
+	b.chosen.Clear()
+	b.selected = -1
+	b.anchor = -1
+	b.reveal(local, dir)
+}
+
+// friendlyDirectoryError turns the common SFTP refusals into something the
+// owner can act on, without hiding the rest of the message.
+func friendlyDirectoryError(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "permission denied"):
+		return tr(nil, "没有权限访问此目录") + "（" + message + "）"
+	case strings.Contains(lower, "no such file"):
+		return tr(nil, "目录不存在") + "（" + message + "）"
+	case strings.Contains(lower, "not a directory"):
+		return tr(nil, "这不是目录") + "（" + message + "）"
+	}
+	return message
+}
+
 func (a *app) loadDirectory(p *filePane, dir string, navigate bool) {
 	endpoint, b := p.endpoint, p.browser()
 	local := endpoint == localEndpoint
@@ -296,8 +330,16 @@ func (a *app) loadDirectory(p *filePane, dir string, navigate bool) {
 			return
 		}
 		if e != nil {
-			b.loadError[dir] = e.Error()
-			a.status = e.Error()
+			// Keep the failure on the pane instead of the previous listing:
+			// showing stale rows made a permission error look like a refresh
+			// that never happened.
+			delete(b.cache, dir)
+			b.indexDirectory(local, dir)
+			b.loadError[dir] = friendlyDirectoryError(e)
+			if request.navigate && request.seq == b.seq {
+				b.showDirectory(local, dir)
+			}
+			a.status = b.loadError[dir]
 			return
 		}
 		a.applyDirectory(b, local, dir, fs, request.seq, request.navigate)
@@ -341,12 +383,7 @@ func (a *app) navigateDirectory(p *filePane, dir string) {
 			}
 		}
 		b.seq++
-		b.dir = dir
-		b.address = dir
-		b.chosen.Clear()
-		b.selected = -1
-		b.anchor = -1
-		b.reveal(p.endpoint == localEndpoint, dir)
+		b.showDirectory(p.endpoint == localEndpoint, dir)
 		return
 	}
 	b.address = dir
@@ -380,6 +417,7 @@ func (a *app) openPaneFile(p *filePane) {
 	a.openEntries(p, b.dir, chosenFiles(b))
 }
 func (a *app) installEditor(endpoint, name, text, hash string) {
+	a.cancelEditorRead()
 	buffer := editor.NewBuffer(text)
 	buffer.SetLanguage(editor.LanguageFor(name))
 	buffer.MarkSaved()
@@ -388,16 +426,8 @@ func (a *app) installEditor(endpoint, name, text, hash string) {
 	a.editHash = hash
 	a.editHost = endpoint
 	a.editLocal = endpoint == localEndpoint
-	a.editShown = true
-	a.ensureTerminalGroups()
-	if a.editorTerminalGroup != nil {
-		a.editorTerminalGroup.editorSelected = false
-	}
-	a.editorTerminalGroup = a.activeTerminalGroup
-	a.editorTerminalGroup.editorSelected = true
-	a.contentFocus = true
-	a.fileExpanded = false
-	a.page = 1
+	a.editShown = false
+	a.openEditorWindow()
 	a.saveAs = name + ".edited"
 	a.status = ""
 }
@@ -408,60 +438,8 @@ func validText(data []byte) error {
 	return nil
 }
 func textHash(data []byte) string { h := sha256.Sum256(data); return hex.EncodeToString(h[:]) }
-func (a *app) readEditor(endpoint, name string) {
-	gen := a.generation
-	a.editorSequence++
-	seq := a.editorSequence
-	buffer, version := a.edit.Buffer, a.edit.Buffer.Version()
-	install := func(text, hash string) {
-		if a.editorSequence != seq {
-			return
-		}
-		open := func(string) { a.installEditor(endpoint, name, text, hash) }
-		if a.edit.Buffer != buffer || buffer.Version() != version {
-			a.ask(tr(nil, "切换到已读取的文件？"), a.endpointName(endpoint)+" · "+name, tr(nil, "读取期间编辑器发生了变化。继续会替换当前编辑内容。"), "", "", tr(nil, "打开文件"), open)
-		} else {
-			open("")
-		}
-	}
-	if endpoint == localEndpoint {
-		go func() {
-			data, e := readLocalText(name)
-			if len(data) > 4<<20 {
-				e = errors.New(tr(nil, "文本超过 4 MiB，请使用本地编辑器"))
-			}
-			if e == nil {
-				e = validText(data)
-			}
-			a.postUI(func() {
-				if gen != a.generation {
-					return
-				}
-				if e != nil {
-					a.status = e.Error()
-				} else {
-					install(string(data), textHash(data))
-				}
-			})
-		}()
-		return
-	}
-	a.begin(approval.Operation{Host: endpoint, Kind: "get", Path: name}, func(s *client.Stream) (func(), error) {
-		defer s.Close()
-		b := &limitBuffer{limit: 4 << 20}
-		_, _, e := s.Copy(b, io.Discard)
-		if e != nil {
-			return nil, e
-		}
-		if e = validText(b.Bytes()); e != nil {
-			return nil, e
-		}
-		text, hash := b.String(), textHash(b.Bytes())
-		return func() { install(text, hash) }, nil
-	})
-}
 func (a *app) saveEditor() {
-	if a.edit == nil || a.editPath == "" || !a.edit.Buffer.Modified() || a.editorSaving == a.edit || a.busy {
+	if a.editorRead != nil || a.edit == nil || a.editPath == "" || !a.edit.Buffer.Modified() || a.editorSaving == a.edit || a.busy {
 		return
 	}
 	if a.editLocal {
@@ -471,6 +449,9 @@ func (a *app) saveEditor() {
 	a.replaceText()
 }
 func (a *app) saveEditorAs() {
+	if a.editorRead != nil {
+		return
+	}
 	endpoint, original := a.editHost, a.editPath
 	a.ask(tr(nil, "另存为"), a.endpointName(endpoint), tr(nil, "保存到新路径；已有文件不会被覆盖。"), tr(nil, "完整目标路径"), original+".edited", tr(nil, "保存"), func(value string) {
 		if endpoint != a.editHost || original != a.editPath {
@@ -539,23 +520,42 @@ func saveLocalText(name string, content []byte, original string, create bool) er
 	return os.Rename(tmp, name)
 }
 func (a *app) saveLocalEditor(name string, create bool) {
-	content := []byte(a.edit.Buffer.String())
-	doc, old, gen, buffer := a.editPath, a.editHash, a.generation, a.edit.Buffer
-	a.work(func() (func(), error) {
-		e := saveLocalText(name, content, old, create)
-		return func() {
-			if a.generation != gen || a.editPath != doc || a.edit.Buffer != buffer {
+	if a.busy || a.edit == nil || a.editorSaving == a.edit {
+		return
+	}
+	document := a.edit
+	content := []byte(editorBufferText(document.Buffer))
+	doc, old, gen, buffer := a.editPath, a.editHash, a.generation, document.Buffer
+	a.busy = true
+	a.editorSaving = document
+	go func() {
+		err := saveLocalText(name, content, old, create)
+		a.postUI(func() {
+			if a.editorSaving == document {
+				a.editorSaving = nil
+			}
+			if a.generation != gen {
+				return
+			}
+			a.busy = false
+			if err != nil {
+				a.status = err.Error()
+				return
+			}
+			if a.edit != document || a.editPath != doc || a.edit.Buffer != buffer {
 				return
 			}
 			a.editPath = name
+			a.refreshEditorWindowTitle()
 			a.editHash = textHash(content)
-			if buffer.String() == string(content) {
+			if editorBufferText(buffer) == string(content) {
 				buffer.MarkSaved()
 			}
 			a.status = tr(nil, "已保存本机文件 · ") + name
-		}, e
-	})
+		})
+	}()
 }
+
 func (a *app) nativeTerminal(c *ui.Context, s *session) {
 	view := terminal.View(c, s.term).FillWidth().Grow(1).MinHeight(0)
 	active := a.terminalLayout == nil || s == a.currentTerminal()
@@ -582,6 +582,10 @@ func (a *app) fileOperation(p *filePane, kind string) {
 func (a *app) fileOperationAt(p *filePane, dir string, fs []sshconn.File, kind string) {
 	b, endpoint := p.browser(), p.endpoint
 	local := endpoint == localEndpoint
+	if kind == "remove" {
+		a.confirmRemoveFiles(endpoint, b, dir, fs)
+		return
+	}
 	target := dir
 	if len(fs) == 1 && kind != "new" && kind != "mkdir" {
 		target = joinPath(local, dir, fs[0].Name)
@@ -746,7 +750,15 @@ func mutateLocal(kind, name, dest string, mode uint32) error {
 	case "mkdir":
 		return os.Mkdir(name, 0700)
 	case "remove":
-		return os.Remove(name)
+		err := os.Remove(name)
+		if err != nil {
+			if st, statErr := os.Lstat(name); statErr == nil && st.IsDir() {
+				if entries, readErr := os.ReadDir(name); readErr == nil && len(entries) > 0 {
+					return fmt.Errorf("%s: %w", tr(nil, "目录不是空的"), err)
+				}
+			}
+		}
+		return err
 	case "rename":
 		if _, e := os.Lstat(dest); e == nil {
 			return errors.New(tr(nil, "目标已存在，请使用新名称"))
@@ -790,13 +802,12 @@ func (a *app) transferEntries(fromEndpoint, sourceDir string, entries []sshconn.
 	if fromEndpoint == "" || toEndpoint == "" || (fromEndpoint == localEndpoint) == (toEndpoint == localEndpoint) || len(entries) == 0 {
 		return
 	}
-	upload := fromEndpoint == localEndpoint
 	for _, f := range entries {
-		if f.Directory {
-			a.status = tr(nil, "目录可浏览；传输时请选择其中的文件（支持多选）")
+		if fromEndpoint == localEndpoint && f.Directory {
+			a.status = tr(nil, "目录上传尚不支持，请选择普通文件")
 			return
 		}
-		if strings.ContainsAny(f.Name, "/\\\x00") {
+		if f.Name == "" || f.Name == "." || f.Name == ".." || strings.ContainsAny(f.Name, "/\\\x00") {
 			a.status = tr(nil, "文件名称无效")
 			return
 		}
@@ -805,41 +816,9 @@ func (a *app) transferEntries(fromEndpoint, sourceDir string, entries []sshconn.
 	for _, f := range entries {
 		names = append(names, reviewText(f.Name))
 	}
-	a.ask(tr(nil, "传输文件"), a.endpointName(fromEndpoint)+" · "+sourceDir+"\n→ "+a.endpointName(toEndpoint)+" · "+destinationDir, strings.Join(names, "\n")+tr(nil, "\n\n目标已存在时跳过，不覆盖。"), "", "", tr(nil, "加入队列"), func(string) {
-		host, direction := toEndpoint, "upload"
-		if !upload {
-			host = fromEndpoint
-			direction = "download"
-		}
-		gen := a.generation
-		a.work(func() (func(), error) {
-			ids := []string{}
-			for _, f := range entries {
-				local, remote := filepath.Join(sourceDir, f.Name), path.Join(destinationDir, f.Name)
-				if !upload {
-					local = filepath.Join(destinationDir, f.Name)
-					remote = path.Join(sourceDir, f.Name)
-				}
-				j, e := a.transfers.Add(host, direction, local, remote)
-				if e != nil {
-					return func() {
-						a.status = fmt.Sprintf(tr(nil, "已建立 %d 项，后续失败: %s"), len(ids), e)
-						a.jobs = a.transfers.List()
-					}, nil
-				}
-				ids = append(ids, j.ID)
-			}
-			return func() {
-				if a.generation != gen {
-					return
-				}
-				a.jobs = a.transfers.List()
-				for _, id := range ids {
-					a.runTransfer(id)
-				}
-				a.status = ""
-			}, nil
-		})
+	entries = append([]sshconn.File(nil), entries...)
+	a.ask(tr(nil, "传输文件"), a.endpointName(fromEndpoint)+" · "+sourceDir+"\n→ "+a.endpointName(toEndpoint)+" · "+destinationDir, strings.Join(names, "\n")+tr(nil, "\n\n已有目标不会覆盖；下载文件夹会保留层级，符号链接和特殊文件会报错。"), "", "", tr(nil, "加入队列"), func(string) {
+		a.queueFileEntries(fromEndpoint, sourceDir, entries, toEndpoint, destinationDir)
 	})
 }
 
@@ -866,12 +845,13 @@ func (a *app) transferArrived(job transfer.Job) {
 		for i := range files {
 			if files[i].Name == base {
 				files[i].Size = job.Size
+				files[i].Directory = job.Directory
 				found = true
 				break
 			}
 		}
 		if !found {
-			files = append(files, sshconn.File{Name: base, Size: job.Size, Modified: time.Now()})
+			files = append(files, sshconn.File{Name: base, Size: job.Size, Directory: job.Directory, Modified: time.Now()})
 		}
 		b.cache[dir] = sortedFiles(files)
 		b.indexDirectory(local, dir)

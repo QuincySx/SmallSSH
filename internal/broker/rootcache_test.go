@@ -8,7 +8,7 @@ import (
 func TestProtectedRootCacheExpiresAndClears(t *testing.T) {
 	now := time.Now()
 	cache := protectedRootCache{now: func() time.Time { return now }}
-	key := rootCacheKey("profile", []string{"/etc", "/home"})
+	key := rootCacheKey(poolLease{key: poolKey{profile: "profile"}}, []string{"/etc", "/home"})
 
 	if _, ok := cache.get(key); ok {
 		t.Fatal("empty cache returned an entry")
@@ -37,13 +37,38 @@ func TestProtectedRootCacheExpiresAndClears(t *testing.T) {
 // from a resolution cached for the old one.
 func TestProtectedRootCacheKeysByRootsAndProfile(t *testing.T) {
 	cache := protectedRootCache{}
-	first := rootCacheKey("profile", []string{"/etc"})
-	second := rootCacheKey("profile", []string{"/etc", "/srv"})
-	other := rootCacheKey("other", []string{"/etc"})
+	first := rootCacheKey(poolLease{key: poolKey{profile: "profile"}}, []string{"/etc"})
+	second := rootCacheKey(poolLease{key: poolKey{profile: "profile"}}, []string{"/etc", "/srv"})
+	other := rootCacheKey(poolLease{key: poolKey{profile: "other"}}, []string{"/etc"})
 	cache.put(first, []string{"/etc"})
-	for _, key := range []string{second, other} {
+	for _, key := range []protectedRootKey{second, other} {
 		if _, ok := cache.get(key); ok {
-			t.Fatalf("key %q shared a resolution with another configuration", key)
+			t.Fatalf("key %v shared a resolution with another configuration", key)
 		}
+	}
+}
+
+// A completed old resolver can publish after clear. Its result must remain
+// inaccessible to the new configuration, even when profile ID/roots match.
+func TestProtectedRootCacheRejectsLateResultsFromAnOldConfiguration(t *testing.T) {
+	cache := protectedRootCache{}
+	old := poolLease{key: poolKey{profile: "profile", host: "old-host", user: "old-user"}, generation: 4}
+	roots := []string{"/protected"}
+	cache.clear()
+	cache.put(rootCacheKey(old, roots), []string{"/old-canonical"})
+	current := old
+	current.generation++
+	if value, ok := cache.get(rootCacheKey(current, roots)); ok {
+		t.Fatal("old credential generation supplied protected paths", value)
+	}
+	current = old
+	current.key.host = "new-host"
+	if _, ok := cache.get(rootCacheKey(current, roots)); ok {
+		t.Fatal("another endpoint reused protected paths")
+	}
+	current = old
+	current.key.user = "new-user"
+	if _, ok := cache.get(rootCacheKey(current, roots)); ok {
+		t.Fatal("another SSH account reused protected paths")
 	}
 }

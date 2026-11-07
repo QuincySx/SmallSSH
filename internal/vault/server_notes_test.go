@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"sshclient/internal/snippet"
 )
 
 func TestServerNotesEncryptedPrivateAndPreservedAcrossWrites(t *testing.T) {
@@ -32,7 +34,7 @@ func TestServerNotesEncryptedPrivateAndPreservedAcrossWrites(t *testing.T) {
 	if err = v.SaveProfile(file, p); err != nil {
 		t.Fatal(err)
 	}
-	if err = v.SaveSnippet(file, Snippet{ID: "test", Name: "status", Body: "uptime"}, false); err != nil {
+	if err = v.SaveSnippet(file, snippet.Command{ID: "test", Name: "status", Body: "uptime"}, false); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(file)

@@ -42,7 +42,7 @@ printf '%s\n' "$process_rows" | awk '$1 ~ /^[0-9]+$/ && !seen[$1]++ {print $1}' 
  shift 19
  printf '%s %s\n' "$pid" "$1"
 done
-true
+` + portCommand + `true
 `
 
 type Disk struct {
@@ -65,6 +65,9 @@ type Process struct {
 	State      string  `json:"state,omitempty"`
 	Elapsed    string  `json:"elapsed,omitempty"`
 	StartTicks uint64  `json:"startTicks,omitempty"`
+	// cpuSeconds is the Windows cumulative processor time, used only to derive
+	// a rate against the previous sample. It is never serialized.
+	cpuSeconds float64
 }
 type Stats struct {
 	SourceID         string          `json:"sourceId,omitempty"`
@@ -97,6 +100,7 @@ type Stats struct {
 	BootID           string          `json:"bootId,omitempty"`
 	TCP              TCPInfo         `json:"tcp"`
 	DockerStats      *DockerSnapshot `json:"dockerStats,omitempty"`
+	PortSnapshot     *PortSnapshot   `json:"portSnapshot,omitempty"`
 	RunningProcesses int             `json:"runningProcesses"`
 	total            uint64
 }
@@ -104,6 +108,7 @@ type Stats struct {
 func num(s string) uint64 { n, _ := strconv.ParseUint(s, 10, 64); return n }
 func Parse(text string, previous *Stats) (Stats, error) {
 	s := Stats{Time: time.Now().UTC()}
+	text, s.PortSnapshot = extractPortSnapshot(text, s.Time)
 	section := ""
 	mem := map[string]uint64{}
 	processes := map[int]bool{}

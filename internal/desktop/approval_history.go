@@ -192,6 +192,7 @@ func historyResult(event auditlog.Event) string {
 			"automation_disabled": tr(nil, "AI 访问已关闭"), "server_disabled": tr(nil, "AI 访问已关闭"),
 			"protected_path":         tr(nil, "关键路径受保护"),
 			"uncontrolled_operation": tr(nil, "保护模式不开放此操作"),
+			"destructive_command":    tr(nil, "破坏性命令被护栏拦截"),
 			"scope_denied":           tr(nil, "超出授权范围"), "invalid_authority": tr(nil, "授权无效或已过期"),
 			"invalid_policy":    tr(nil, "服务器策略无效"),
 			"invalid_operation": tr(nil, "操作无效"), "owner_required": tr(nil, "需要本机所有者操作"),

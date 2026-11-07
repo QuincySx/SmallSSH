@@ -1,12 +1,12 @@
 package broker
 
 import (
-	"crypto/hmac"
 	"encoding/json"
 	"sort"
-	"time"
 
 	"sshclient/internal/approval"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/protocol"
 	"sshclient/internal/vault"
 )
 
@@ -14,7 +14,7 @@ import (
 // including pagination. A caller's label never selects this authority.
 func OwnerQueryAction(action string) bool {
 	switch action {
-	case "hosts", "pending", "status", "sessionStatus", "probeHost", "agentIdentities":
+	case "hosts", "pending", "status", "sessionStatus", "probeHost", "agentIdentities", "measureRoutes", "workspaceRead", "workspaceWrite":
 		return true
 	}
 	return false
@@ -24,30 +24,30 @@ func OwnerQueryProof(challenge string, q Message, prove func([]byte) ([]byte, er
 	b, err := json.Marshal(struct {
 		Action, ID, Target, After string
 		Port, Limit               int
-	}{q.Action, q.ID, q.Target, q.After, q.Port, q.Limit})
+		Network                   *connectcfg.Network
+		KeepProxyCredential       bool
+		ExpectedFingerprint       string
+		Workspace                 *protocol.WorkspaceQuery  `json:",omitempty"`
+		WorkspaceChange           *protocol.WorkspaceChange `json:",omitempty"`
+	}{q.Action, q.ID, q.Target, q.After, q.Port, q.Limit, q.Network, q.KeepProxyCredential, q.ExpectedFingerprint, q.Workspace, q.WorkspaceChange})
 	if err != nil {
 		return nil, err
 	}
 	return prove(append([]byte("ssh-client/owner-query/v1\x00"+challenge+"\x00"), b...))
 }
 
-func (s *Server) ownerQuery(q Message) bool {
+func (s *Server) ownerQuery(q Message, channel *callerChannel) bool {
 	if q.Challenge == "" || !OwnerQueryAction(q.Action) {
 		return false
 	}
-	s.ownerMu.Lock()
-	defer s.ownerMu.Unlock()
-	expires, ok := s.challenges[q.Challenge]
-	delete(s.challenges, q.Challenge)
-	if !ok || !time.Now().Before(expires) {
-		return false
-	}
-	expected, err := OwnerQueryProof(q.Challenge, q, s.Vault.Proof)
-	return err == nil && hmac.Equal(expected, q.Proof)
+	_, ok := s.verifyOwnerChallenge(channel, q.Challenge, func(prove func([]byte) ([]byte, error)) ([]byte, error) {
+		return OwnerQueryProof(q.Challenge, q, prove)
+	}, q.Proof)
+	return ok
 }
 
-func (s *Server) queryRequest(q Message) (approval.Request, error) {
-	if s.ownerQuery(q) {
+func (s *Server) queryRequest(q Message, channel *callerChannel) (approval.Request, error) {
+	if s.ownerQuery(q, channel) {
 		if q.Action == "sessionStatus" {
 			return s.Approvals.SessionStatus(q.ID)
 		}
@@ -57,6 +57,11 @@ func (s *Server) queryRequest(q Message) (approval.Request, error) {
 		}
 		return r, nil
 	}
+	s.ownerMu.Lock()
+	defer s.ownerMu.Unlock()
+	if !s.ownsRequest(channel, q.ID) {
+		return approval.Request{}, approval.ErrDenied
+	}
 	r, err := s.Approvals.GetForTicket(q.ID, q.Ticket)
 	if err != nil || q.Action == "sessionStatus" && r.Operation.Kind != "grant" {
 		return approval.Request{}, approval.ErrDenied
@@ -64,8 +69,8 @@ func (s *Server) queryRequest(q Message) (approval.Request, error) {
 	return r, nil
 }
 
-func (s *Server) pendingPage(q Message) (Message, error) {
-	if !s.ownerQuery(q) {
+func (s *Server) pendingPage(q Message, channel *callerChannel) (Message, error) {
+	if !s.ownerQuery(q, channel) {
 		return Message{}, approval.ErrDenied
 	}
 	limit := q.Limit

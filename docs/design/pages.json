@@ -1,0 +1,926 @@
+{
+  "pages": [
+    {
+      "id": "vault-create",
+      "name": "创建本机保险库",
+      "host": "主窗锁定页",
+      "entry": "首次启动且无本机保险库",
+      "actions": "输入并确认主密码；创建保险库",
+      "states": "密码不一致、创建中、错误",
+      "source": "internal/desktop/locked.go",
+      "limits": "非服务器密码；不是公钥安装向导",
+      "design_pages": [
+        "01 访问 / 创建保险库"
+      ]
+    },
+    {
+      "id": "vault-unlock",
+      "name": "解锁保险库",
+      "host": "主窗锁定页",
+      "entry": "启动已存在的保险库或手动锁定后",
+      "actions": "主密码或已启用系统验证解锁；切换密码方式",
+      "states": "系统验证就绪、密码输入、密码回退；验证中、取消、重试、失败",
+      "source": "internal/desktop/locked.go; internal/desktop/unlock_auth.go",
+      "limits": "系统认证依平台与设备；锁定后关闭会话",
+      "design_pages": [
+        "01 访问 / 解锁",
+        "01 访问 / 系统验证解锁",
+        "01 访问 / 系统验证密码回退"
+      ]
+    },
+    {
+      "id": "workspace",
+      "name": "工作台",
+      "host": "主窗口",
+      "entry": "解锁成功",
+      "actions": "服务器侧栏；单组顶栏标签、多组窗格内标签；拖动标签排序、跨组移动及向四边递归拆分；单一小窗开关、任务、设置",
+      "states": "空服务器、未选择、已选择无会话、窄窗回退、锁定",
+      "source": "internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go",
+      "limits": "不等于独立设置或工具窗口",
+      "design_pages": [
+        "02 工作台 / 终端与底部文件",
+        "02 工作台 / 四个混合分栏",
+        "02 工作台 / 六个混合分栏"
+      ]
+    },
+    {
+      "id": "server-rail",
+      "name": "服务器列表",
+      "host": "主窗侧栏/紧凑栏",
+      "entry": "工作台左侧",
+      "actions": "添加、搜索、分组展开；单击选择、双击新终端；右键连接、文件、编辑、AI策略、备注、隧道、删除",
+      "states": "无连接、搜索无结果、折叠、连接中可取消",
+      "source": "internal/desktop/connection_rail.go; internal/desktop/layout.go",
+      "limits": "收藏及拖动排序未实现",
+      "design_pages": [
+        "02 工作台 / 终端与底部文件"
+      ]
+    },
+    {
+      "id": "terminal",
+      "name": "终端与会话组",
+      "host": "主窗工作区平级标签与递归分栏",
+      "entry": "双击服务器或新建终端",
+      "actions": "Ghostty交互；终端、文件、命令、状态统一标签选择/关闭/排序；四向拆分、跨组移动、合并；空组自动收起",
+      "states": "排队、连接中、取消、失败重试、断开、主机指纹变化",
+      "source": "internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/connection_pending.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go",
+      "limits": "分组不是多个独立工具实例；不提供批量广播",
+      "design_pages": [
+        "02 工作台 / 终端与底部文件",
+        "02 工作台 / 连接中",
+        "02 工作台 / 连接失败",
+        "02 工作台 / 双终端分组",
+        "02 工作台 / 四个混合分栏",
+        "02 工作台 / 六个混合分栏"
+      ]
+    },
+    {
+      "id": "terminal-empty",
+      "name": "终端空态",
+      "host": "主窗终端面板",
+      "entry": "无活动终端",
+      "actions": "无服务器引导添加；有服务器未选引导搜索；选定后连接终端",
+      "states": "无服务器、未选/过期选择、已选",
+      "source": "internal/desktop/terminal_group_view.go",
+      "limits": "不自动连接；有效性来自完整服务器列表",
+      "design_pages": [
+        "02 工作台 / 未选择服务器"
+      ]
+    },
+    {
+      "id": "tools",
+      "name": "工具面板",
+      "host": "主窗四边停靠；可独立为工作区平级标签，也保留原生系统窗口",
+      "entry": "顶栏单一小窗开关；工具面板自己的布局菜单",
+      "actions": "上下左右停靠；工具标签拖到主区中心独立、拖到四边改停靠位置；独立标签可继续分栏，也可拖回工具区；菜单放大、收起、系统窗口",
+      "states": "隐藏、右侧空间不足回退底部、独立窗",
+      "source": "internal/desktop/filepanes.go; internal/desktop/tool_window.go; internal/desktop/layout.go",
+      "limits": "每类工具一份展示状态；窄窗的左右停靠回退底部，保留用户选择；系统窗口与工作区标签为不同承载方式",
+      "design_pages": [
+        "02 工作台 / 终端与底部文件",
+        "02 工作台 / 小窗布局菜单",
+        "02 工作台 / 工具停靠顶部",
+        "02 工作台 / 工具停靠底部",
+        "02 工作台 / 工具停靠左侧",
+        "02 工作台 / 工具停靠右侧"
+      ]
+    },
+    {
+      "id": "file-tab",
+      "name": "文件管理大标签",
+      "host": "工作区平级文件标签 / 分栏",
+      "entry": "工具面板“在标签页打开文件管理”",
+      "actions": "独立到工作区标签；与终端共用选择、关闭、排序和四向分栏；拖回工具区；保留文件树、来源与选择",
+      "states": "选中/未选、返回停靠",
+      "source": "internal/desktop/file_workspace.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go",
+      "limits": "不是新的OS窗口；不复制传输任务",
+      "design_pages": [
+        "04 文件 / 文件大标签",
+        "02 工作台 / 四个混合分栏",
+        "02 工作台 / 六个混合分栏"
+      ]
+    },
+    {
+      "id": "connection",
+      "name": "新建/编辑连接",
+      "host": "居中模态弹窗",
+      "entry": "服务器侧栏添加/右键编辑",
+      "actions": "分类常规、加速与代理、终端设置、访问策略；取消、保存/保存并连接",
+      "states": "加载备注、验证错误定位分类、提交中禁改、未保存确认",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_sections.go",
+      "limits": "既有密码保留或明确更换；不包含自动接收指纹",
+      "design_pages": [
+        "03 连接 / 常规与密码"
+      ]
+    },
+    {
+      "id": "connection-general",
+      "name": "常规与登录身份",
+      "host": "连接弹窗分类",
+      "entry": "新建/编辑连接→常规",
+      "actions": "名称、地址、端口、可创建分组、用户名、认证方式、备注；私钥文件选择与检查",
+      "states": "密码/私钥/agent/PKCS#11分支；保留/更换已有凭据；备注读取失败重试/部分保存",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_options.go",
+      "limits": "FIDO2/sk通过agent；未实现keyboard-interactive/MFA；实际设备仍需验收",
+      "design_pages": [
+        "03 连接 / 常规与密码",
+        "03 连接 / 硬件认证"
+      ]
+    },
+    {
+      "id": "connection-network",
+      "name": "加速与代理",
+      "host": "连接弹窗分类",
+      "entry": "连接→加速与代理",
+      "actions": "HTTP/HTTPS CONNECT、SOCKS5代理；已保存SSH中转；握手耗时比较",
+      "states": "无代理、代理凭据、测量中/失败/结果",
+      "source": "internal/desktop/connection_options.go",
+      "limits": "UDP双端加速和SSH压缩未实现；测量不代表吞吐",
+      "design_pages": [
+        "03 连接 / 加速与代理"
+      ]
+    },
+    {
+      "id": "connection-terminal",
+      "name": "终端设置",
+      "host": "连接弹窗分类",
+      "entry": "连接→终端设置",
+      "actions": "编码、退格序列、SSH保活间隔及无响应阈值",
+      "states": "自动与显式编码、禁用保活、输入验证",
+      "source": "internal/desktop/connection_options.go",
+      "limits": "编码仅转换终端；不改变文件字节",
+      "design_pages": [
+        "03 连接 / 编码与保活"
+      ]
+    },
+    {
+      "id": "connection-policy",
+      "name": "服务器访问策略",
+      "host": "连接弹窗分类",
+      "entry": "连接→访问策略或服务器菜单AI访问",
+      "actions": "开关AI访问、关键操作保护、保护路径编辑；保护路径用宽幅多行编辑器校验绝对路径，错误保留草稿",
+      "states": "关闭保护二次确认、输入错误",
+      "source": "internal/desktop/connection_policy.go",
+      "limits": "护栏非不可绕过安全边界；这些路径约束 AI 的结构化文件操作，不是任意远端命令的系统沙箱",
+      "design_pages": [
+        "03 连接 / 访问策略",
+        "03 连接 / 保护路径编辑器"
+      ]
+    },
+    {
+      "id": "host-identity",
+      "name": "服务器身份确认",
+      "host": "连接模态弹窗/复核确认",
+      "entry": "首次连接、指纹变化时重新核对",
+      "actions": "显示服务器、公钥算法与指纹；信任并保存或连接",
+      "states": "探测中、拒绝、指纹不匹配、重新核对",
+      "source": "internal/desktop/connections.go",
+      "limits": "不自动信任；不写known_hosts",
+      "design_pages": [
+        "03 连接 / 核对服务器身份"
+      ]
+    },
+    {
+      "id": "settings",
+      "name": "设置",
+      "host": "独立原生窗口",
+      "entry": "主窗右上设置或系统菜单",
+      "actions": "固定导航：工作区、安全与解锁、运行与后台、授权中心；关闭",
+      "states": "分类切换、滚动、验证中取消",
+      "source": "internal/desktop/settings_window.go; internal/desktop/settings.go",
+      "limits": "实际窗口已有；原型不等于独立公钥向导",
+      "design_pages": [
+        "08 设置 / 工作区"
+      ]
+    },
+    {
+      "id": "settings-workspace",
+      "name": "工作区设置",
+      "host": "设置窗口分类",
+      "entry": "设置→工作区",
+      "actions": "语言、侧栏和工具显隐、停靠位置、恢复默认布局",
+      "states": "明暗/语言切换、布局恢复确认相关状态",
+      "source": "internal/desktop/settings.go; internal/desktop/settings_language.go",
+      "limits": "自定义主题/字体/快捷键设置尚未实现",
+      "design_pages": [
+        "08 设置 / 工作区"
+      ]
+    },
+    {
+      "id": "settings-security",
+      "name": "安全与解锁",
+      "host": "设置窗口分类",
+      "entry": "设置→安全与解锁",
+      "actions": "闲置锁定、系统验证启用/停用与重测、主密码确认、本机代理身份与CLI配对",
+      "states": "不可用、验证中、取消、密码错误、系统验证反馈",
+      "source": "internal/desktop/workspace.go; internal/desktop/idle.go; internal/desktop/settings.go",
+      "limits": "设备/平台可用性不同；不等同服务器登录公钥",
+      "design_pages": [
+        "08 设置 / 安全与解锁"
+      ]
+    },
+    {
+      "id": "settings-presence",
+      "name": "运行与后台",
+      "host": "设置窗口分类",
+      "entry": "设置→运行与后台",
+      "actions": "驻留方式、窗口关闭行为、托盘/Dock等系统可用选项",
+      "states": "托盘不可用、后台关闭、平台差异",
+      "source": "internal/desktop/settings_presence.go; internal/desktop/presence.go",
+      "limits": "独立后台架构仍有后续需求，勿等同UDP加速",
+      "design_pages": [
+        "08 设置 / 运行与后台"
+      ]
+    },
+    {
+      "id": "pair",
+      "name": "本机代理身份配对",
+      "host": "设置页确认弹窗",
+      "entry": "安全与解锁→信任本机代理",
+      "actions": "核对/复制公钥指纹；确认替换本机代理配对",
+      "states": "首次配对、不同身份、错误",
+      "source": "internal/desktop/workspace.go",
+      "limits": "仅信任本机代理，不授予服务器访问",
+      "design_pages": [
+        "08 设置 / 本机 CLI 配对确认"
+      ]
+    },
+    {
+      "id": "approvals",
+      "name": "授权中心",
+      "host": "设置窗口分类；请求也可独立弹窗",
+      "entry": "设置→授权中心；新授权请求通知",
+      "actions": "待处理、活动、历史；按请求审阅与授权",
+      "states": "无请求、多个请求/紧凑选择器、过期、断连",
+      "source": "internal/desktop/approval_center.go; internal/desktop/approval.go",
+      "limits": "认证和票据绑定目标/期限；数据更新不应抢焦点",
+      "design_pages": [
+        "08 设置 / 授权中心 · 待处理",
+        "08 设置 / 授权中心 · 活动",
+        "08 设置 / 授权中心 · 历史"
+      ]
+    },
+    {
+      "id": "approval-pending",
+      "name": "待处理授权",
+      "host": "授权中心子页/请求弹窗",
+      "entry": "授权中心→待处理，或新请求弹窗",
+      "actions": "核对请求者、服务器、动作/范围、期限，批准或拒绝；必要时系统认证或主密码",
+      "states": "等待、验证、失败、拒绝、取消、目标过期",
+      "source": "internal/desktop/approval_review.go; internal/desktop/approval_auth.go; internal/desktop/approval_notifications.go",
+      "limits": "只读/完整与操作范围不同；不做无确认的全局授权",
+      "design_pages": [
+        "08 设置 / 授权中心 · 待处理"
+      ]
+    },
+    {
+      "id": "approval-active",
+      "name": "活动授权",
+      "host": "授权中心子页",
+      "entry": "授权中心→活动",
+      "actions": "查看活动会话与授权，撤销",
+      "states": "活动、过期/撤销、无活动授权",
+      "source": "internal/desktop/approval_center.go; internal/desktop/approval.go",
+      "limits": "子授权受父授权范围与期限约束",
+      "design_pages": [
+        "08 设置 / 授权中心 · 活动"
+      ]
+    },
+    {
+      "id": "approval-history",
+      "name": "授权历史",
+      "host": "授权中心子页",
+      "entry": "授权中心→历史",
+      "actions": "筛选、分页、查看审计详情及拒绝原因",
+      "states": "加载中、空、错误、分页结束",
+      "source": "internal/desktop/approval_history.go",
+      "limits": "记录有界摘录，不记录密钥、ticket、输出",
+      "design_pages": [
+        "08 设置 / 授权中心 · 历史"
+      ]
+    },
+    {
+      "id": "files",
+      "name": "文件管理窗格",
+      "host": "工具面板/独立工具窗/文件大标签",
+      "entry": "工具→文件；选服务器文件或切换来源",
+      "actions": "本机/已存服务器/跟随终端；路径、目录树、列表、搜索、排序、隐藏项；多窗及拆分",
+      "states": "加载、空目录、无目标、错误重试、脱机/已断开",
+      "source": "internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_workspace.go",
+      "limits": "最多8窗；状态按来源隔离；不同服务器可浏览但不能直接互传",
+      "design_pages": [
+        "04 文件 / 文件大标签",
+        "04 文件 / 本机与服务器"
+      ]
+    },
+    {
+      "id": "file-actions",
+      "name": "文件操作与更多菜单",
+      "host": "文件工具栏/树或列表右键菜单",
+      "entry": "文件窗格右上/文件或目录右键",
+      "actions": "上一级、刷新、新建文件/目录、上传、下载、重命名/移动、删除、属性/权限；拆分/关闭/恢复",
+      "states": "多选、确认、目标冲突、部分失败、权限不足",
+      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go",
+      "limits": "目录上传与服务器间直接复制未实现；非空目录不能删除；不主动覆盖",
+      "design_pages": [
+        "04 文件 / 文件大标签",
+        "04 文件 / 批量删除确认"
+      ]
+    },
+    {
+      "id": "file-properties",
+      "name": "权限与属性",
+      "host": "模态弹窗",
+      "entry": "文件/目录→属性与权限",
+      "actions": "查看类型、所有者/组与rwx位；编辑并保存、读回",
+      "states": "加载、只读、过期冲突、部分失败",
+      "source": "internal/desktop/file_properties.go",
+      "limits": "符号链接/特殊文件只读；Windows本机不提供Unix UID/GID",
+      "design_pages": [
+        "04 文件 / 文件属性与权限"
+      ]
+    },
+    {
+      "id": "file-transfer-confirm",
+      "name": "上传/下载与拖放确认",
+      "host": "文件/目录模态弹窗及系统选择器",
+      "entry": "工具栏上传/下载、右键或跨窗拖放",
+      "actions": "核对来源、目标和文件；加入队列；选择本机位置",
+      "states": "本机选择取消、目标冲突、扫描中、不可支持类型",
+      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_download.go; internal/desktop/filebrowser.go",
+      "limits": "支持普通文件上传、递归目录下载；不支持目录上传/远端互传/特殊文件",
+      "design_pages": [
+        "04 文件 / 传输目标确认"
+      ]
+    },
+    {
+      "id": "editor",
+      "name": "单文件编辑",
+      "host": "独立原生文件窗口",
+      "entry": "文件列表打开文本文件",
+      "actions": "语法高亮、搜索、编辑、保存、另存为；标题/来源/状态栏",
+      "states": "后台加载、取消/重试、格式不支持可下载、未保存关闭确认、保存中/失败/冲突",
+      "source": "internal/desktop/editor_window.go; internal/desktop/file_open.go; internal/desktop/filebrowser.go",
+      "limits": "仅≤4 MiB UTF-8文本；非文本不伪装成文本编辑；真实文件访问不属于离线样例",
+      "design_pages": [
+        "04 文件 / 独立文件编辑",
+        "04 文件 / 文件加载与失败"
+      ]
+    },
+    {
+      "id": "transfer",
+      "name": "传输与任务中心",
+      "host": "主窗全局弹层；可出现在工具窗",
+      "entry": "顶栏任务图标",
+      "actions": "排队、进度/速率、暂停、继续/重试；服务器操作任务",
+      "states": "空、等待、运行、失败、完成、扫描目录",
+      "source": "internal/desktop/transfer_activity.go; internal/desktop/workspace.go; internal/desktop/compose_work.go",
+      "limits": "传输不作为dock独立tab；续传包含校验",
+      "design_pages": [
+        "09 工具 / 传输与任务中心"
+      ]
+    },
+    {
+      "id": "commands",
+      "name": "常用命令",
+      "host": "工具面板分类",
+      "entry": "工具→命令",
+      "actions": "分组/搜索、选择、新建/编辑/删除、向指定终端填入或发送",
+      "states": "空、筛选无结果、加载/错误、会话不可用",
+      "source": "internal/desktop/commands.go",
+      "limits": "批量执行/跨服务器广播未实现",
+      "design_pages": [
+        "05 命令 / 命令列表"
+      ]
+    },
+    {
+      "id": "command-edit",
+      "name": "保存常用命令",
+      "host": "模态弹窗",
+      "entry": "命令→新建/编辑",
+      "actions": "名称、分组、模板、系统变体、参数及历史/发送时询问选项",
+      "states": "表单校验、未保存、保存失败",
+      "source": "internal/desktop/commands.go; internal/snippet",
+      "limits": "加密保存；完整变量作用域体系未实现",
+      "design_pages": [
+        "05 命令 / 编辑命令模板"
+      ]
+    },
+    {
+      "id": "command-run",
+      "name": "命令运行参数与确认",
+      "host": "模态弹窗",
+      "entry": "命令→运行/双击",
+      "actions": "参数/系统、历史选择、完整命令预览；填入终端或发送并执行；本次询问设置",
+      "states": "必填/类型错误、会话失效、确认、取消",
+      "source": "internal/desktop/commands_run.go; internal/desktop/commands_history.go",
+      "limits": "选历史/输入Enter不执行；目标关闭不转发",
+      "design_pages": [
+        "05 命令 / 参数与发送确认"
+      ]
+    },
+    {
+      "id": "server-status",
+      "name": "服务器状态",
+      "host": "工具面板分类",
+      "entry": "工具→服务器状态",
+      "actions": "概览、进程、自启服务、系统信息、Docker、端口",
+      "states": "无会话、采集中、采集失败/过期、断开保留最后值",
+      "source": "internal/desktop/diagnostics.go; internal/desktop/status_resources.go",
+      "limits": "只支持Linux现有采样；不新开监控登录",
+      "design_pages": [
+        "06 状态 / 资源概览"
+      ]
+    },
+    {
+      "id": "status-overview",
+      "name": "资源概览与详情",
+      "host": "状态分类/详情面板",
+      "entry": "服务器状态→概览；点CPU/内存/网络/磁盘",
+      "actions": "趋势时间范围、CPU/内存/网络/磁盘卡片，详情和返回",
+      "states": "无样本、未知、过期、窄布局",
+      "source": "internal/desktop/status_resources.go; internal/desktop/status_chart.go",
+      "limits": "进程CPU为ps平均；GPU未实现",
+      "design_pages": [
+        "06 状态 / 资源概览",
+        "06 状态 / 资源详情"
+      ]
+    },
+    {
+      "id": "status-process",
+      "name": "进程",
+      "host": "服务器状态子页",
+      "entry": "服务器状态→进程",
+      "actions": "搜索、排序、查看PID/账户/CPU/内存；TERM/KILL",
+      "states": "加载、无数据、失效PID、授权与操作确认、失败",
+      "source": "internal/desktop/diagnostics.go; internal/desktop/server_management.go",
+      "limits": "操作先确认目标并验证进程生命周期",
+      "design_pages": [
+        "06 状态 / 进程"
+      ]
+    },
+    {
+      "id": "status-services",
+      "name": "自启服务",
+      "host": "服务器状态子页",
+      "entry": "服务器状态→自启服务",
+      "actions": "搜索、排序，systemd启停/重启和自启开关",
+      "states": "无服务、非systemd回退、确认、操作失败",
+      "source": "internal/desktop/diagnostics.go; internal/desktop/server_management.go",
+      "limits": "OpenRC/SysV为自启清单回退",
+      "design_pages": [
+        "06 状态 / 自启服务"
+      ]
+    },
+    {
+      "id": "status-system",
+      "name": "系统信息",
+      "host": "服务器状态子页",
+      "entry": "服务器状态→系统信息",
+      "actions": "系统/硬件、各核、网络接口/地址、磁盘与I/O",
+      "states": "数据未知、不可用、长文本换行",
+      "source": "internal/desktop/status_resources.go",
+      "limits": "非Linux未适配；GPU未实现",
+      "design_pages": [
+        "06 状态 / 系统信息"
+      ]
+    },
+    {
+      "id": "status-ports",
+      "name": "端口",
+      "host": "服务器状态子页",
+      "entry": "服务器状态→端口",
+      "actions": "非回环监听/当前外部连接切换、TCP/UDP、IPv4/IPv6、端点、进程/PID、搜索排序",
+      "states": "工具不可用、部分进程不可见、解析不全、结果截断、无结果",
+      "source": "internal/desktop/ports.go; internal/monitor/ports.go",
+      "limits": "非回环/通配不等于公网可达；不推断连接发起方",
+      "design_pages": [
+        "06 状态 / 端口与对外连接"
+      ]
+    },
+    {
+      "id": "docker",
+      "name": "Docker总览",
+      "host": "服务器状态子页",
+      "entry": "服务器状态→Docker",
+      "actions": "容器、镜像、Compose视图；搜索/排序与显示设置",
+      "states": "未安装、无权限、空、加载/失败、资源过期",
+      "source": "internal/desktop/docker.go; internal/desktop/compose_projects.go",
+      "limits": "容器/镜像删除未实现",
+      "design_pages": [
+        "07 Docker / 容器",
+        "07 Docker / 镜像",
+        "07 Docker / Compose 项目"
+      ]
+    },
+    {
+      "id": "docker-containers",
+      "name": "容器",
+      "host": "Docker子页",
+      "entry": "Docker→容器",
+      "actions": "容器卡片/表格、启停/重启、日志详情、sh/bash终端",
+      "states": "运行/停止、失效身份、操作确认/错误",
+      "source": "internal/desktop/docker.go; internal/desktop/docker_dialog.go",
+      "limits": "以完整容器及daemon身份校验，不能删除容器",
+      "design_pages": [
+        "07 Docker / 容器"
+      ]
+    },
+    {
+      "id": "docker-images",
+      "name": "镜像",
+      "host": "Docker子页",
+      "entry": "Docker→镜像",
+      "actions": "搜索、排序、镜像名称/标签/ID/大小/创建时间",
+      "states": "空、采集不可用",
+      "source": "internal/desktop/docker.go",
+      "limits": "镜像删除未实现",
+      "design_pages": [
+        "07 Docker / 镜像"
+      ]
+    },
+    {
+      "id": "docker-compose",
+      "name": "Compose项目",
+      "host": "Docker子页/项目详情",
+      "entry": "Docker→Compose",
+      "actions": "项目卡片、容器子状态；启动/停止/重启、更新计划与任务",
+      "states": "数据不完整、计划变化、更新中/失败、成员变化",
+      "source": "internal/desktop/compose_projects.go; internal/desktop/compose_work.go",
+      "limits": "新建项目、编辑Compose文件、自动回滚未实现",
+      "design_pages": [
+        "07 Docker / Compose 项目"
+      ]
+    },
+    {
+      "id": "container-details",
+      "name": "容器日志与详情",
+      "host": "工具区内详情",
+      "entry": "容器菜单→日志/详情",
+      "actions": "日志/详情切换、行数、搜索、复制、暂停/跟随；容器终端",
+      "states": "加载、失败、截断、容器已停止",
+      "source": "internal/desktop/docker_dialog.go",
+      "limits": "日志有界；容器终端为真实PTY",
+      "design_pages": [
+        "07 Docker / 容器日志与详情"
+      ]
+    },
+    {
+      "id": "compose-update",
+      "name": "Compose更新确认与任务",
+      "host": "模态弹窗/全局任务",
+      "entry": "Compose项目→更新",
+      "actions": "确认服务器及已发现服务、计划核对、下载、复核与重建；查看任务",
+      "states": "成员变化、来源不完整禁用、分阶段失败/取消",
+      "source": "internal/desktop/compose_work.go",
+      "limits": "不承诺自动回滚，不扩大到未选容器",
+      "design_pages": [
+        "07 Docker / Compose 更新确认"
+      ]
+    },
+    {
+      "id": "tunnels",
+      "name": "SSH隧道",
+      "host": "模态弹窗",
+      "entry": "服务器右键→SSH隧道",
+      "actions": "本地、远程、动态SOCKS5；监听/目标；启动和停止活动隧道",
+      "states": "输入无效、启动中、失败、运行/停止",
+      "source": "internal/desktop/tunnels.go",
+      "limits": "仅回环TCP；无UDP/BIND；远端实际绑定受sshd配置约束",
+      "design_pages": [
+        "09 工具 / SSH 隧道"
+      ]
+    },
+    {
+      "id": "server-notes",
+      "name": "服务器备注",
+      "host": "弹窗/独立备注视图",
+      "entry": "服务器右键→备注",
+      "actions": "查看和编辑服务器备注",
+      "states": "读取中、失败重试、保存中、冲突/未保存确认",
+      "source": "internal/desktop/server_notes.go",
+      "limits": "备注与登录凭据分离；不推断服务器实时信息",
+      "design_pages": [
+        "09 工具 / 服务器备注"
+      ]
+    },
+    {
+      "id": "planned-server-key",
+      "name": "安装登录公钥向导",
+      "host": "待实现；曾有离线视觉原型",
+      "entry": "需求：服务器安全与密钥入口",
+      "actions": "计划选择专用软件/硬件身份、安装公钥、独立验证",
+      "states": "待实现",
+      "source": "docs/REQUIREMENTS.md §服务器专属密钥与 onboarding",
+      "limits": "生产未接公钥部署或独立向导；代理公钥配对不是SSH登录公钥安装",
+      "design_pages": [
+        "10 待实现 / 登录公钥安装"
+      ]
+    },
+    {
+      "id": "planned-migration",
+      "name": "导入导出与加密备份",
+      "host": "待实现",
+      "entry": "需求：配置迁移",
+      "actions": "计划来源选择、预览、冲突处理、恢复验证",
+      "states": "待实现",
+      "source": "docs/REQUIREMENTS.md §导入 / 导出与本地加密备份",
+      "limits": "OpenSSH/FinalShell导入、完整备份UI未实现",
+      "design_pages": [
+        "10 待实现 / 配置迁移与备份"
+      ]
+    },
+    {
+      "id": "planned-terminal-extras",
+      "name": "终端增强与其他连接",
+      "host": "待实现",
+      "entry": "需求：终端工具/连接类型",
+      "actions": "计划tmux会话、串口、远程桌面及更完整变量体系",
+      "states": "待实现",
+      "source": "docs/REQUIREMENTS.md §tmux、串口、剪贴板与连接恢复",
+      "limits": "不要把现有PTY、SSH保活或参数历史误称上述功能",
+      "design_pages": [
+        "10 待实现 / 终端增强与完整变量"
+      ]
+    }
+  ],
+  "design_pages": [
+    {
+      "name": "01 访问 / 创建保险库",
+      "status": "source-mapped"
+    },
+    {
+      "name": "01 访问 / 解锁",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 终端与底部文件",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 未选择服务器",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 连接中",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 连接失败",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 双终端分组",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 常规与密码",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 硬件认证",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 加速与代理",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 编码与保活",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 访问策略",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 核对服务器身份",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 文件大标签",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 本机与服务器",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 独立文件编辑",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 文件加载与失败",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 文件属性与权限",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 传输目标确认",
+      "status": "source-mapped"
+    },
+    {
+      "name": "04 文件 / 批量删除确认",
+      "status": "source-mapped"
+    },
+    {
+      "name": "05 命令 / 命令列表",
+      "status": "source-mapped"
+    },
+    {
+      "name": "05 命令 / 编辑命令模板",
+      "status": "source-mapped"
+    },
+    {
+      "name": "05 命令 / 参数与发送确认",
+      "status": "source-mapped"
+    },
+    {
+      "name": "06 状态 / 资源概览",
+      "status": "source-mapped"
+    },
+    {
+      "name": "06 状态 / 资源详情",
+      "status": "source-mapped"
+    },
+    {
+      "name": "06 状态 / 进程",
+      "status": "source-mapped"
+    },
+    {
+      "name": "06 状态 / 自启服务",
+      "status": "source-mapped"
+    },
+    {
+      "name": "06 状态 / 系统信息",
+      "status": "source-mapped"
+    },
+    {
+      "name": "06 状态 / 端口与对外连接",
+      "status": "source-mapped"
+    },
+    {
+      "name": "07 Docker / 容器",
+      "status": "source-mapped"
+    },
+    {
+      "name": "07 Docker / 镜像",
+      "status": "source-mapped"
+    },
+    {
+      "name": "07 Docker / Compose 项目",
+      "status": "source-mapped"
+    },
+    {
+      "name": "07 Docker / 容器日志与详情",
+      "status": "source-mapped"
+    },
+    {
+      "name": "07 Docker / Compose 更新确认",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 工作区",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 安全与解锁",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 运行与后台",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 待处理",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 活动",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 历史",
+      "status": "source-mapped"
+    },
+    {
+      "name": "08 设置 / 本机 CLI 配对确认",
+      "status": "source-mapped"
+    },
+    {
+      "name": "09 工具 / SSH 隧道",
+      "status": "source-mapped"
+    },
+    {
+      "name": "09 工具 / 服务器备注",
+      "status": "source-mapped"
+    },
+    {
+      "name": "09 工具 / 传输与任务中心",
+      "status": "source-mapped"
+    },
+    {
+      "name": "10 待实现 / 登录公钥安装",
+      "status": "planned"
+    },
+    {
+      "name": "10 待实现 / 配置迁移与备份",
+      "status": "planned"
+    },
+    {
+      "name": "10 待实现 / 终端增强与完整变量",
+      "status": "planned"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 1",
+      "status": "source-mapped"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 2",
+      "status": "source-mapped"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 3",
+      "status": "source-mapped"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 4",
+      "status": "source-mapped"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 5",
+      "status": "source-mapped"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 6",
+      "status": "source-mapped"
+    },
+    {
+      "name": "00 页面目录 / 页面地图 7",
+      "status": "source-mapped"
+    },
+    {
+      "name": "01 访问 / 系统验证解锁",
+      "status": "source-mapped"
+    },
+    {
+      "name": "01 访问 / 系统验证密码回退",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 小窗布局菜单",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 四个混合分栏",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 六个混合分栏",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 工具停靠左侧",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 工具停靠右侧",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 工具停靠顶部",
+      "status": "source-mapped"
+    },
+    {
+      "name": "02 工作台 / 工具停靠底部",
+      "status": "source-mapped"
+    },
+    {
+      "name": "03 连接 / 保护路径编辑器",
+      "status": "source-mapped"
+    }
+  ],
+  "scope": "source-mapped: 按正式源码核对的页面结构记录；planned: 待实现需求。均不代替功能验收。"
+}

@@ -114,7 +114,7 @@ func (a *app) resourceContentWidth(c *ui.Context) float32 {
 // Neither opening a detail nor returning changes the terminal's layout.
 func (a *app) resourceNavigation(c *ui.Context, s *monitor.Stats) {
 	ui.Row(c).FillWidth().Shrink(0).Padding(3, 0, 7, 0).Gap(10).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(c.Theme().Border).Label(tr(c, "资源详情导航")).Children(func() {
+		Label(tr(c, "资源详情导航")).Children(func() {
 		if components.Button(c, tr(c, "← 返回概览")).Label(tr(c, "返回概览")).Height(32).TextColor(c.Theme().Accent).Clicked() {
 			a.statusMetric = ""
 		}
@@ -415,7 +415,15 @@ func (a *app) diskCapacity(c *ui.Context, s *monitor.Stats, all bool) {
 }
 
 func (a *app) systemInfoView(c *ui.Context, s *monitor.Stats) {
-	ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Padding(0, statusScrollGutter, 6, 0).Label(tr(c, "系统信息内容")).Children(func() {
+	state := a.managementState()
+	viewport := ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Padding(0, statusScrollGutter, 6, 0).Label(tr(c, "系统信息内容"))
+	viewport.Draw(func(_ *ui.Painter, r ui.Rect) {
+		if state.resourceViewportWidth != r.W {
+			state.resourceViewportWidth = r.W
+			c.AnimationFrame()
+		}
+	})
+	viewport.Children(func() {
 		ui.Column(c).FillWidth().Gap(14).Children(func() {
 			i := s.Inventory
 			if i == nil {
@@ -429,7 +437,7 @@ func (a *app) systemInfoView(c *ui.Context, s *monitor.Stats) {
 				{tr(c, "操作系统"), [][2]string{{tr(c, "系统"), i.OS}, {tr(c, "内核"), i.Kernel}, {tr(c, "架构"), i.Architecture}, {tr(c, "运行时间"), uptime(s.Uptime)}, {tr(c, "服务管理器"), i.Manager}}},
 				{tr(c, "硬件"), [][2]string{{tr(c, "服务器型号"), i.Model}, {tr(c, "处理器"), i.CPU}, {tr(c, "逻辑核心"), fmt.Sprintf("%d", i.Cores)}, {tr(c, "物理内存"), size(s.MemoryTotal)}, {"Swap", size(s.SwapTotal)}}},
 			}
-			systemCardLayout.Grid(c, a.statusPaneWidth(c)-statusScrollGutter, len(sections), func(n int) {
+			systemCardLayout.Grid(c, a.resourceContentWidth(c), len(sections), func(n int) {
 				section := sections[n]
 				components.Surface(c, tr(c, "系统信息 ")+section.title).Children(func() {
 					sectionTitle(c, section.title)
@@ -442,7 +450,7 @@ func (a *app) systemInfoView(c *ui.Context, s *monitor.Stats) {
 func infoRows(c *ui.Context, rows [][2]string) {
 	ui.Column(c).FillWidth().Gap(0).Children(func() {
 		for _, row := range rows {
-			ui.Row(c).FillWidth().Padding(7, 0).Gap(10).BorderWidth(0, 0, 1, 0).BorderColor(c.Theme().Border.Alpha(.5)).Children(func() {
+			ui.Row(c).FillWidth().Padding(7, 0).Gap(10).Children(func() {
 				ui.Text(c, row[0]).Width(90).FontSize(11).TextColor(c.Theme().TextMuted)
 				ui.Text(c, reviewText(nonEmpty(row[1]))).FontSize(12).Grow(1).MinWidth(0).Selectable().Tooltip(row[1])
 			})
@@ -453,6 +461,9 @@ func infoRows(c *ui.Context, rows [][2]string) {
 // Derive the current pane width from this frame's window and split settings.
 // Previous element bounds lag a resize and can misroute the first click.
 func (a *app) statusPaneWidth(c *ui.Context) float32 {
+	if a.renderingWorkspaceTool != nil && a.workspaceToolBounds.W > 0 {
+		return a.workspaceToolBounds.W
+	}
 	w, _ := c.Size()
 	if a.renderingToolsWindow {
 		return w - 18

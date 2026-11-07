@@ -3,6 +3,7 @@ package desktop
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,40 +21,63 @@ func reviewFixture(permission string) (*app, approval.Request) {
 	return a, r
 }
 
+func TestApprovalSurfacesHaveOneAllowAndRefuseControl(t *testing.T) {
+	for _, popup := range []bool{false, true} {
+		for _, system := range []bool{false, true} {
+			for _, password := range []bool{false, true} {
+				a, r := reviewFixture("full")
+				a.authStatus = systemauth.Status{Enabled: system, Available: system, Name: "Touch ID"}
+				state := &approvalPromptState{passwordMode: password}
+				tt := ui.NewTester(func(c *ui.Context) {
+					if popup {
+						a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {})
+					} else {
+						a.approvalActions(c, r, state, func(bool, bool) {}, func() {})
+					}
+				}, 420, 620)
+				for _, label := range []string{"拒绝", "允许"} {
+					count := 0
+					for _, text := range tt.Texts() {
+						if text == label {
+							count++
+						}
+					}
+					// One button contributes its accessible label and its text.
+					if count != 2 {
+						t.Fatal("approval must have one control per decision", popup, system, password, label, count, tt.Texts())
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestApprovalPromptKeepsFourFactsAndDecisionsVisible(t *testing.T) {
 	for _, permission := range []string{"read", "full"} {
 		for _, width := range []int{380, 420} {
 			for _, dark := range []bool{false, true} {
-				for _, height := range []int{540, 560} {
+				for _, height := range []int{560, 620} {
 					a, r := reviewFixture(permission)
 					a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 					state := &approvalPromptState{}
 					tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, width, height)
 					tt.SetDark(dark)
-					for _, label := range []string{"应用图标", "我的 AI 助手", "个人服务器", "deploy@192.0.2.10:22", "最长 2 小时 · 闲置 15 分钟 后失效", r.Operation.Grant.PairingCode(), "不允许", "授权方式：触控 ID", "取消"} {
+					for _, label := range []string{"应用图标", "我的 AI 助手", "个人服务器 · deploy@192.0.2.10:22", "2 小时", "拒绝"} {
 						bounds, ok := tt.Find(label)
 						if !ok || bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.W > float32(width)+1 || bounds.Y+bounds.H > float32(height) {
 							t.Fatal("key decision is clipped", permission, width, dark, label, bounds)
 						}
 					}
-					methodTexts := 0
-					for _, text := range tt.Texts() {
-						if text == "授权方式：触控 ID" {
-							methodTexts++
-						}
-					}
-					// Tester.Texts includes the accessible button name and the
-					// single child Text. A second painted label makes three.
-					if methodTexts != 2 {
-						t.Fatal("authentication method label was duplicated", methodTexts, tt.Texts())
+					if _, ok := tt.Find("取消"); ok {
+						t.Fatal("a cancel button duplicated the refusal")
 					}
 					if tt.HasText(r.Operation.HostFingerprint) || tt.HasText(r.ID) {
 						t.Fatal("protocol diagnostics cluttered the initial decision")
 					}
-					if !tt.HasText("名称由申请端提供，请核对配对码") {
-						t.Fatal("caller label was presented as a verified identity")
+					if _, ok := tt.Find("名称由申请端提供，请核对配对码"); ok {
+						t.Fatal("note text was kept in the compact header")
 					}
-					if permission == "read" && !tt.HasText("可读取此账户有权访问的所有路径") || permission == "full" && !tt.HasText("可使用此 SSH 账户的全部权限") {
+					if permission == "read" && !tt.HasText("只读访问") || permission == "full" && !tt.HasText("完整控制") {
 						t.Fatal("scope boundary was hidden")
 					}
 					for _, label := range []string{"使用 Touch ID", "使用密码", "使用主密码…", "保险库主密码"} {
@@ -82,7 +106,7 @@ func TestApprovalPromptDoesNotApproveWithAnEmptyPasswordOrWhileBusy(t *testing.T
 				system++
 			}
 		}, func() { postponed++ })
-	}, 420, 560)
+	}, 420, 620)
 	if err := tt.Click("允许"); err != nil {
 		t.Fatal(err)
 	}
@@ -96,17 +120,13 @@ func TestApprovalPromptDoesNotApproveWithAnEmptyPasswordOrWhileBusy(t *testing.T
 	if tt.HasText("offline-synthetic-pass") {
 		t.Fatal("password was visible")
 	}
-	if err := tt.Click("允许"); err != nil {
-		t.Fatal(err)
-	}
+	tt.Key(0, ui.KeyEnter)
 	if allowed != 1 || system != 0 {
 		t.Fatal("password decision route missing")
 	}
 	state.busy = true
 	tt.Frame()
-	if err := tt.Click("允许"); err != nil {
-		t.Fatal(err)
-	}
+	tt.Key(0, ui.KeyEnter)
 	if allowed != 1 || denied != 0 || postponed != 0 {
 		t.Fatal("busy prompt accepted a second approval")
 	}
@@ -114,16 +134,13 @@ func TestApprovalPromptDoesNotApproveWithAnEmptyPasswordOrWhileBusy(t *testing.T
 	state.password = ""
 	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 	tt.Frame()
-	if err := tt.Click("授权方式：触控 ID"); err != nil {
-		t.Fatal(err)
-	}
 	if err := tt.Click("触控 ID"); err != nil {
 		t.Fatal(err)
 	}
-	if allowed != 2 || system != 1 || !state.passwordMode {
-		t.Fatal("direct system authentication did not preserve password mode")
+	if allowed != 2 || system != 1 || state.passwordMode {
+		t.Fatal("the sign-in segment did not switch back to biometrics")
 	}
-	if err := tt.Click("不允许"); err != nil {
+	if err := tt.Click("拒绝"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Key(0, ui.KeyEscape)
@@ -133,7 +150,7 @@ func TestApprovalPromptDoesNotApproveWithAnEmptyPasswordOrWhileBusy(t *testing.T
 }
 
 func TestApprovalPromptSwitchesAuthenticationWithoutRetainingPassword(t *testing.T) {
-	for _, enter := range []bool{false, true} {
+	for _, enter := range []bool{false} {
 		a, r := reviewFixture("read")
 		a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 		state := &approvalPromptState{}
@@ -146,23 +163,21 @@ func TestApprovalPromptSwitchesAuthenticationWithoutRetainingPassword(t *testing
 					passwordAttempts++
 				}
 			}, func() {})
-		}, 380, 540)
+		}, 380, 620)
 		if _, ok := tt.Find("保险库主密码"); ok || systemAttempts != 0 {
 			t.Fatal("render started authentication or revealed password")
 		}
 		state.busy, state.cancel = true, func() { cancelled++ }
 		tt.Frame()
-		if enter {
-			tt.Key(0, ui.KeyEnter)
-		} else if err := tt.Click("授权方式：触控 ID"); err != nil {
+		if err := tt.Click("改用保险库主密码"); err != nil {
 			t.Fatal(err)
 		}
 		if systemAttempts != 0 || passwordAttempts != 0 || !state.passwordMode || state.busy || cancelled != 1 {
 			t.Fatal("default action did not expand password and cancel system attempt", enter, cancelled)
 		}
-		for _, label := range []string{"保险库主密码", "触控 ID", "允许", r.Operation.Grant.PairingCode(), "可读取此账户有权访问的所有路径"} {
+		for _, label := range []string{"保险库主密码", "触控 ID", r.Operation.Grant.PairingCode(), "只读访问"} {
 			b, ok := tt.Find(label)
-			if !ok || b.Y < 0 || b.Y+b.H > 540 {
+			if !ok || b.Y < 0 || b.Y+b.H > 620 {
 				t.Fatal("fallback hid a decision or pairing code", label, b)
 			}
 		}
@@ -174,11 +189,14 @@ func TestApprovalPromptSwitchesAuthenticationWithoutRetainingPassword(t *testing
 		if err := tt.Click("触控 ID"); err != nil {
 			t.Fatal(err)
 		}
-		if systemAttempts != 1 || !state.passwordMode {
-			t.Fatal("fingerprint button did not directly verify in password mode")
+		if systemAttempts != 1 || state.passwordMode {
+			t.Fatal("fingerprint button did not switch back to system verification")
 		}
 		if _, ok := tt.Find("返回系统验证"); ok {
 			t.Fatal("two-step system verification returned")
+		}
+		if err := tt.Click("改用保险库主密码"); err != nil {
+			t.Fatal(err)
 		}
 		state.busy, state.cancel = true, func() { cancelled++ }
 		tt.Frame()
@@ -194,10 +212,10 @@ func TestApprovalPromptKeepsFallbackAvailableWithoutBiometrics(t *testing.T) {
 		a, r := reviewFixture("full")
 		a.authStatus = systemauth.Status{Enabled: enabled, Available: false, Name: "Touch ID"}
 		state := &approvalPromptState{}
-		tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 380, 540)
-		for _, label := range []string{"保险库主密码", "允许", "不允许", r.Operation.Grant.PairingCode()} {
+		tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 380, 620)
+		for _, label := range []string{"保险库主密码", "拒绝"} {
 			b, ok := tt.Find(label)
-			if !ok || b.Y < 0 || b.Y+b.H > 540 {
+			if !ok || b.Y < 0 || b.Y+b.H > 620 {
 				t.Fatal("unavailable OS verification blocked password fallback", label, b)
 			}
 		}
@@ -214,20 +232,20 @@ func TestOneTimeReviewKeepsExactCommandAndDoesNotInventPairingCode(t *testing.T)
 	r.Operation.Client = "Trusted\nAI\u202e"
 	r.Operation.Command = "printf 'safe'\nrm -f -- /srv/example"
 	state := &approvalPromptState{}
-	tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 420, 560)
-	if !tt.HasText("名称由申请端提供，未经身份验证") || !tt.HasText("Trusted\\nAI\\u202e") || tt.HasText("配对码") {
+	tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 420, 620)
+	if !tt.HasText("Trusted\\nAI\\u202e") || tt.HasText("配对码") {
 		t.Fatal("one-time requester identity was misleading", tt.Texts())
 	}
 	command, ok := tt.Find("printf 'safe'\\nrm -f -- /srv/example")
-	footer, _ := tt.Find("保险库主密码")
+	footer, _ := tt.Find("拒绝")
 	if !ok || command.W <= 0 || command.H <= 0 || command.Y+command.H > footer.Y {
 		t.Fatal("exact command hidden or overlapped authentication", command, footer)
 	}
 	r.Operation.Command = strings.Repeat("printf 'long-command'; ", 1200)
 	tt.Frame()
-	for _, label := range []string{"保险库主密码", "不允许", "允许"} {
+	for _, label := range []string{"拒绝", "允许"} {
 		bounds, ok := tt.Find(label)
-		if !ok || bounds.Y+bounds.H > 560 {
+		if !ok || bounds.Y+bounds.H > 620 {
 			t.Fatal("long request pushed decision offscreen", label, bounds)
 		}
 	}
@@ -251,7 +269,7 @@ func TestNarrowApprovalCenterSelectsExactRequestAndClearsPassword(t *testing.T) 
 	if a.selectedRequest != second.ID || a.ownerPass != "" || !tt.HasText(second.Operation.Endpoint) || tt.HasText(first.Operation.Endpoint) {
 		t.Fatal("request selection reused a password or ambiguous caller label", a.selectedRequest, tt.Texts())
 	}
-	for _, label := range []string{"保险库主密码", "不允许", "允许"} {
+	for _, label := range []string{"拒绝", "允许"} {
 		bounds, ok := tt.Find(label)
 		if !ok || bounds.X < 0 || bounds.X+bounds.W > 560 || bounds.Y+bounds.H > 760 {
 			t.Fatal("narrow center clipped action", label, bounds)
@@ -269,7 +287,7 @@ func TestApprovalCenterDropsFallbackPasswordOnRenewalGenerationChange(t *testing
 	if _, ok := tt.Find("保险库主密码"); ok {
 		t.Fatal("approval center required choosing an authentication method")
 	}
-	if err := tt.Click("授权方式：触控 ID"); err != nil {
+	if err := tt.Click("允许"); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.Click("保险库主密码"); err != nil {
@@ -288,7 +306,7 @@ func TestApprovalCenterDropsFallbackPasswordOnRenewalGenerationChange(t *testing
 	if _, ok := tt.Find("保险库主密码"); ok {
 		t.Fatal("renewal generation did not restore OS verification")
 	}
-	for _, label := range []string{"授权方式：触控 ID", "不允许", "取消"} {
+	for _, label := range []string{"拒绝", "允许续期"} {
 		if _, ok := tt.Find(label); !ok {
 			t.Fatal("approval center does not use the same consent flow as the popup", label)
 		}
@@ -339,7 +357,10 @@ func TestScopedPromptKeepsRootsPairingAndDecisionVisible(t *testing.T) {
 		r.Operation.Grant.ReadRoot, r.Operation.Grant.WriteRoot = "/srv/read", "/srv/write"
 		a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 		tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, &approvalPromptState{}, func(bool, bool) {}, func() {}) }, width, approvalWindowHeight)
-		footer, ok := tt.Find("授权方式：触控 ID")
+		if err := tt.Click("详情"); err != nil {
+			t.Fatal(err)
+		}
+		footer, ok := tt.Find("拒绝")
 		if !ok {
 			t.Fatal("authentication missing")
 		}
@@ -349,11 +370,65 @@ func TestScopedPromptKeepsRootsPairingAndDecisionVisible(t *testing.T) {
 				t.Fatal("scope or pairing clipped by authentication", width, label, b, footer)
 			}
 		}
-		for _, label := range []string{"不允许", "取消"} {
+		for _, label := range []string{"拒绝"} {
 			b, ok := tt.Find(label)
 			if !ok || b.Y+b.H > approvalWindowHeight {
 				t.Fatal("decision clipped", width, label, b)
 			}
 		}
+	}
+}
+
+func TestOwnerChoosesSessionDurationInThePrompt(t *testing.T) {
+	a, r := reviewFixture("full")
+	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
+	r.Operation.Grant.LifetimeSeconds = 45 * 60
+	state := &approvalPromptState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {})
+	}, 420, 620)
+	if _, ok := tt.Find("授权时长"); !ok {
+		t.Fatal("duration choice missing", tt.Texts())
+	}
+	want := []int{15 * 60, 30 * 60, 3600, 2 * 3600, 3 * 3600, 6 * 3600, 9 * 3600, 12 * 3600, 24 * 3600}
+	if got := grantLifetimeOptions(); !slices.Equal(got, want) {
+		t.Fatal("duration options", got)
+	}
+	if state.chosenLifetime(r) != 6*3600 {
+		t.Fatal("a non-standard request should start at six hours", state.chosenLifetime(r))
+	}
+	state.lifetime = 24 * 3600
+	tt.Frame()
+	if !tt.HasText("24 小时") {
+		t.Fatal("the review did not follow the chosen duration", tt.Texts())
+	}
+	// The owner's own choice needs no second confirmation.
+	if _, ok := tt.Find("允许超过 6 小时"); ok {
+		t.Fatal("a 24 hour choice asked for another confirmation")
+	}
+	if _, ok := tt.Find("无人值守"); ok {
+		t.Fatal("an extra unattended checkbox remained", tt.Texts())
+	}
+	if err := tt.Click("改用保险库主密码"); err != nil {
+		t.Fatal(err)
+	}
+	state.password = "synthetic-long-session"
+	tt.Frame()
+	if _, ok := tt.Find("允许"); !ok {
+		t.Fatal("password decision missing")
+	}
+}
+
+func TestOneShotRequestsDoNotOfferADuration(t *testing.T) {
+	a, r := reviewFixture("full")
+	r.Operation.Kind = "exec"
+	r.Operation.Grant = approval.GrantScope{}
+	r.Operation.Command = "systemctl restart nginx"
+	state := &approvalPromptState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {})
+	}, 420, 620)
+	if _, ok := tt.Find("授权时长"); ok {
+		t.Fatal("a one-shot command offered a session duration")
 	}
 }

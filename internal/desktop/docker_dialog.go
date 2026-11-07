@@ -249,7 +249,7 @@ func (a *app) containerDetailsView(c *ui.Context, s *dockerDialogState) {
 				a.closeDockerDialog(s)
 			}
 			ui.Text(c, reviewText(s.row.Names)).FontSize(12).Bold().SingleLine().Grow(1).MinWidth(0).Tooltip(s.row.Names)
-			ui.Tabs(c, &s.tab, tr(c, "日志"), tr(c, "详情"))
+			components.Tabs(c, &s.tab, tr(c, "日志"), tr(c, "详情"))
 			components.Button(c, tr(c, "终端 ▾"), components.ButtonOptions{Variant: components.Quiet}).Label(tr(c, "打开容器终端")).Disabled(s.row.State != "running" || s.session.closed).Menu(func(m *ui.Menu) {
 				for _, shell := range []string{"sh", "bash"} {
 					if m.Item(shell).Chosen() {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/approval"
+	"sshclient/internal/desktop/components"
 )
 
 func compactApprovalTitle(r approval.Request) string {
@@ -30,7 +31,7 @@ func approvalApplicant(r approval.Request) (name, note string) {
 	return reviewText(r.Operation.Client), tr(nil, "名称由申请端提供，未经身份验证")
 }
 
-func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
+func (a *app) compactApprovalReview(c *ui.Context, r approval.Request, lifetimes ...int) {
 	op := r.Operation
 	t := c.Theme()
 	scoped := op.Kind == "grant" && (op.Grant.ReadRoot != "" || op.Grant.WriteRoot != "")
@@ -45,13 +46,29 @@ func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
 			if target == "" {
 				target = op.Host
 			}
-			ui.Column(c).FillWidth().Gap(3).Children(func() {
-				name := a.approvalServerName(r)
-				if name != "" && name != target {
-					ui.Text(c, reviewText(name)).FillWidth().FontSize(13).Bold()
+			details := ui.Local(c.Root(), "approval-card-details", func() bool { return false })
+			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+					name := a.approvalServerName(r)
+					if name != "" && name != target {
+						ui.Text(c, reviewText(name)).FillWidth().FontSize(13).Bold()
+					}
+					ui.Text(c, reviewText(target)).FillWidth().Selectable().FontSize(12).TextColor(t.TextMuted)
+				})
+				// One disclosure on the card, as password managers do: the
+				// chevron opens the technical detail in place.
+				chevron := components.SVGButton(c, components.ChevronDownIcon, tr(c, "技术详情")).Size(26, 26)
+				if *details {
+					chevron.Rotate(180)
 				}
-				ui.Text(c, reviewText(target)).FillWidth().Selectable().FontSize(12).TextColor(t.TextMuted)
+				if chevron.Clicked() {
+					*details = !*details
+					c.Invalidate()
+				}
 			})
+			if *details {
+				ui.Column(c).FillWidth().Gap(5).Children(func() { requestTechnicalReview(c, r) })
+			}
 			ui.Column(c).FillWidth().Padding(10, 0, 0).BorderWidth(1, 0, 0, 0).BorderColor(t.Border.Alpha(.7)).Gap(5).Children(func() {
 				permission, actions, caution := approvalPermission(r)
 				if permission != compactApprovalTitle(r) {
@@ -69,7 +86,20 @@ func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
 				}
 				term := tr(c, "仅本次操作")
 				if op.Kind == "grant" {
-					term = fmt.Sprintf(tr(c, "最长 %s · 闲置 %s 后失效"), grantDuration(op.Grant.LifetimeSeconds), grantDuration(op.Grant.IdleSeconds))
+					lifetime := op.Grant.LifetimeSeconds
+					if len(lifetimes) > 0 && lifetimes[0] > 0 && r.Status == "pending" {
+						lifetime = lifetimes[0]
+					}
+					idle := min(lifetime, op.Grant.IdleSeconds)
+					if r.Status == "pending" {
+						state := &approvalPromptState{}
+						a.initializeApprovalGrant(r, state)
+						if len(lifetimes) == 0 {
+							lifetime = state.chosenLifetime(r)
+						}
+						idle = state.chosenIdle(r)
+					}
+					term = grantTermsText(c, lifetime, idle)
 				} else if r.OwnerSession {
 					term = tr(c, "关闭终端、锁定或退出时结束")
 				}
@@ -82,14 +112,6 @@ func (a *app) compactApprovalReview(c *ui.Context, r approval.Request) {
 				}
 			})
 		})
-		if op.Kind == "grant" {
-			ui.Column(c).FillWidth().Gap(4).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, tr(c, "配对码")).FontSize(11).TextColor(t.TextMuted)
-				ui.Text(c, op.Grant.PairingCode()).FillWidth().TextAlign(ui.Center).Selectable().Font("monospace").FontSize(14)
-			})
-		}
 		requestOperationReview(c, r)
-		open := ui.Local(c.Root(), "approval-compact-details", func() bool { return false })
-		ui.Collapsible(c, tr(c, "技术详情"), open, func() { requestTechnicalReview(c, r) })
 	})
 }

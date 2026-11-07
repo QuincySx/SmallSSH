@@ -18,21 +18,56 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/hardware"
+	"sshclient/internal/netroute"
+	"sshclient/internal/terminalcodec"
 	"sshclient/internal/vault"
 )
 
 type Client struct {
-	SSH    *ssh.Client
-	cancel func() bool
-	agent  io.Closer
+	SSH      *ssh.Client
+	cancel   func() bool
+	agent    io.Closer
+	upstream *Client
+	terminal connectcfg.Terminal
 }
 
 func Dial(ctx context.Context, p vault.Profile) (*Client, error) {
+	if p.Network.Relay != "" {
+		return nil, errors.New("中转连接必须先由保险库解析完整路由")
+	}
+	return dial(ctx, p, nil)
+}
+
+func DialRoute(ctx context.Context, route []vault.Profile) (*Client, error) {
+	if len(route) == 0 || len(route) > 4 {
+		return nil, errors.New("SSH 中转路由需为 1–4 跳")
+	}
+	var parent *Client
+	for i := len(route) - 1; i >= 0; i-- {
+		next, e := dial(ctx, route[i], parent)
+		if e != nil {
+			if parent != nil {
+				parent.Close()
+			}
+			return nil, e
+		}
+		if parent != nil {
+			parent.Detach()
+		}
+		parent = next
+	}
+	return parent, nil
+}
+func dial(ctx context.Context, p vault.Profile, upstream *Client) (*Client, error) {
 	if err := vault.Validate(p); err != nil {
 		return nil, err
 	}
+	handshake, cancelHandshake := context.WithTimeout(ctx, 15*time.Second)
+	defer cancelHandshake()
 	var auth ssh.AuthMethod
-	var agentConn io.ReadWriteCloser
+	var authResource io.Closer
 	switch p.Auth {
 	case "password":
 		auth = ssh.Password(p.Password)
@@ -43,12 +78,12 @@ func Dial(ctx context.Context, p vault.Profile) (*Client, error) {
 		}
 		auth = ssh.PublicKeys(signer)
 	case "agent":
-		var err error
-		agentConn, err = dialAgent(ctx)
+		agentConn, err := dialAgent(handshake)
 		if err != nil {
 			return nil, errors.New("SSH密钥代理不可用")
 		}
-		stopAgent := context.AfterFunc(ctx, func() { agentConn.Close() })
+		authResource = agentConn
+		stopAgent := context.AfterFunc(handshake, func() { agentConn.Close() })
 		defer stopAgent()
 		if nc, ok := agentConn.(net.Conn); ok {
 			nc.SetDeadline(time.Now().Add(15 * time.Second))
@@ -69,6 +104,13 @@ func Dial(ctx context.Context, p vault.Profile) (*Client, error) {
 			return nil, errors.New("SSH代理中未找到指定的唯一身份")
 		}
 		auth = ssh.PublicKeys(selected...)
+	case "pkcs11":
+		signer, resource, err := hardware.Open(handshake, p.Hardware)
+		if err != nil {
+			return nil, err
+		}
+		authResource = resource
+		auth = ssh.PublicKeys(signer)
 	}
 	addr := net.JoinHostPort(p.Host, fmt.Sprint(p.Port))
 	cfg := &ssh.ClientConfig{User: p.User, Auth: []ssh.AuthMethod{auth}, Timeout: 15 * time.Second,
@@ -78,38 +120,58 @@ func Dial(ctx context.Context, p vault.Profile) (*Client, error) {
 			}
 			return nil
 		}}
-	raw, err := (&net.Dialer{Timeout: 15 * time.Second}).DialContext(ctx, "tcp", addr)
+	var raw net.Conn
+	var err error
+	if upstream == nil {
+		raw, err = netroute.Dial(handshake, addr, p.Network.Proxy)
+	} else {
+		raw, err = upstream.SSH.DialContext(handshake, "tcp", addr)
+	}
 	if err != nil {
-		if agentConn != nil {
-			agentConn.Close()
+		if authResource != nil {
+			authResource.Close()
 		}
 		return nil, err
 	}
-	stop := context.AfterFunc(ctx, func() {
-		raw.Close()
-		if agentConn != nil {
-			agentConn.Close()
+	abort := func() {
+		if upstream != nil {
+			upstream.closeTransport()
 		}
-	})
+		raw.Close()
+		if authResource != nil {
+			authResource.Close()
+		}
+	}
+	stop := context.AfterFunc(ctx, abort)
+	stopHandshake := context.AfterFunc(handshake, abort)
+	defer stopHandshake()
 	raw.SetDeadline(time.Now().Add(15 * time.Second))
 	conn, ch, req, err := ssh.NewClientConn(raw, addr, cfg)
+	stopHandshake()
+	if handshake.Err() != nil {
+		err = handshake.Err()
+	}
 	if err != nil {
 		stop()
 		raw.Close()
-		if agentConn != nil {
-			agentConn.Close()
+		if authResource != nil {
+			authResource.Close()
 		}
 		return nil, err
 	}
 	raw.SetDeadline(time.Time{})
-	if nc, ok := agentConn.(net.Conn); ok {
-		nc.SetDeadline(time.Time{})
+	// Authentication has completed. Hardware PINs and agent sessions need not
+	// survive for the transport's lifetime or remain in the idle pool.
+	if authResource != nil {
+		authResource.Close()
 	}
 	// The connection stays bound to the operation's context: a revoked or
 	// expired operation closes its own transport instead of leaving a wedged
 	// channel behind. A connection that outlives its operation is detached by
 	// the pool, not here.
-	return &Client{SSH: ssh.NewClient(conn, ch, req), cancel: stop, agent: agentConn}, nil
+	client := &Client{SSH: ssh.NewClient(conn, ch, req), cancel: stop, agent: authResource, upstream: upstream, terminal: p.Terminal}
+	client.keepalive(p.Network)
+	return client, nil
 }
 
 // Detach ends the connection's tie to the operation context, so the pool can
@@ -123,20 +185,74 @@ func (c *Client) Detach() {
 	c.cancel = nil
 }
 
-func (c *Client) Close() error {
-	if c == nil {
-		return nil
-	}
-	if c.cancel != nil {
-		c.cancel()
+// Bind transfers cancellation ownership to a new operation before it opens any
+// channels. Callers must own the client exclusively, as with Detach and Close.
+func (c *Client) Bind(ctx context.Context) {
+	c.Detach()
+	c.cancel = context.AfterFunc(ctx, c.closeTransport)
+}
+
+// closeTransport never reads mutable cancellation ownership.
+func (c *Client) closeTransport() {
+	if c.SSH != nil {
+		c.SSH.Close()
 	}
 	if c.agent != nil {
-		defer c.agent.Close()
+		c.agent.Close()
 	}
-	if c.SSH == nil {
-		return nil
+	if c.upstream != nil {
+		c.upstream.closeTransport()
 	}
-	return c.SSH.Close()
+}
+func (c *Client) Close() error {
+	if c != nil {
+		if c.cancel != nil {
+			c.cancel()
+		}
+		c.closeTransport()
+	}
+	return nil
+}
+
+func (c *Client) keepalive(settings connectcfg.Network) {
+	if settings.KeepaliveSeconds == 0 {
+		return
+	}
+	interval := time.Duration(settings.KeepaliveSeconds) * time.Second
+	failures := settings.KeepaliveFailures
+	if failures == 0 {
+		failures = 3
+	}
+	done := make(chan struct{})
+	go func() { c.SSH.Wait(); close(done) }()
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+			}
+			reply := make(chan error, 1)
+			go func() { _, _, e := c.SSH.SendRequest("keepalive@openssh.com", true, nil); reply <- e }()
+			timeout := time.NewTimer(interval * time.Duration(failures))
+			select {
+			case <-done:
+				timeout.Stop()
+				return
+			case e := <-reply:
+				timeout.Stop()
+				if e != nil {
+					c.closeTransport()
+					return
+				}
+			case <-timeout.C:
+				c.closeTransport()
+				return
+			}
+		}
+	}()
 }
 
 type Result struct {
@@ -189,6 +305,8 @@ type Shell struct {
 	output  *io.PipeReader
 	writer  *io.PipeWriter
 	once    sync.Once
+	decoded io.ReadCloser
+	encoded io.WriteCloser
 }
 
 func (c *Client) Shell(ctx context.Context, cols, rows int) (*Shell, error) {
@@ -219,7 +337,7 @@ func (c *Client) ShellCommand(ctx context.Context, cols, rows int, command strin
 	if rows < 1 {
 		rows = 24
 	}
-	if err = s.RequestPty("xterm-256color", rows, cols, ssh.TerminalModes{ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 115200, ssh.TTY_OP_OSPEED: 115200}); err != nil {
+	if err = s.RequestPty("xterm-256color", rows, cols, ssh.TerminalModes{ssh.VERASE: uint32(c.terminal.Erase()), ssh.ECHO: 1, ssh.TTY_OP_ISPEED: 115200, ssh.TTY_OP_OSPEED: 115200}); err != nil {
 		s.Close()
 		r.Close()
 		w.Close()
@@ -236,13 +354,20 @@ func (c *Client) ShellCommand(ctx context.Context, cols, rows int, command strin
 		w.Close()
 		return nil, err
 	}
-	sh := &Shell{session: s, input: in, output: r, writer: w}
+	decoded, encoded, e := terminalcodec.New(r, in, c.terminal)
+	if e != nil {
+		s.Close()
+		r.Close()
+		w.Close()
+		return nil, e
+	}
+	sh := &Shell{session: s, input: in, output: r, writer: w, decoded: decoded, encoded: encoded}
 	stop := context.AfterFunc(ctx, func() { sh.Close() })
 	go func() { s.Wait(); stop(); w.Close() }()
 	return sh, nil
 }
-func (s *Shell) Read(b []byte) (int, error)  { return s.output.Read(b) }
-func (s *Shell) Write(b []byte) (int, error) { return s.input.Write(b) }
+func (s *Shell) Read(b []byte) (int, error)  { return s.decoded.Read(b) }
+func (s *Shell) Write(b []byte) (int, error) { return s.encoded.Write(b) }
 func (s *Shell) Resize(cols, rows int) error {
 	if cols < 1 || rows < 1 || cols > 1000 || rows > 1000 {
 		return errors.New("终端大小不合法")
@@ -255,6 +380,8 @@ func (s *Shell) Close() error {
 		s.input.Close()
 		s.output.Close()
 		s.writer.Close()
+		s.decoded.Close()
+		s.encoded.Close()
 	})
 	return nil
 }

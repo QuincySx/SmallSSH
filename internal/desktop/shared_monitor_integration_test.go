@@ -40,9 +40,22 @@ func TestLiveTerminalTabsShareServerCollectionAndDesktopHistory(t *testing.T) {
 	h.a.page, h.a.selected = 1, p.ID
 	h.a.toolsHidden = true
 	h.ui = ui.NewTester(h.a.view, 1100, 760)
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("status=%q sessions=%d page=%d tool=%d hidden=%v counters=%d inventories=%d docker=%d", h.a.status, len(h.a.sessions), h.a.page, h.a.dock, h.a.toolsHidden, counters.Load(), inventories.Load(), docker.Load())
+			for i, s := range h.a.sessions {
+				t.Logf("session %d closed=%v active=%v wanted=%v history=%d hasStats=%v message=%q", i, s.closed, s.monitorActive, h.a.monitorWanted(s), len(s.history.points), s.stats != nil, s.monitorStatus)
+			}
+		}
+	})
 	for range 3 {
 		h.a.openShellMode(true)
 	}
+	h.wait(func() bool { return readyTerminalCount(h.a) == 3 })
+	// New terminals select the commands panel. Explicitly show status after
+	// they open: hidden panels deliberately pause the shared collector.
+	h.a.showTool(toolDiagnostics)
+	h.ui.Frame()
 	shared := func() bool {
 		if len(h.a.sessions) != 3 {
 			return false

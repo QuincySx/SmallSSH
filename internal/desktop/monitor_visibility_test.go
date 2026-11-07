@@ -31,3 +31,25 @@ func TestMonitorVisibilityFollowsTheStatusPanel(t *testing.T) {
 		t.Fatal("no session reported as visible")
 	}
 }
+
+func TestPromotedStatusMonitorsItsVisibleSourceIndependentlyOfTheDock(t *testing.T) {
+	a := workspaceModelFixture(2)
+	source, other := a.sessions[0], a.sessions[1]
+	a.openWorkspaceTool(toolDiagnostics)
+	tool := a.workspaceTools[toolDiagnostics]
+	a.dropWorkspaceTab(a.workspaceTabPayload(workspaceTab{tool: tool}), source.group, workspaceTab{}, "right")
+	a.activateTerminal(other, true)
+	a.toolsHidden = true
+	if !a.monitorWanted(source) || a.monitorWanted(other) {
+		t.Fatal("visible promoted status did not keep its original server subscription")
+	}
+	a.dropWorkspaceTab(a.workspaceTabPayload(workspaceTab{session: other}), tool.group, workspaceTab{}, "")
+	if a.monitorWanted(source) {
+		t.Fatal("a covered status tab continued polling")
+	}
+	a.activateWorkspaceTab(tool.group, workspaceTab{tool: tool})
+	a.fileExpanded = true
+	if a.monitorWanted(source) {
+		t.Fatal("a maximized dock did not pause a covered status pane")
+	}
+}

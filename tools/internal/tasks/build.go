@@ -66,6 +66,9 @@ func build(platforms string, check bool) error {
 	if _, e := project.Chdir(); e != nil {
 		return e
 	}
+	if strings.TrimSpace(platforms) == "all" {
+		platforms = everyTarget
+	}
 	targets, e := parseTargets(platforms)
 	if e != nil {
 		return e
@@ -96,6 +99,9 @@ func build(platforms string, check bool) error {
 	}
 	for _, t := range targets {
 		if e = stageCLI(t); e != nil {
+			return e
+		}
+		if e = stageDaemon(t); e != nil {
 			return e
 		}
 	}
@@ -181,6 +187,12 @@ func stageNotices(check bool) error {
 	if e != nil {
 		return e
 	}
+	licensePath := "internal/desktop/components/lucide/LICENSE"
+	license, err := os.ReadFile(licensePath)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(&notices, "\n===== Lucide icons (ISC and Feather-derived MIT) =====\n\n%s\n", license)
 	return generate(noticesPath, []byte(notices.String()), check)
 }
 
@@ -199,7 +211,10 @@ func stageNatives(targets []target, check bool) (map[string]string, error) {
 	if hashes == nil {
 		hashes = map[string]string{}
 	}
-	staging, e := os.MkdirTemp("", "smallssh-natives-")
+	if e := os.MkdirAll("build", 0755); e != nil {
+		return nil, e
+	}
+	staging, e := os.MkdirTemp("build", "smallssh-natives-")
 	if e != nil {
 		return nil, e
 	}
@@ -278,6 +293,23 @@ func stageCLI(t target) error {
 		return e
 	}
 	return copyExecutable(out, filepath.Join(t.resources(), legacy))
+}
+
+// stageDaemon builds the fixed helper the app launches beside the desktop
+// process. It ships in the resource root, not the CLI subdirectory.
+func stageDaemon(t target) error {
+	name := "smallsshd"
+	if t.goos == "windows" {
+		name += ".exe"
+	}
+	out := filepath.Join(t.resources(), name)
+	if e := os.MkdirAll(filepath.Dir(out), 0o755); e != nil {
+		return e
+	}
+	cmd := exec.Command("go", "build", "-mod=vendor", "-trimpath", "-o", out, "./cmd/smallsshd")
+	cmd.Env = append(os.Environ(), "GOOS="+t.goos, "GOARCH="+t.goarch, "CGO_ENABLED=0")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
 }
 
 // packageApp runs the pinned MyGo CLI, which matches the vendored library read

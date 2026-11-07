@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sort"
 	"sshclient/internal/desktop/components"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"sshclient/internal/localipc"
 	"sshclient/internal/monitor"
 	"sshclient/internal/servernotes"
+	"sshclient/internal/snippet"
 	"sshclient/internal/sshconn"
 	"sshclient/internal/systemauth"
 	"sshclient/internal/transfer"
@@ -35,18 +37,21 @@ import (
 )
 
 type session struct {
-	group         *terminalGroup
-	host          string
-	name          string
-	containerName string
-	term          *terminal.Terminal
-	stream        *client.Stream
-	requestID     string
-	draft         string
-	stats         *monitor.Stats
-	history       statusHistory
-	statusSource  *serverStatusState
-	monitorStatus string
+	connectionState    string
+	connectionError    string
+	connectionCancel   context.CancelFunc
+	connectionMismatch bool
+	group              *terminalGroup
+	host               string
+	name               string
+	containerName      string
+	term               *terminal.Terminal
+	stream             *client.Stream
+	requestID          string
+	stats              *monitor.Stats
+	history            statusHistory
+	statusSource       *serverStatusState
+	monitorStatus      string
 	// monitorActive mirrors what the broker was last told: whether this
 	// session's server status is on screen.
 	monitorActive bool
@@ -55,24 +60,44 @@ type session struct {
 	target        approval.Operation
 }
 type terminalOpenRequest struct {
-	group  *terminalGroup
-	opened func(*session)
+	group   *terminalGroup
+	opened  func(*session)
+	pending *session
 }
 
 type app struct {
-	startup                                  startupState
-	connection                               connectionEditor
-	dispatch                                 func(func())
-	keyPicker                                func() ([]string, error)
-	directorySlots                           chan struct{}
-	localFilePane, primaryFilePane           *filePane
-	fileLayout                               *fileLayoutNode
-	activeFilePane                           *filePane
-	filePaneSequence                         uint64
-	fileExpanded, editShown, editLocal       bool
-	toolsHidden, toolsRight                  bool
-	toolsLayoutOpen                          bool
-	settingsSection                          string
+	tunnels                                                       tunnelManager
+	startup                                                       startupState
+	presence                                                      presenceState
+	connection                                                    connectionEditor
+	dispatch                                                      func(func())
+	keyPicker                                                     func() ([]string, error)
+	directorySlots                                                chan struct{}
+	localFilePane, primaryFilePane                                *filePane
+	fileLayout                                                    *fileLayoutNode
+	activeFilePane                                                *filePane
+	filePaneSequence                                              uint64
+	fileExpanded, editShown, editLocal                            bool
+	toolsHidden, toolsRight                                       bool
+	toolsEdge                                                     string
+	toolsLayoutOpen                                               bool
+	settingsSection                                               string
+	settingsWin                                                   toolsWindow
+	newSettingsWindow                                             toolsWindowFactory
+	settingsOpen, settingsWindowPending, renderingSettingsWindow  bool
+	settingsWindowSequence                                        uint64
+	settingsWindowReady                                           bool
+	editorWin                                                     toolsWindow
+	newEditorWindow                                               editorWindowFactory
+	editorWindowSequence                                          uint64
+	editorWindowPending, renderingEditorWindow, editorWindowFocus bool
+	filesTabOpen, filesTabSelected                                bool
+	workspaceTools                                                map[int]*workspaceToolTab
+	renderingWorkspaceTool                                        *workspaceToolTab
+	workspaceToolBounds                                           ui.Rect
+	workspaceRevision                                             uint64
+
+	behavior                                 behaviorPreferences
 	languageChoice                           string
 	toolsDetached, renderingToolsWindow      bool
 	toolsWin                                 toolsWindow
@@ -88,15 +113,21 @@ type app struct {
 	processSearch                            string
 	managementFallback                       *serverManagementUI
 	serviceSearch                            string
-	serviceTable, snippetTable               ui.ListState
+	serviceTable                             ui.ListState
+	snippetGrid                              ui.GridState
 	snippetSelected                          int
 	menu                                     *mygo.Menu
-	snippets                                 []vault.Snippet
-	snippetSearch                            string
-	snippetForm                              vault.Snippet
+	snippets                                 []snippet.Command
+	snippetLoad                              uint64
+	snippetSearch, snippetGroup              string
+	snippetForm                              snippet.Command
+	snippetDraft                             uint64
+	snippetError                             string
 	snippetOpen                              bool
+	snippetHistoryWrites                     chan func()
 	prompt                                   promptState
 	editorSequence                           uint64
+	editorRead                               *fileReadState
 	authCancel                               context.CancelFunc
 	authSequence                             uint64
 	approvalTab                              int
@@ -141,6 +172,7 @@ type app struct {
 	hosts                         []string
 	selected                      string
 	form                          vault.Profile
+	formNote, formNoteOriginal    vault.ServerNote
 	keyFile, ownerPass            string
 	port                          string
 	listedPath                    string
@@ -156,6 +188,7 @@ type app struct {
 	// idleUnlockedAt is when this unlock began, used by the idle lock. It belongs
 	// to the UI thread.
 	idleUnlockedAt                time.Time
+	approvalTerms                 map[string]approvalTerms
 	approvalAutoAttempted         map[string]bool
 	sessions                      []*session
 	serverStatuses                map[string]*serverStatusState
@@ -183,7 +216,6 @@ type app struct {
 	approvalID                    string
 	approvalNonce                 string
 	notified                      map[string]bool
-	lastApprovalPopup             time.Time
 	serverNotes                   *serverNotesState
 	notesDNS                      servernotes.Lookup
 	notesScannedAt                map[string]time.Time
@@ -195,6 +227,7 @@ func Run(dir string) error {
 
 func RunWithOptions(dir string, opts Options) error {
 	a := &app{dir: dir, client: client.Client{Dir: dir}, remotePath: "/", port: "22", form: vault.Profile{Port: 22, Auth: "password"}, edit: &editor.State{Buffer: editor.NewBuffer("")}}
+	defer a.destroyPresence()
 	a.startup = newStartup(opts.Background)
 	mygo.App.SetActivationPolicy(a.startup.policy())
 	a.notified = make(map[string]bool)
@@ -204,7 +237,9 @@ func RunWithOptions(dir string, opts Options) error {
 	a.terminalWidthShare = 65
 	a.snippetSelected = -1
 	a.fileSelected = -1
+	a.dock = toolCommands
 	a.loadLayout()
+	a.loadBehavior()
 	a.transfers = transfer.New(dir)
 	a.create = !broker.Exists(dir)
 	a.ctx, a.cancel = context.WithCancel(context.Background())
@@ -234,11 +269,15 @@ func RunWithOptions(dir string, opts Options) error {
 		a.queueInlineApproval()
 	})
 	mygo.App.OnDidResignActive(func() { a.applicationActive = false })
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { a.beginPresenceQuit() })
+	mygo.App.OnActivate(func(visible bool) { a.presenceActivate(visible) })
 	offLocale := mygo.App.OnLocaleChanged(func(string) { a.refreshLanguage() })
 	defer offLocale()
 	mygo.App.WhenReady(func() {
-		a.win = mygo.NewWindow(mygo.WindowOptions{Title: applicationName, Width: 1280, Height: 900, MinWidth: 560, MinHeight: 760, Hidden: opts.Background, Content: ui.View(a.view)})
+		a.win = mygo.NewWindow(a.mainWindowOptions(opts.Background, runtime.GOOS))
 		a.installMenu()
+		a.installPresence()
+		a.win.OnClose(func(e *mygo.CloseEvent) { a.presenceClose(e.PreventDefault) })
 		a.win.OnClosed(func() { a.shutdown() })
 		a.win.OnReadyToShow(func() { a.mainWindowReady = true; a.queueInlineApproval(); a.queueUnlockAuthentication() })
 		a.win.OnFocus(func() { a.queueInlineApproval(); a.queueUnlockAuthentication() })
@@ -265,6 +304,7 @@ func RunWithOptions(dir string, opts Options) error {
 
 // Relabel existing windows without opening them or changing terminal focus.
 func (a *app) refreshLanguage() {
+	a.refreshPresenceLabels()
 	if a.win != nil {
 		a.win.SetTitle(applicationName)
 		a.installMenu()
@@ -272,14 +312,33 @@ func (a *app) refreshLanguage() {
 	if a.toolsWin != nil {
 		a.toolsWin.SetTitle(a.toolsWindowTitle())
 	}
+	if a.settingsWin != nil {
+		a.settingsWin.SetTitle(tr(nil, "设置"))
+	}
+	a.refreshEditorWindowTitle()
 	if a.approvalWin != nil {
-		a.approvalWin.SetTitle(tr(nil, "访问授权"))
+		title := tr(nil, "访问授权")
+		for _, r := range a.requests {
+			if r.ID == a.approvalID {
+				title = a.approvalWindowTitle(r)
+				break
+			}
+		}
+		a.approvalWin.SetTitle(title)
 		a.approvalWin.Invalidate()
 	}
 	a.invalidateWindows()
 }
 
 func (a *app) shutdown() {
+	a.destroyPresence()
+	a.approvalTerms, a.approvalAutoAttempted = nil, nil
+	a.cancelEditorRead()
+	a.closeEditorWindow()
+	a.closeSettingsWindow()
+	a.filesTabOpen, a.filesTabSelected = false, false
+	a.workspaceTools, a.renderingWorkspaceTool = nil, nil
+	a.stopSnippetHistoryWrites()
 	a.disposeUnlockState()
 	a.closeApprovalAuthentication()
 	a.generation++
@@ -323,6 +382,13 @@ func (a *app) isActive() bool {
 }
 
 func (a *app) lock() {
+	a.approvalTerms, a.approvalAutoAttempted = nil, nil
+	a.cancelEditorRead()
+	a.closeEditorWindow()
+	a.closeSettingsWindow()
+	a.filesTabOpen, a.filesTabSelected = false, false
+	a.workspaceTools, a.renderingWorkspaceTool = nil, nil
+	a.stopSnippetHistoryWrites()
 	a.queryOwner.Store(nil)
 	a.disposeUnlockState()
 	a.closeApprovalAuthentication()
@@ -382,8 +448,15 @@ func (a *app) lock() {
 	a.localFilePane = nil
 	a.primaryFilePane = nil
 	a.snippets = nil
-	a.snippetForm = vault.Snippet{}
+	a.snippetLoad++
+	a.snippetSelected = -1
+	a.snippetGrid = ui.GridState{}
+	a.snippetForm = snippet.Command{}
+	a.snippetDraft++
+	a.snippetError = ""
+	a.snippetGroup, a.snippetSearch = "", ""
 	a.snippetOpen = false
+	a.formNote, a.formNoteOriginal = vault.ServerNote{}, vault.ServerNote{}
 	a.transfersOpen = false
 	a.toolsLayoutOpen = false
 	a.toolsHidden = false
@@ -545,14 +618,16 @@ func (a *app) poll() {
 				a.connections = h.Connections
 				a.jobs = jobs
 				a.requests = p.Requests
-				if a.page == 3 && a.approvalTab == 2 {
+				a.pruneApprovalTerms()
+				if a.approvalCenterVisible() && a.approvalTab == 2 {
 					a.refreshApprovalHistoryIfDue()
 				}
 				if a.approvalWin != nil {
 					pending := false
+					var current approval.Request
 					for _, r := range p.Requests {
 						if r.ID == a.approvalID && r.Nonce == a.approvalNonce && r.Status == "pending" {
-							pending = true
+							pending, current = true, r
 						}
 					}
 					if !pending {
@@ -560,6 +635,8 @@ func (a *app) poll() {
 						a.approvalWin = nil
 						a.approvalID, a.approvalNonce = "", ""
 						old.Close()
+					} else {
+						a.approvalWin.SetTitle(a.approvalWindowTitle(current))
 					}
 				}
 				if r, ok := a.nextApprovalPopup(time.Now()); ok {
@@ -602,42 +679,23 @@ func (a *app) view(c *ui.Context) {
 	ui.Column(c).Fill().Background(t.Background).Children(func() {
 
 		if !a.online {
+			lockedWindowChrome(c)
 			a.lockedView(c)
 		} else {
 			a.workspaceHeader(c)
 			a.workspaceView(c)
 		}
 		if a.online {
-			pending := 0
-			for _, r := range a.requests {
-				if r.Status == "pending" && !r.OwnerIssued {
-					pending++
-				}
-			}
-			if a.status != "" || pending > 0 && a.page != 3 || a.isTestVault() {
-				ui.Row(c).Padding(3, 10).Gap(8).FillWidth().Shrink(0).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-					if a.isTestVault() {
-						ui.Text(c, tr(c, "测试保险库")).FontSize(11).TextColor(t.Warning)
-					}
-					ui.Text(c, reviewText(a.status)).SingleLine().Grow(1).FontSize(11).TextColor(t.TextMuted).Tooltip(a.status)
-					if pending > 0 && a.page != 3 && components.Button(c, fmt.Sprintf(tr(c, "待授权 %d"), pending)).Clicked() {
-						a.page = 3
-					}
-					if a.status != "" && components.IconButton(c, "×", tr(c, "关闭提示")).Size(22, 22).Clicked() {
-						a.status = ""
-					}
-				})
-			}
+			a.workspaceStatusNotice(c)
 		}
 		if a.online && a.page == 0 {
 			a.connectionView(c)
 		}
-		if !a.prompt.detached || !a.toolsDetached || a.toolsHidden {
-			a.promptView(c)
-		}
+		a.promptForHost(c, dialogHostMain)
 		if !a.snippetDetached || !a.toolsDetached || a.toolsHidden {
 			a.snippetDialog(c)
 		}
+		a.tunnelsView(c)
 		a.serverNotesDialog(c)
 	})
 }
@@ -723,20 +781,12 @@ func (a *app) openShellAfter(force bool, opened func(*session)) {
 }
 
 func (a *app) openShellForHostAfter(host string, force bool, opened func(*session)) {
+	a.filesTabSelected = false
 	a.ensureTerminalGroups()
 	a.openShellInGroup(host, force, a.activeTerminalGroup, opened)
 }
 
-func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGroup, opened func(*session)) {
-	if a.connecting[host] != nil {
-		if force {
-			if a.pendingShellOpens == nil {
-				a.pendingShellOpens = make(map[string][]terminalOpenRequest)
-			}
-			a.pendingShellOpens[host] = append(a.pendingShellOpens[host], terminalOpenRequest{targetGroup, opened})
-		}
-		return
-	}
+func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGroup, opened func(*session), reserved ...*session) {
 	var replace *session
 	if !force {
 		for _, s := range a.sessions {
@@ -760,7 +810,41 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 		a.status = tr(nil, "请先选择连接")
 		return
 	}
+	var pending *session
+	if len(reserved) != 0 {
+		pending = reserved[0]
+	}
+	if pending == nil {
+		pending = a.reserveTerminal(host, targetGroup, opened == nil)
+	}
+	if !a.hasSession(pending) {
+		return
+	}
+	if a.connecting[host] != nil {
+		pending.connectionState = "queued"
+		if a.pendingShellOpens == nil {
+			a.pendingShellOpens = make(map[string][]terminalOpenRequest)
+		}
+		a.pendingShellOpens[host] = append(a.pendingShellOpens[host], terminalOpenRequest{group: targetGroup, opened: opened, pending: pending})
+		pending.connectionCancel = func() {
+			requests := a.pendingShellOpens[host]
+			for i, request := range requests {
+				if request.pending == pending {
+					requests = append(requests[:i], requests[i+1:]...)
+					break
+				}
+			}
+			if len(requests) == 0 {
+				delete(a.pendingShellOpens, host)
+			} else {
+				a.pendingShellOpens[host] = requests
+			}
+		}
+		return
+	}
+	pending.connectionState, pending.connectionError, pending.closed = "connecting", "", false
 	ctx, cancel := context.WithCancel(a.operationContext())
+	pending.connectionCancel = cancel
 	gen, cli := a.generation, a.client
 	if a.connecting == nil {
 		a.connecting = map[string]context.CancelFunc{}
@@ -769,7 +853,7 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 	// replace it while a canceled result is still waiting on the UI queue.
 	a.connecting[host] = func() {
 		cancel()
-		delete(a.pendingShellOpens, host)
+		a.failPendingTerminals(host, tr(nil, "连接已取消"))
 	}
 	a.status = tr(nil, "正在连接 ") + a.hostName(host) + "…"
 	go func() {
@@ -778,8 +862,16 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 			if gen == a.generation {
 				delete(a.connecting, host)
 			}
-			if gen != a.generation || !a.online || ctx.Err() != nil {
+			if gen != a.generation || !a.online || ctx.Err() != nil || !a.hasSession(pending) {
 				cancel()
+				if a.hasSession(pending) {
+					pending.closed = true
+					pending.connectionState = "error"
+					pending.connectionError = tr(nil, "连接已取消")
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						pending.connectionError = tr(nil, "连接超时，请检查网络后重试")
+					}
+				}
 				if stream != nil {
 					stream.Close()
 				}
@@ -796,21 +888,29 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 			}
 			if err != nil {
 				cancel()
-				delete(a.pendingShellOpens, host)
+				pending.closed = true
+				pending.connectionState, pending.connectionError = "error", connectionError(err)
+				a.failPendingTerminals(host, pending.connectionError)
 				if errors.Is(err, context.Canceled) {
 					a.status = ""
+					return
+				}
+				if isHostKeyMismatch(err) {
+					pending.connectionMismatch = true
 					return
 				}
 				a.status = connectionError(err)
 				return
 			}
-			before := len(a.sessions)
-			attached := a.attachTerminalInGroup(stream, host, cancel, opened == nil, targetGroup)
-			if replace != nil && len(a.sessions) > before {
+			attached := a.attachTerminalInGroup(stream, host, cancel, false, pending.group, pending)
+			if a.status == tr(nil, "正在连接 ")+a.hostName(host)+"…" {
+				a.status = ""
+			}
+			if replace != nil && attached != nil {
 				a.replaceClosedTerminal(replace, attached)
 			}
 			if attached == nil {
-				delete(a.pendingShellOpens, host)
+				a.failPendingTerminals(host, a.status)
 				return
 			}
 			if opened != nil {
@@ -830,7 +930,7 @@ func (a *app) openNextShell(host string) {
 		} else {
 			a.pendingShellOpens[host] = pending[1:]
 		}
-		a.openShellInGroup(host, true, next.group, next.opened)
+		a.openShellInGroup(host, true, next.group, next.opened, next.pending)
 	}
 }
 
@@ -839,7 +939,7 @@ func (a *app) attachTerminal(stream *client.Stream, host string, finish context.
 	return a.attachTerminalInGroup(stream, host, finish, len(activate) == 0 || activate[0], a.activeTerminalGroup)
 }
 
-func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish context.CancelFunc, activate bool, targetGroup *terminalGroup) *session {
+func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish context.CancelFunc, activate bool, targetGroup *terminalGroup, reserved ...*session) *session {
 	gen := a.generation
 	if a.notified == nil {
 		a.notified = map[string]bool{}
@@ -847,19 +947,28 @@ func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish c
 	a.notified[stream.RequestID] = true
 	// The broker starts collecting as soon as the session subscribes; the first
 	// frame decides whether anything shows it.
-	sess := &session{group: targetGroup, host: host, target: stream.Operation, requestID: stream.RequestID, monitorStatus: "正在读取服务器状态…", stream: stream, monitorActive: true}
+	var sess *session
+	if len(reserved) != 0 {
+		sess = reserved[0]
+	}
+	if sess == nil {
+		sess = &session{group: targetGroup, host: host}
+	}
+	sess.target, sess.requestID, sess.stream = stream.Operation, stream.RequestID, stream
+	sess.monitorStatus, sess.monitorActive = "正在读取服务器状态…", true
 	conn := &client.TerminalConn{
 		Stream:         stream,
 		OnStats:        func(stats *monitor.Stats) { a.updateServerStatus(sess, gen, stats, "自动更新") },
 		OnMonitorError: func(message string) { a.updateServerStatus(sess, gen, nil, message) },
 	}
-	colors := terminal.DarkTheme()
-	colors.Background = ui.Hex("#17212f")
-	colors.Foreground = ui.Hex("#d8e3f0")
-	term, e := terminal.New(terminal.Options{Conn: conn, Theme: colors, DarkTheme: colors, Scrollback: 32 << 20, OptionAsAlt: true, ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
+	lightColors, darkColors := workspaceTerminalColors()
+	term, e := terminal.New(terminal.Options{Conn: conn, Theme: lightColors, DarkTheme: darkColors, Scrollback: 32 << 20, OptionAsAlt: true, ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
 	if e != nil {
 		stream.Close()
 		a.status = e.Error()
+		if a.hasSession(sess) {
+			sess.closed, sess.connectionState, sess.connectionError = true, "error", e.Error()
+		}
 		if finish != nil {
 			finish()
 		}
@@ -876,7 +985,7 @@ func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish c
 	for n := 2; ; n++ {
 		collision := false
 		for _, existing := range a.sessions {
-			if existing.name == name {
+			if existing != sess && existing.name == name {
 				collision = true
 				break
 			}
@@ -886,10 +995,23 @@ func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish c
 		}
 		name = fmt.Sprintf("%s (%d)", base, n)
 	}
-	sess.name, sess.term = name, term
-	a.sessions = append(a.sessions, sess)
+	if sess.name == "" {
+		sess.name = name
+	}
+	previousTerm := sess.term
+	sess.term, sess.closed = term, false
+	sess.connectionState, sess.connectionError, sess.connectionCancel = "", "", nil
+	if previousTerm != nil {
+		previousTerm.Close()
+	}
+	if !a.hasSession(sess) {
+		a.sessions = append(a.sessions, sess)
+	}
 	if a.page == 1 && activate {
 		a.active = len(a.sessions) - 1
+		// A fresh connection starts on the commands page; files and server
+		// status stay available but are opened on demand.
+		a.dock = toolCommands
 		a.syncFollowingFilePanes()
 		a.contentFocus = true
 		a.editShown = false
@@ -901,7 +1023,7 @@ func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish c
 			finish()
 		}
 		a.postUI(func() {
-			if gen == a.generation && a.hasSession(sess) {
+			if gen == a.generation && a.hasSession(sess) && sess.term == term {
 				a.detachServerStatus(sess)
 				sess.closed = true
 				sess.monitorStatus = "已断开，保留最后状态"
@@ -950,7 +1072,7 @@ func (b *limitBuffer) Write(p []byte) (int, error) {
 }
 func (a *app) replaceText() {
 	document := a.edit
-	content := []byte(a.edit.Buffer.String())
+	content := []byte(editorBufferText(a.edit.Buffer))
 	h := sha256.Sum256(content)
 	hash := hex.EncodeToString(h[:])
 	p := a.editPath
@@ -973,8 +1095,9 @@ func (a *app) replaceText() {
 			}
 			if a.edit == document && a.editHost == host && a.editPath == p {
 				a.editHash = hash
-				if a.edit.Buffer.String() == string(content) {
+				if editorBufferText(a.edit.Buffer) == string(content) {
 					a.edit.Buffer.MarkSaved()
+					a.refreshEditorWindowTitle()
 				}
 			}
 			a.status = tr(nil, "已保存 · ") + a.hostName(host) + " · " + p + tr(nil, "；旧副本: ") + backup.String()
@@ -1004,11 +1127,20 @@ func (a *app) upload(fromEditor bool) {
 	}
 	cliPath, remote, host := a.localFile, a.remotePath, a.selected
 	document := a.edit
+	if document == nil || a.editorSaving == document {
+		return
+	}
+	a.editorSaving = document
+	clearSaving := func() {
+		if a.editorSaving == document {
+			a.editorSaving = nil
+		}
+	}
 	gen := a.generation
 	ctx := a.operationContext()
 	var content []byte
 	if fromEditor {
-		content = []byte(a.edit.Buffer.String())
+		content = []byte(editorBufferText(a.edit.Buffer))
 		remote = a.saveAs
 		host = a.editHost
 	}
@@ -1021,7 +1153,7 @@ func (a *app) upload(fromEditor bool) {
 		} else {
 			f, e = os.Open(cliPath)
 			if e != nil {
-				a.postUI(func() { a.status = e.Error() })
+				a.postUI(func() { clearSaving(); a.status = e.Error() })
 				return
 			}
 			st, e := f.Stat()
@@ -1037,7 +1169,7 @@ func (a *app) upload(fromEditor bool) {
 			if f != nil {
 				f.Close()
 			}
-			a.postUI(func() { a.status = e.Error() })
+			a.postUI(func() { clearSaving(); a.status = e.Error() })
 			return
 		}
 		if f != nil {
@@ -1046,9 +1178,10 @@ func (a *app) upload(fromEditor bool) {
 		fingerprint := hex.EncodeToString(hash.Sum(nil))
 		a.postUI(func() {
 			if gen != a.generation || ctx.Err() != nil || !a.online {
+				clearSaving()
 				return
 			}
-			a.begin(approval.Operation{Host: host, Kind: "put", Path: remote, ContentHash: fingerprint}, func(s *client.Stream) (func(), error) {
+			a.beginContext(ctx, approval.Operation{Host: host, Kind: "put", Path: remote, ContentHash: fingerprint}, func(s *client.Stream) (func(), error) {
 				defer s.Close()
 				var source io.Reader = bytes.NewReader(content)
 				if !fromEditor {
@@ -1067,16 +1200,18 @@ func (a *app) upload(fromEditor bool) {
 				}
 				_, _, e := s.Copy(io.Discard, io.Discard)
 				return func() {
+					clearSaving()
 					if fromEditor && a.edit == document && a.editHost == host {
 						a.editPath = remote
+						a.refreshEditorWindowTitle()
 						a.editHash = fingerprint
-						if a.edit.Buffer.String() == string(content) {
+						if editorBufferText(a.edit.Buffer) == string(content) {
 							a.edit.Buffer.MarkSaved()
 						}
 					}
 					a.status = tr(nil, "已另存为 · ") + a.hostName(host) + " · " + remote
 				}, e
-			})
+			}, func(err error) { clearSaving(); a.status = err.Error() })
 		})
 	}()
 }

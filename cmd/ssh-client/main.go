@@ -21,6 +21,7 @@ import (
 	"sshclient/internal/approval"
 	"sshclient/internal/broker"
 	"sshclient/internal/client"
+	"sshclient/internal/hardware"
 	"sshclient/internal/localipc"
 	"sshclient/internal/systemauth"
 	"sshclient/internal/transfer"
@@ -32,6 +33,10 @@ const help = `SmallSSH · 开发预览版
 用法: smallssh [--data-dir 私有目录] <命令>
  init                          创建加密保险库
  host add                      添加或更新连接（需先关闭代理）
+ host options 连接ID           从 stdin JSON 修改 terminal/network/hardware（所有者验证）
+ host hardware 模块 [序列号]   读取 PKCS#11 令牌与公钥；选定令牌后读取本地 PIN
+ tunnel local|remote|socks5 连接ID 回环监听地址 [目标主机:端口]
+                               创建需批准的 TCP 隧道；Ctrl+C 关闭
  host group 连接ID 分组名       保留凭据并修改分组（需代理运行）
  probe 主机:端口               查看主机指纹；请通过服务器控制台另行核对
  agent                         启动代理；主密码仅从本地终端读取
@@ -46,17 +51,15 @@ const help = `SmallSSH · 开发预览版
  transfer list                  查看持久化传输队列
  transfer resume 任务ID          校验并断点继续（可复用客户端会话）
  pending                       所有者验证后查看待授权和运行中的操作
- session request 连接ID 文件 [read|full] [2h] [15m]
-                               申请有期限的客户端会话；核对配对码后批准
- session request --read-root /srv --write-root /srv ...
-                               可选限定文件读写目录；选项置于连接 ID 前
- --session 文件 exec/ls/get/... 使用已批准会话签发一次性子授权
- SSH_CLIENT_SESSION=文件       在当前客户端环境中复用同一授权，无需逐条传参
- session status 文件            查看会话范围与期限
- session revoke 文件            撤销自己的会话及全部子授权
+ session serve [选项] 连接ID [read|full] [2h] [15m]
+                               常驻 JSON 行客户端；进程退出即撤销会话
+ session exec 连接ID [2h] [15m] 连续命令，获批后每行一条；:quit 退出
+ --broker-key sha256:...        可选：显式固定可信所有者界面的代理公钥
+ SSH_CLIENT_BROKER_KEY=sha256:... 覆盖首次可信解锁建立的本机配对
  approve ID / deny ID          核对完整操作并用主密码授权或拒绝
  revoke ID                     用主密码撤销授权并关闭连接
- exec 连接ID '完整命令'        申请授权，批准后执行一次
+ exec 连接ID                   连续执行命令，复用本进程的已批准会话
+ exec 连接ID '完整命令'        单次授权执行；多次运行不会共享授权
  shell 连接ID                  申请最长15分钟的完整交互会话
  ls 连接ID /绝对路径           浏览远程目录
  get 连接ID /远程路径 本地文件 下载（不覆盖本地文件）
@@ -64,13 +67,17 @@ const help = `SmallSSH · 开发预览版
  replace 连接ID 本地文件 /远程路径 原文件SHA256
                                核对原内容、保留旧副本并原子覆盖
 
-AI 先申请一次客户端会话，范围和期限内的操作自动领取子授权。
+AI 通过常驻 session serve 或同进程 SDK 申请会话；范围和期限内逐次签发子授权。
+会话仅绑定当前进程实例和活连接；断线、重启后生成新密钥并重新批准。
 自然过期后自动申请原范围续期，批准后继续；撤销、拒绝或越权不自动重试。
 单次请求留在授权中心，不逐条弹窗。
 允许 exec/shell 即允许该 SSH 账户权限范围内的操作。主密码不要写进参数。
 `
 
 func main() {
+	if hardware.MaybeWorker() {
+		return
+	}
 	code, e := run()
 	if e != nil {
 		fmt.Fprintln(os.Stderr, "smallssh: 错误:", e)
@@ -89,7 +96,8 @@ func run() (int, error) {
 	dir := fs.String("data-dir", localipc.DefaultDir(), "私有数据目录")
 	biometric := fs.Bool("biometric", false, "通过本机系统验证解锁 / 授权")
 	label := fs.String("client", "CLI", "申请方标签（未经身份验证）")
-	sessionFile := fs.String("session", "", "使用已批准的客户端会话文件")
+	sessionFile := fs.String("session", "", "已停用：会话文件不能跨进程复用")
+	brokerKey := fs.String("broker-key", os.Getenv("SSH_CLIENT_BROKER_KEY"), "可选：显式固定可信所有者的代理公钥 sha256:...（默认使用本机配对）")
 	if e := fs.Parse(os.Args[1:]); e != nil {
 		return 2, e
 	}
@@ -100,7 +108,7 @@ func run() (int, error) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	c := client.Client{Dir: *dir}
+	c := client.Client{Dir: *dir, BrokerKey: *brokerKey}
 	sessionFlagSet := false
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "session" {
@@ -109,21 +117,20 @@ func run() (int, error) {
 	})
 	selectedSession := sessionForCommand(args, *sessionFile, sessionFlagSet, os.Getenv("SSH_CLIENT_SESSION"))
 	if selectedSession != "" {
-		d, e := client.ReadDelegation(selectedSession, *dir)
-		if e != nil {
-			return 1, e
-		}
-		defer d.Close()
-		c.Delegation = d
-		c.OnSessionRenewal = func(r approval.Request) {
-			fmt.Fprintln(os.Stderr, "会话已到期，正在等待确认续期；批准后继续。配对码："+r.Operation.Grant.PairingCode())
-		}
+		return 1, client.ErrSessionNotExportable
 	}
+
 	switch args[0] {
+	case "tunnel":
+		return tunnelCommand(ctx, c, *label, args[1:])
 	case "docker":
 		return dockerCommand(ctx, c, *label, args[1:])
 	case "session":
-		return sessionCommand(ctx, client.Client{Dir: *dir}, *label, args[1:])
+		return sessionCommand(ctx, c, *label, args[1:])
+	case "exec":
+		if len(args) == 2 {
+			return execSession(ctx, c, *label, args[1:], os.Stdin, os.Stdout, os.Stderr)
+		}
 	case "init":
 		release, e := localipc.Acquire(*dir)
 		if e != nil {
@@ -154,6 +161,12 @@ func run() (int, error) {
 		fmt.Println("保险库已创建。接下来运行 host add。")
 		return 0, nil
 	case "host":
+		if len(args) == 3 && args[1] == "options" {
+			return configureHost(ctx, c, *dir, args[2], *biometric)
+		}
+		if len(args) >= 3 && args[1] == "hardware" {
+			return inspectHardwareCommand(ctx, c, *dir, *biometric, args[2:])
+		}
 		if len(args) == 4 && args[1] == "group" {
 			owner, e := openOwner(ctx, *dir, *biometric, "修改 SSH 连接分组")
 			if e != nil {
@@ -253,6 +266,7 @@ func run() (int, error) {
 			}
 			defer s.Close()
 			fmt.Fprintln(os.Stderr, "系统验证已解锁代理")
+			fmt.Fprintln(os.Stderr, "本机代理公钥：", s.PublicKeyPin())
 			<-ctx.Done()
 			return 0, nil
 		}
@@ -267,6 +281,7 @@ func run() (int, error) {
 		}
 		defer s.Close()
 		fmt.Fprintln(os.Stderr, "代理已启动。保持此窗口打开；退出会锁定并撤销所有会话。")
+		fmt.Fprintln(os.Stderr, "本机代理公钥：", s.PublicKeyPin())
 		<-ctx.Done()
 		return 0, nil
 	case "hosts":

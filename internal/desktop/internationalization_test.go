@@ -18,41 +18,48 @@ func TestEnglishWorkspaceKeepsUserTextAndSharedSidebarState(t *testing.T) {
 	first, second := a.sessions[0], a.sessions[1]
 	tt := ui.NewTester(a.view, 1000, 760)
 	tt.SetLocale("en")
-	for _, label := range []string{"Workbench", "Access grants", "Settings", "New connection", "Search connections", "设置"} {
+	for _, label := range []string{"Global navigation", "Settings", "New connection", "Search connections", "设置"} {
 		if _, ok := tt.Find(label); !ok {
 			t.Fatal("English workspace is missing a localized control or changed user text", label)
 		}
 	}
-	for _, page := range []struct{ tab, region string }{
-		{"Settings", "Settings categories"},
-		{"Access grants", "Grant categories"},
-		{"Workbench", "Connection sidebar"},
-	} {
-		if err := tt.Click(page.tab); err != nil {
-			t.Fatal(err)
-		}
-		if _, ok := tt.Find(page.region); !ok {
-			t.Fatal("English page navigation failed", page)
-		}
-		if page.tab == "Settings" {
-			if !tt.HasText("Language") {
-				t.Fatal("language preference is untranslated")
-			}
-		}
+	if err := tt.Click("Settings"); err != nil {
+		t.Fatal(err)
+	}
+	settings := ui.NewTester(a.settingsWindowView, 1080, 760)
+	settings.SetLocale("en")
+	if _, ok := settings.Find("Settings categories"); !ok || !settings.HasText("Language") {
+		t.Fatal("English settings window is missing its navigation or language preference")
+	}
+	if err := settings.Click("Settings category: Access grants"); err != nil {
+		t.Fatal(err)
+	}
+	if a.settingsSection != settingsApprovals || a.page != 1 {
+		t.Fatal("English approval category did not retain the workspace")
+	}
+	if err := settings.Click("Close settings"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("Connection sidebar"); !ok {
+		t.Fatal("closing settings lost the connection sidebar")
 	}
 	if a.sessions[0] != first || a.sessions[1] != second || a.connections[0].Name != "设置" {
 		t.Fatal("translation or page switching changed connection data")
 	}
 	a.sidebarHidden = true
 	tt.Frame()
-	for _, tab := range []string{"Settings", "Access grants", "Workbench"} {
-		if err := tt.Click(tab); err != nil {
-			t.Fatal(err)
-		}
-		if !a.sidebarHidden {
-			t.Fatal("language navigation lost the shared compact state", tab)
-		}
+	if err := tt.Click("Settings"); err != nil {
+		t.Fatal(err)
 	}
+	settings.Frame()
+	if !a.sidebarHidden || a.settingsSection != settingsWorkspace {
+		t.Fatal("settings lost the compact workspace state")
+	}
+	if err := settings.Click("Close settings"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
 	first.target.Kind = "docker-terminal"
 	first.name = "容器 · demo"
 	if got := a.toolsWindowTitle(); got != "SSH tools · Container · demo" || first.name != "容器 · demo" {
@@ -60,7 +67,7 @@ func TestEnglishWorkspaceKeepsUserTextAndSharedSidebarState(t *testing.T) {
 	}
 	// Changing the view language must not change server identities or selection.
 	tt.SetLocale("zh-Hans")
-	if _, ok := tt.Find("工作台"); !ok || a.connections[0].Name != "设置" || a.selected != "a" {
+	if _, ok := tt.Find("全局导航栏"); !ok || a.connections[0].Name != "设置" || a.selected != "a" {
 		t.Fatal("context locale change corrupted navigation or user state")
 	}
 }

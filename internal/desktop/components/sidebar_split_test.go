@@ -29,9 +29,9 @@ func TestSidebarSplitPreservesContentIdentityAndInputAcrossWidths(t *testing.T) 
 		}
 		tt.Type("x")
 		input, _ := tt.Find("work input")
-		wantX := float32(221)
+		wantX := float32(228)
 		if compact {
-			wantX = RailWidth
+			wantX = RailWidth + 8
 		}
 		if input.X != wantX || input.W != 1000-wantX {
 			t.Fatal("content did not use exactly the remaining space", slim, input)
@@ -101,7 +101,7 @@ func TestSidebarSplitDisablesOnlyCompactGripAndClampsDrag(t *testing.T) {
 		t.Fatal("compact grip changed the expanded width", width)
 	}
 	beforeClicks := clicks
-	tt.ClickAt(RailWidth+2, 250)
+	tt.ClickAt(RailWidth+10, 250)
 	tt.ClickAt(RailWidth-2, 250)
 	if clicks != beforeClicks+2 {
 		t.Fatal("compact grip intercepted clicks on either pane edge", clicks, beforeClicks)

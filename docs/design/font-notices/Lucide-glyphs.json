@@ -1,0 +1,517 @@
+{
+  "family": "SmallSSH Icons",
+  "grid": 24,
+  "stroke": 2,
+  "provenance": "Lucide 1.61.0 only; official outlined SVG glyphs, stable Alva names/codepoints, original 24-unit canvas and no per-icon positioning edits.",
+  "license": "ISC AND MIT",
+  "licenseFile": "lucide/LICENSE",
+  "source": {
+    "package": "lucide-static",
+    "version": "1.61.0",
+    "tarball": "https://registry.npmjs.org/lucide-static/-/lucide-static-1.61.0.tgz",
+    "integrity": "sha512-yLAiQB3MWUJEstsEDAwenSA3m7vr1tdLvgnC16Q/XMxRRma0DWwMs8M2bWlvgShrIs1m2mWMJ+0AiahqQO4GrA==",
+    "fontSvgSha256": "9bb0394ca751f0cc69dd27ed8c7f7a6644956c10937258d5755445169725ee5b"
+  },
+  "derivation": "Subset official font SVG paths; cubic-to-quadratic conversion <=0.25/1000 units; preserve 1000 advance/ascent, zero descent and xMin side bearings. SmallSSH appends Save with the same upstream outline and coordinate contract.",
+  "glyphs": [
+    {
+      "name": "Plus",
+      "codepoint": "U+E000",
+      "character": "",
+      "lucide": "plus",
+      "svgSha256": "dfcf07b39b0f4c0b422595ae488fb08c468ef4782f6ef37d0deceaadfb2a5693"
+    },
+    {
+      "name": "Close",
+      "codepoint": "U+E001",
+      "character": "",
+      "lucide": "x",
+      "svgSha256": "a611112e8946480120e5e96f1d849651df76fa502f6190e293defaf6c4f56b07"
+    },
+    {
+      "name": "Search",
+      "codepoint": "U+E002",
+      "character": "",
+      "lucide": "search",
+      "svgSha256": "e0d89f53155655032f5c07fd8da930800b62b69a778d1dd76b388b9b78bf1d3f"
+    },
+    {
+      "name": "Check",
+      "codepoint": "U+E003",
+      "character": "",
+      "lucide": "check",
+      "svgSha256": "cf5d8f45a017604917c0d74ed9c49c6926b0df780c4c9ad3ad85fb7a392bf746"
+    },
+    {
+      "name": "ChevronDown",
+      "codepoint": "U+E004",
+      "character": "",
+      "lucide": "chevron-down",
+      "svgSha256": "763bbc7f305bad8b852b5ae5feadfc08858acf97f19a5897aa8f1fe636abed45"
+    },
+    {
+      "name": "ChevronRight",
+      "codepoint": "U+E005",
+      "character": "",
+      "lucide": "chevron-right",
+      "svgSha256": "2af3089fa09497d5725172b172196d193cbe8205bf70ad6f9078ce4773285001"
+    },
+    {
+      "name": "ChevronLeft",
+      "codepoint": "U+E006",
+      "character": "",
+      "lucide": "chevron-left",
+      "svgSha256": "6e7478a72752c404c2ff077dfb768a84b718255d7bf9ea547de9b080114592ee"
+    },
+    {
+      "name": "ChevronUp",
+      "codepoint": "U+E007",
+      "character": "",
+      "lucide": "chevron-up",
+      "svgSha256": "f64f6c239f92db91d133cc922d1ee1f2cd77ec3eed7dec001a9001b838dbe5aa"
+    },
+    {
+      "name": "ArrowUp",
+      "codepoint": "U+E008",
+      "character": "",
+      "lucide": "arrow-up",
+      "svgSha256": "f76f6cc5e50fe25865dbf403a816016b1cf8d4de1bb4e230ff5b541b69bcde34"
+    },
+    {
+      "name": "ArrowRight",
+      "codepoint": "U+E009",
+      "character": "",
+      "lucide": "arrow-right",
+      "svgSha256": "78af91b2c9d7cf8ea9564c3ca28a4f9021cced57aee0bc3bc801d68555d5b8e1"
+    },
+    {
+      "name": "Stop",
+      "codepoint": "U+E00A",
+      "character": "",
+      "lucide": "square",
+      "svgSha256": "3855d336619de5adc61a0b5293db82cb9f5456b859a7daf0cd249653c6f31063"
+    },
+    {
+      "name": "Pause",
+      "codepoint": "U+E00B",
+      "character": "",
+      "lucide": "pause",
+      "svgSha256": "d318ce2717e5094811b3b59fb340f66813e59714d1d2968adeeef099a1c890c5"
+    },
+    {
+      "name": "Play",
+      "codepoint": "U+E00C",
+      "character": "",
+      "lucide": "play",
+      "svgSha256": "b18a8512edbdefc1eb4005bd95a94c5f4d68d9fc3528214437701df4f6514d08"
+    },
+    {
+      "name": "More",
+      "codepoint": "U+E00D",
+      "character": "",
+      "lucide": "ellipsis",
+      "svgSha256": "97c6135170637b2ef189bb40a506c897db3e1bdc5b8326a7c03309e5bca97e8d"
+    },
+    {
+      "name": "Menu",
+      "codepoint": "U+E00E",
+      "character": "",
+      "lucide": "menu",
+      "svgSha256": "3e3092b465149d003381a210467fe4e9f9c2b135d5d4c638d84489b6cd848d68"
+    },
+    {
+      "name": "Panel",
+      "codepoint": "U+E00F",
+      "character": "",
+      "lucide": "panel-right",
+      "svgSha256": "afa65357b1d7279d5ab08bec745eb411e23cb031c90f8df280a9b5da8f1d6c92"
+    },
+    {
+      "name": "Window",
+      "codepoint": "U+E010",
+      "character": "",
+      "lucide": "panels-top-left",
+      "svgSha256": "a052ec65c72dccb9f75fa0918389761583200b787292c248a98d331447d7ada0"
+    },
+    {
+      "name": "Expand",
+      "codepoint": "U+E011",
+      "character": "",
+      "lucide": "maximize",
+      "svgSha256": "c9325b35a55cc5f29687aad632e604896dc8bf5238688eae9440ba0b317125ee"
+    },
+    {
+      "name": "External",
+      "codepoint": "U+E012",
+      "character": "",
+      "lucide": "external-link",
+      "svgSha256": "20ae73316402f4629ac1c69576014e2f3956f3ca6e14effeab868d4b5a8cc2ef"
+    },
+    {
+      "name": "Chat",
+      "codepoint": "U+E013",
+      "character": "",
+      "lucide": "message-square",
+      "svgSha256": "ac0bb0b8da1d642f9dc0b39737f82a1d4ee32252a57a5ab46188b1e86c799646"
+    },
+    {
+      "name": "Folder",
+      "codepoint": "U+E014",
+      "character": "",
+      "lucide": "folder",
+      "svgSha256": "1045124391eac75014d2983b0e8b782dd681afa9c8615cc2eeefe4e774c24abd"
+    },
+    {
+      "name": "File",
+      "codepoint": "U+E015",
+      "character": "",
+      "lucide": "file-text",
+      "svgSha256": "0f68908abe19543be363a403a4239f288236840ede01eec2af65830c3ba7f22c"
+    },
+    {
+      "name": "Code",
+      "codepoint": "U+E016",
+      "character": "",
+      "lucide": "code-xml",
+      "svgSha256": "28eee8253d990326d66ab58db15418942a45271875e880548169cee7fc1ed6ad"
+    },
+    {
+      "name": "Terminal",
+      "codepoint": "U+E017",
+      "character": "",
+      "lucide": "terminal",
+      "svgSha256": "b25233f7ee93fa2dbc3f72bd25da52e66025d45404ccb8227af8237f4df2ad1e"
+    },
+    {
+      "name": "Globe",
+      "codepoint": "U+E018",
+      "character": "",
+      "lucide": "globe",
+      "svgSha256": "994924c198fe332f0de7eb5953610c6bce145b93db86c97d7183ce170a6038cc"
+    },
+    {
+      "name": "Shield",
+      "codepoint": "U+E019",
+      "character": "",
+      "lucide": "shield-check",
+      "svgSha256": "999d49aefa7f0cab77de2853e167feb3d6b6424b4bd30a3090513c71813fd7fe"
+    },
+    {
+      "name": "Lock",
+      "codepoint": "U+E01A",
+      "character": "",
+      "lucide": "lock",
+      "svgSha256": "d5b171fc7578184bf9c70b20202e1398afeea956ca07bc896a8b88c23f1041e6"
+    },
+    {
+      "name": "Key",
+      "codepoint": "U+E01B",
+      "character": "",
+      "lucide": "key-round",
+      "svgSha256": "85e5db61869ee5c78f52ea1fbf75df75322ba7c67b785468c6554a4bf37e17cd"
+    },
+    {
+      "name": "Settings",
+      "codepoint": "U+E01C",
+      "character": "",
+      "lucide": "settings",
+      "svgSha256": "f2235dfd6c69bdad1acd08554ba19557becefa526b21ae4cfabf8fe7bbc48796"
+    },
+    {
+      "name": "Sliders",
+      "codepoint": "U+E01D",
+      "character": "",
+      "lucide": "sliders-horizontal",
+      "svgSha256": "d2b52bb681ecad5c0710c4bba8684fd7be8dfe1d2bf3c10e865dff242cf3775f"
+    },
+    {
+      "name": "User",
+      "codepoint": "U+E01E",
+      "character": "",
+      "lucide": "user-round",
+      "svgSha256": "b3f1fe08a81b799a16bcbcf344b48412d2c3a9e609368f1782827ec832bf10e2"
+    },
+    {
+      "name": "Users",
+      "codepoint": "U+E01F",
+      "character": "",
+      "lucide": "users-round",
+      "svgSha256": "7b16e9beee68c3508034758a34006c038a461907370438a495e176cc5d7332a1"
+    },
+    {
+      "name": "Agent",
+      "codepoint": "U+E020",
+      "character": "",
+      "lucide": "bot",
+      "svgSha256": "b64f73b0be93e8bea62200ecf6c0840e19e7b064f9eaf9ecf89a7153cd373fe8"
+    },
+    {
+      "name": "Brain",
+      "codepoint": "U+E021",
+      "character": "",
+      "lucide": "brain",
+      "svgSha256": "7bf845f56d870533702abcae4234466b6dd5e680ca095eab4bb4dfb83eafbc7e"
+    },
+    {
+      "name": "Chip",
+      "codepoint": "U+E022",
+      "character": "",
+      "lucide": "cpu",
+      "svgSha256": "5eb864994312ce7600b63080fc2117c9a04a9b74a8d4aa233f75d83c4bd2ab8a"
+    },
+    {
+      "name": "Sparkles",
+      "codepoint": "U+E023",
+      "character": "",
+      "lucide": "sparkles",
+      "svgSha256": "5ff7dc6557dbe5068a18feb080df81e090eb0a495fa1a05e3abd8179ba53c52d"
+    },
+    {
+      "name": "Star",
+      "codepoint": "U+E024",
+      "character": "",
+      "lucide": "star",
+      "svgSha256": "29d57a6721d440f84328f183f684fd54bd5ec49f8aa8b45a2902974c30770361"
+    },
+    {
+      "name": "Book",
+      "codepoint": "U+E025",
+      "character": "",
+      "lucide": "book-open",
+      "svgSha256": "369a07ee7ab13c9cc464f70aada0c28462a4778dcbd6676044f3d3753d7dc6b6"
+    },
+    {
+      "name": "Plugin",
+      "codepoint": "U+E026",
+      "character": "",
+      "lucide": "plug",
+      "svgSha256": "500e34d1b165a82dfd4fe9b58db78f84296a88ae093ccdc4f22690cb089a9790"
+    },
+    {
+      "name": "Database",
+      "codepoint": "U+E027",
+      "character": "",
+      "lucide": "database",
+      "svgSha256": "8f4cfe4259518e162d0bc3fbd817178fb0c455f45b3159789845ca925a119710"
+    },
+    {
+      "name": "Cloud",
+      "codepoint": "U+E028",
+      "character": "",
+      "lucide": "cloud",
+      "svgSha256": "cd20f58645a810b284355420c61fc4b9fc70ea9be257fe7a7251d508832ef60a"
+    },
+    {
+      "name": "Download",
+      "codepoint": "U+E029",
+      "character": "",
+      "lucide": "download",
+      "svgSha256": "bc9a77e3390e5c8b3e79f9dcc955f950b608d76877d58b920ed2bb8dac4488a3"
+    },
+    {
+      "name": "Upload",
+      "codepoint": "U+E02A",
+      "character": "",
+      "lucide": "upload",
+      "svgSha256": "70bde4bb3a234d0aec4339ae3bfea8a9648b04d792d188fdc66fb4ddda138f9e"
+    },
+    {
+      "name": "Refresh",
+      "codepoint": "U+E02B",
+      "character": "",
+      "lucide": "refresh-cw",
+      "svgSha256": "801cc03b84a654de114a2707c9b1c6aa9a3b732c4ffc9e5df0f63f02e1ba0105"
+    },
+    {
+      "name": "Clock",
+      "codepoint": "U+E02C",
+      "character": "",
+      "lucide": "clock",
+      "svgSha256": "2a50ff1030ae5591447dd5b278bdbd24e7dda3c24e2133348e7a66231fd6e787"
+    },
+    {
+      "name": "Calendar",
+      "codepoint": "U+E02D",
+      "character": "",
+      "lucide": "calendar",
+      "svgSha256": "5c0372f26e27a19c72b51e27315fa57d0dddbc325c6a2bf0ec32218e3a542ef6"
+    },
+    {
+      "name": "Activity",
+      "codepoint": "U+E02E",
+      "character": "",
+      "lucide": "activity",
+      "svgSha256": "ad2e728ce1a3bf4dee93223ce3912c7b52cd2ee061c832e08ba0a14b028f68ee"
+    },
+    {
+      "name": "Chart",
+      "codepoint": "U+E02F",
+      "character": "",
+      "lucide": "chart-column",
+      "svgSha256": "e4104761d3c5e4423544563d0e198550fbc301d43895db91703754d1e1a2bc13"
+    },
+    {
+      "name": "List",
+      "codepoint": "U+E030",
+      "character": "",
+      "lucide": "list",
+      "svgSha256": "8c57a520002147ace4c2e3127def471f29af0abb7113acdccb1284e4286ebaae"
+    },
+    {
+      "name": "Task",
+      "codepoint": "U+E031",
+      "character": "",
+      "lucide": "list-checks",
+      "svgSha256": "6d63ec59374a72d8723f7423ae121818b7b6d83f3e9b99f0d323c4c06ce2f08c"
+    },
+    {
+      "name": "Branch",
+      "codepoint": "U+E032",
+      "character": "",
+      "lucide": "git-branch",
+      "svgSha256": "2c81fc736815fb13d645bd8a9b49aa0ddf06c6ef5a31dc099a78ca8a215b8dae"
+    },
+    {
+      "name": "Link",
+      "codepoint": "U+E033",
+      "character": "",
+      "lucide": "link",
+      "svgSha256": "b9b459f896caf86a0713c034957857e47c61f37262365d0114c9870997bfe114"
+    },
+    {
+      "name": "Copy",
+      "codepoint": "U+E034",
+      "character": "",
+      "lucide": "copy",
+      "svgSha256": "0e68d3e49db956dfe42e8dfac1d8596081ee0a6fc5480fc6318d231bb07616d9"
+    },
+    {
+      "name": "Edit",
+      "codepoint": "U+E035",
+      "character": "",
+      "lucide": "pencil",
+      "svgSha256": "ad01ac9a96ecb8e35b54a505756072e9d297d6ed51dbebbd74d6605bfcc9c770"
+    },
+    {
+      "name": "Trash",
+      "codepoint": "U+E036",
+      "character": "",
+      "lucide": "trash-2",
+      "svgSha256": "0367c1f1ea8be2af6dcd38e79c944dc2667ad725488fb9e2d4d1d8826d7b418f"
+    },
+    {
+      "name": "Image",
+      "codepoint": "U+E037",
+      "character": "",
+      "lucide": "image",
+      "svgSha256": "eb8267cf5cd811745284486e5494d022c37c0fb7cfc3e0c3c543675c3268db13"
+    },
+    {
+      "name": "Paperclip",
+      "codepoint": "U+E038",
+      "character": "",
+      "lucide": "paperclip",
+      "svgSha256": "116ebd20f9ccf3ac6a810e12d227a15c7b423ef93e7ed92ad244219c9e5d759f"
+    },
+    {
+      "name": "Microphone",
+      "codepoint": "U+E039",
+      "character": "",
+      "lucide": "mic",
+      "svgSha256": "d2dd73d9963810d00d43abed6a6b70f98ce1e61d33a41896166834e77f8778f0"
+    },
+    {
+      "name": "Volume",
+      "codepoint": "U+E03A",
+      "character": "",
+      "lucide": "volume-2",
+      "svgSha256": "830ace59975c9795b0380e6bd95b5c0d235b2c9312f28f76adc7acd13b79528a"
+    },
+    {
+      "name": "Eye",
+      "codepoint": "U+E03B",
+      "character": "",
+      "lucide": "eye",
+      "svgSha256": "3eb607cfbd394442f231a2a377d5e149a41846cc7fe48e711e8141141b68d791"
+    },
+    {
+      "name": "Info",
+      "codepoint": "U+E03C",
+      "character": "",
+      "lucide": "info",
+      "svgSha256": "2dbeb8e85ec1aae8eedea831deb24a31b04917bceae5ce63bd49eaf07fdaf425"
+    },
+    {
+      "name": "Warning",
+      "codepoint": "U+E03D",
+      "character": "",
+      "lucide": "triangle-alert",
+      "svgSha256": "563e5e851a38ddc378dc98e80ae650ee28180846c7ce14ba51d40bc2107c9362"
+    },
+    {
+      "name": "Help",
+      "codepoint": "U+E03E",
+      "character": "",
+      "lucide": "circle-question-mark",
+      "svgSha256": "574bb601184ed073009e39ae40c0da1aca57b49213b645aa9aa0f2abb5c1d227"
+    },
+    {
+      "name": "Sun",
+      "codepoint": "U+E03F",
+      "character": "",
+      "lucide": "sun",
+      "svgSha256": "19d684776d546b673d45fc54b7dee7b22f18e0b2e673612220727e90f46fb4cf"
+    },
+    {
+      "name": "Moon",
+      "codepoint": "U+E040",
+      "character": "",
+      "lucide": "moon",
+      "svgSha256": "3002badbef72a8f85358b3fe844ccac9c6e9638cc8088fb197426e8aeee6e0a9"
+    },
+    {
+      "name": "Filter",
+      "codepoint": "U+E041",
+      "character": "",
+      "lucide": "funnel",
+      "svgSha256": "b7ca896c000bde4f9cf2900092456af02892803420699e40a031570089d430c6"
+    },
+    {
+      "name": "Target",
+      "codepoint": "U+E042",
+      "character": "",
+      "lucide": "target",
+      "svgSha256": "e26469cfee68a31c0ab6712987f7d05ea5d5326cb7b7061a243369e5e25c7d15"
+    },
+    {
+      "name": "Loader",
+      "codepoint": "U+E043",
+      "character": "",
+      "lucide": "loader-circle",
+      "svgSha256": "83789c9ed68cc3f4f290736a2fd5e0acae39ba2b8705a5b7e34d507f1f44477a"
+    },
+    {
+      "name": "Save",
+      "codepoint": "U+E044",
+      "character": "",
+      "lucide": "save",
+      "upstreamCodepoint": "U+E14D",
+      "fontSvgSha256": "9bb0394ca751f0cc69dd27ed8c7f7a6644956c10937258d5755445169725ee5b"
+    },
+    {
+      "name": "Fingerprint",
+      "codepoint": "U+E045",
+      "character": "",
+      "lucide": "fingerprint",
+      "upstreamCodepoint": "U+E2CB",
+      "fontSvgSha256": "9bb0394ca751f0cc69dd27ed8c7f7a6644956c10937258d5755445169725ee5b"
+    }
+  ],
+  "files": [
+    {
+      "file": "SmallSSHIcons-Regular.woff",
+      "sha256": "30d5d0147d3f46553ef46d37ef7fbc27579cb8a3b3226bb171d010a6dfbdd0bd",
+      "bytes": 20276
+    }
+  ]
+}

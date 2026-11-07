@@ -13,7 +13,7 @@ import (
 	"sshclient/internal/transfer"
 )
 
-func TestFileHeadersFollowTheTreeDividerAndPathStillNavigates(t *testing.T) {
+func TestFileToolbarStaysOnOneLineWhileTreeDividerAndPathNavigate(t *testing.T) {
 	a := fileFollowDemo()
 	b := a.primaryFilePane.browser()
 	a.applyDirectory(b, false, "/srv/next", nil, b.seq, false)
@@ -31,11 +31,17 @@ func TestFileHeadersFollowTheTreeDividerAndPathStillNavigates(t *testing.T) {
 		if !sourceOK || !addressOK || !treeOK || !filesOK || !nameOK {
 			t.Fatal("missing file header or content")
 		}
-		if math.Abs(float64(source.X-tree.X)) > 1 || math.Abs(float64(source.W-tree.W)) > 1 || math.Abs(float64(address.X-files.X)) > 1 {
-			t.Fatal("headers and contents use different column boundaries", source, tree, address, files)
+		if source.X < 0 || source.W < 100 || address.W < 28 || address.X < source.X+source.W || math.Abs(float64(source.Y+source.H/2-address.Y-address.H/2)) > 1 {
+			t.Fatal("source and path do not share a usable toolbar row", source, address)
 		}
-		if math.Abs(float64(address.X+8-name.X)) > 1 || math.Abs(float64(source.Y+source.H/2-address.Y-address.H/2)) > 1 {
-			t.Fatal("path and name inset or header baselines differ", source, address, name)
+		if tree.Y <= source.Y || files.Y < source.Y+source.H || name.Y < files.Y {
+			t.Fatal("toolbar was duplicated inside the split", source, tree, address, files, name)
+		}
+		for _, label := range []string{"刷新目录", "文件窗口菜单", "显示或隐藏目录树"} {
+			action, ok := tt.Find(label)
+			if !ok || action.X < address.X+address.W || math.Abs(float64(action.Y+action.H/2-address.Y-address.H/2)) > 1 {
+				t.Fatal("file action escaped the common row", label, action, address)
+			}
 		}
 		return tree, files
 	}
@@ -362,6 +368,30 @@ func TestLocalFileWindowRestoresLocalSourceAfterCachedPaneChangesServer(t *testi
 			}
 			if local.endpoint != "c" || local.browser().dir != remoteDirectory {
 				t.Fatal("restoring local files changed the other window's remote location")
+			}
+		})
+	}
+}
+
+func TestFileWindowMenuOpensOnFirstInteractionAcrossToolbarWidths(t *testing.T) {
+	for _, width := range []int{240, 560, 960} {
+		t.Run(fmt.Sprintf("width=%d", width), func(t *testing.T) {
+			a := fileFollowDemo()
+			tt := ui.NewTester(a.fileArea, width, 500)
+			label := a.paneSide(a.primaryFilePane) + "文件窗口菜单"
+			if err := tt.Click(label); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(tt.Menu(), "向右拆分") {
+				t.Fatal("first interaction did not open the window menu", tt.Menu())
+			}
+			tt.CloseMenu()
+			tt.SetSize(960, 500)
+			if err := tt.Click(label); err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(tt.Menu(), "添加本机窗口") {
+				t.Fatal("resizing lost the window menu", tt.Menu())
 			}
 		})
 	}

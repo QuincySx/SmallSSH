@@ -18,13 +18,18 @@ type protectedRootEntry struct {
 	expires   time.Time
 }
 
+type protectedRootKey struct {
+	lease poolLease
+	roots string
+}
+
 type protectedRootCache struct {
 	mu      sync.Mutex
-	entries map[string]protectedRootEntry
+	entries map[protectedRootKey]protectedRootEntry
 	now     func() time.Time
 }
 
-func (c *protectedRootCache) get(key string) ([]string, bool) {
+func (c *protectedRootCache) get(key protectedRootKey) ([]string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	entry, ok := c.entries[key]
@@ -35,11 +40,11 @@ func (c *protectedRootCache) get(key string) ([]string, bool) {
 	return entry.canonical, true
 }
 
-func (c *protectedRootCache) put(key string, canonical []string) {
+func (c *protectedRootCache) put(key protectedRootKey, canonical []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.entries == nil {
-		c.entries = map[string]protectedRootEntry{}
+		c.entries = map[protectedRootKey]protectedRootEntry{}
 	}
 	c.entries[key] = protectedRootEntry{canonical: canonical, expires: c.clock().Add(protectedRootsTTL)}
 }
@@ -59,6 +64,6 @@ func (c *protectedRootCache) clear() {
 	c.entries = nil
 }
 
-func rootCacheKey(profileID string, roots []string) string {
-	return profileID + "\x00" + strings.Join(roots, "\x00")
+func rootCacheKey(lease poolLease, roots []string) protectedRootKey {
+	return protectedRootKey{lease: lease, roots: strings.Join(roots, "\x00")}
 }

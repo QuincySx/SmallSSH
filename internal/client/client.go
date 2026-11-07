@@ -12,27 +12,40 @@ import (
 	"sshclient/internal/localipc"
 	"sshclient/internal/monitor"
 	"sshclient/internal/sshconn"
-	"sshclient/internal/vault"
 	"sync"
 	"time"
 )
 
 type Client struct {
 	Dir              string
-	Owner            *vault.Session
+	BrokerKey        string
+	Owner            OwnerProof
 	Delegation       *Delegation
 	OnSessionRenewal func(approval.Request)
 }
 
 func (c Client) Call(ctx context.Context, q broker.Message) (broker.Message, error) {
-	if c.Owner != nil && broker.OwnerQueryAction(q.Action) && q.Challenge == "" && q.Ticket == "" {
+	if q.Action == "request" || q.Action == "ownerRequest" {
+		return c.request(ctx, q)
+	}
+	if q.Ticket != "" && (q.Action == "status" || q.Action == "sessionStatus" || q.Action == "withdraw") {
+		if h := c.channel(q.ID, q.Ticket); h != nil {
+			r, err := h.call(ctx, q)
+			if q.Action == "withdraw" {
+				h.close()
+			}
+			return r, err
+		}
+		return broker.Message{}, approval.ErrDenied
+	}
+	if HasOwnerProof(c.Owner) && broker.OwnerQueryAction(q.Action) && q.Challenge == "" && q.Ticket == "" {
 		return c.CallWithOwner(ctx, q, c.Owner)
 	}
 	return c.call(ctx, q)
 }
 
 func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, error) {
-	w, e := localipc.Connect(ctx, c.Dir)
+	w, e := c.connect(ctx)
 	if e != nil {
 		return broker.Message{}, e
 	}
@@ -45,7 +58,15 @@ func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, err
 	}
 	var r broker.Message
 	e = w.Receive(&r)
-	if e == nil && r.Error != "" {
+	if e == nil {
+		e = responseError(r)
+	}
+	return r, e
+}
+
+func responseError(r broker.Message) error {
+	var e error
+	if r.Error != "" {
 		e = errors.New(r.Error)
 		switch r.ErrorCode {
 		case "session_expired":
@@ -58,7 +79,7 @@ func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, err
 			e = fmt.Errorf("%w: %s", ErrAutomationPolicy, r.Error)
 		}
 	}
-	return r, e
+	return e
 }
 
 // ErrAutomationPolicy marks a refusal by the owner's persistent automation
@@ -69,7 +90,7 @@ func (c Client) Request(ctx context.Context, op approval.Operation, ttl time.Dur
 	if c.Delegation != nil {
 		return c.RequestDelegated(ctx, op, ttl, c.Delegation)
 	}
-	r, e := c.Call(ctx, broker.Message{Action: "request", Operation: op, TTL: int(ttl / time.Second)})
+	r, e := c.request(ctx, broker.Message{Action: "request", Operation: op, TTL: int(ttl / time.Second)})
 	if e != nil {
 		return approval.Request{}, "", e
 	}
@@ -94,6 +115,9 @@ func (c Client) Wait(ctx context.Context, id, ticket string) error {
 			return nil
 		case "pending":
 		default:
+			if h := c.channel(id, ticket); h != nil {
+				h.close()
+			}
 			return approval.ErrDenied
 		}
 		select {
@@ -105,35 +129,58 @@ func (c Client) Wait(ctx context.Context, id, ticket string) error {
 }
 
 type Stream struct {
-	RequestID string
-	Operation approval.Operation
-	Meta      *sshconn.TransferMeta
-	wire      *localipc.Wire
-	stop      func() bool
-	once      sync.Once
+	ListenAddress string
+	RequestID     string
+	Operation     approval.Operation
+	Meta          *sshconn.TransferMeta
+	wire          *localipc.Wire
+	stop          func() bool
+	once          sync.Once
 }
 
 func (c Client) Start(ctx context.Context, id, ticket string, cols, rows int) (*Stream, error) {
-	w, e := localipc.Connect(ctx, c.Dir)
-	if e != nil {
-		return nil, e
+	h := c.channel(id, ticket)
+	if h == nil {
+		return nil, approval.ErrDenied
 	}
-	stop := context.AfterFunc(ctx, func() { w.Conn.Close() })
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	status, err := h.callLocked(ctx, broker.Message{Action: "status", ID: id, Ticket: ticket})
+	if err != nil {
+		return nil, err
+	}
+	if status.Request == nil || status.Request.Status != "approved" || status.Request.Operation.Kind == "grant" {
+		return nil, approval.ErrDenied
+	}
+	if !requestChannels.CompareAndDelete(id, h) {
+		return nil, approval.ErrDenied
+	}
+	h.taken = true
+	if status.Request.OwnerSession {
+		h.registration.Lock()
+		if h.expiry != nil {
+			h.expiry.Stop()
+		}
+		h.registration.Unlock()
+	}
+	w := h.wire
+	stop := context.AfterFunc(ctx, h.close)
+	var e error
 	if e = w.Send(broker.Message{Action: "run", ID: id, Ticket: ticket, Cols: cols, Rows: rows}); e != nil {
 		stop()
-		w.Conn.Close()
+		h.close()
 		return nil, e
 	}
 	var r broker.Message
 	if e = w.Receive(&r); e != nil || r.Action != "ready" {
 		stop()
-		w.Conn.Close()
+		h.close()
 		if e == nil {
 			e = errors.New(r.Error)
 		}
 		return nil, e
 	}
-	return &Stream{wire: w, stop: stop, Meta: r.Transfer, RequestID: id}, nil
+	return &Stream{wire: w, stop: func() bool { stopped := stop(); h.close(); return stopped }, Meta: r.Transfer, RequestID: id, ListenAddress: r.ListenAddress}, nil
 }
 func (s *Stream) Close() error { s.once.Do(func() { s.stop(); s.wire.Conn.Close() }); return nil }
 func (s *Stream) Write(p []byte) (int, error) {

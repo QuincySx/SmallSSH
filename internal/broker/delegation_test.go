@@ -3,6 +3,7 @@ package broker_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,21 +31,14 @@ func TestDelegatedClientEndToEndSSHOneApprovalAndCascadeRevoke(t *testing.T) {
 		t.Fatal("parent used before approval")
 	}
 	approve(t, c, r)
-	if err = d.Save("ai.json"); err != nil {
-		t.Fatal(err)
+	if err = d.Save("ai.json"); err == nil {
+		t.Fatal("exported live session authority")
 	}
-	stored, err := client.ReadDelegation("ai.json", c.Dir)
-	if err != nil {
-		t.Fatal(err)
+	if _, err = client.ReadDelegation("ai.json", c.Dir); err == nil {
+		t.Fatal("restored a session in another process")
 	}
-	defer stored.Close()
-	delegated.Delegation = stored
-	data, err := os.ReadFile(filepath.Join(c.Dir, "client-sessions", "ai.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(data, []byte(f.Profile().Password)) || bytes.Contains(data, []byte("PRIVATE KEY")) {
-		t.Fatal("SSH credential persisted with client authorization")
+	if _, err = json.Marshal(d); err == nil {
+		t.Fatal("serialized a session private key")
 	}
 	for range 2 {
 		child, ticket, err := delegated.Request(ctx, op, 15*time.Minute)
@@ -104,7 +98,7 @@ func TestDelegatedClientEndToEndSSHOneApprovalAndCascadeRevoke(t *testing.T) {
 		t.Fatal("revocation changed an unrelated request", err)
 	}
 	audit, err := os.ReadFile(filepath.Join(c.Dir, "audit.jsonl"))
-	if err != nil || !bytes.Contains(audit, []byte(`"parentId"`)) || bytes.Contains(audit, data) {
+	if err != nil || !bytes.Contains(audit, []byte(`"parentId"`)) || bytes.Contains(audit, []byte(f.Profile().Password)) {
 		t.Fatal("audit omitted parent relationship or leaked client authorization", err)
 	}
 }

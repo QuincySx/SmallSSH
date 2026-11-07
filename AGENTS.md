@@ -10,3 +10,5 @@ Rules for anyone (human or agent) changing this repository. Commands live in [do
 - Preserve the pinned vendor tree and the macOS password accessibility patch in `patches/`. Do not regenerate vendor or bypass it with `-mod=mod` except for an explicit dependency upgrade, which must re-apply the patch, update `patches/vendor-integrity.json` and re-check the native password field.
 - Versions live in `go.mod` (MyGo, Go, any `tool` directive), never in scripts or workflows.
 - Document what changed in `docs/VERIFICATION.md` as one appended section per round: what was done, where the evidence is, and which claims only hold locally.
+
+- UI 页面与窗口的设计入口是 [docs/design/DESIGN.md](docs/design/DESIGN.md)，可编辑源是 `docs/design/smallssh.smallpen/`。修改页面结构时同步 SmallPen 与 `docs/design/pages.json` 的入口、状态、操作及源码映射；用 SmallPen CLI 维护，不堆积静态导出图。

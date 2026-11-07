@@ -3,6 +3,7 @@ package broker_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -76,22 +77,76 @@ func (h *renewalHarness) grant(t *testing.T, permission string) (approval.Reques
 	if err = h.c.DecideReviewedWithOwner(h.ctx, r, true, false, h.s.Vault); err != nil {
 		t.Fatal(err)
 	}
-	if err = d.Save("client.json"); err != nil {
-		t.Fatal(err)
-	}
 	h.offset.Store(int64(61 * time.Second))
 	h.s.Approvals.Sweep()
 	return r, d
 }
 
-func TestAutomaticRenewalCoalescesParallelSSHCallsAndPreservesClientFile(t *testing.T) {
+func TestOwnerChosenNoIdleLifetimeRenewsAndRunsThroughTheClient(t *testing.T) {
 	h := newRenewalHarness(t)
-	original, _ := h.grant(t, "full")
-	file := filepath.Join(h.dir, "client-sessions", "client.json")
-	before, err := os.ReadFile(file)
+	original, d, err := h.c.RequestSession(h.ctx, "fixture", "test AI", "full", time.Hour, 15*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer d.Close()
+	if err := h.c.DecideReviewedWithLifetime(h.ctx, original, true, false, approval.MaxGrantLifetime, approval.MaxGrantLifetime, h.s.Vault); err != nil {
+		t.Fatal(err)
+	}
+	h.offset.Store(int64(24*time.Hour + time.Second))
+	h.s.Approvals.Sweep()
+	notices := make(chan approval.Request, 1)
+	type result struct {
+		request approval.Request
+		ticket  string
+		err     error
+	}
+	results := make(chan result, 1)
+	c := h.c
+	c.OnSessionRenewal = func(r approval.Request) { notices <- r }
+	go func() {
+		r, ticket, err := c.RequestDelegated(h.ctx, approval.Operation{Host: "fixture", Client: "test AI", Kind: "exec", Command: "no-idle-renewal"}, time.Minute, d)
+		results <- result{r, ticket, err}
+	}()
+	var renewed approval.Request
+	select {
+	case renewed = <-notices:
+	case got := <-results:
+		t.Fatal("client rejected an unchanged no-idle scope instead of asking for renewal", got.err)
+	case <-h.ctx.Done():
+		t.Fatal("client did not request renewal")
+	}
+	if renewed.ID != original.ID || !renewed.Renewal || renewed.Operation.Grant.IdleSeconds != approval.MaxGrantLifetime || h.commands.Load() != 0 {
+		t.Fatal("renewal changed scope or executed before owner approval", renewed)
+	}
+	if err := h.c.DecideReviewedWithLifetime(h.ctx, renewed, true, false, 6*3600, 6*3600, h.s.Vault); err != nil {
+		t.Fatal(err)
+	}
+	var got result
+	select {
+	case got = <-results:
+	case <-h.ctx.Done():
+		t.Fatal("approved renewal did not resume the waiting operation")
+	}
+	if got.err != nil || got.request.ParentID != original.ID {
+		t.Fatal("renewal did not produce an authorized child", got.err, got.request)
+	}
+	stream, err := c.Start(h.ctx, got.request.ID, got.ticket, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	var out bytes.Buffer
+	code, _, err := stream.Copy(&out, &out)
+	if err != nil || code != 0 || out.String() != "no-idle-renewal" || h.commands.Load() != 1 {
+		t.Fatal("renewed command did not execute exactly once", err, code, out.String(), h.commands.Load())
+	}
+}
+
+func TestAutomaticRenewalCoalescesParallelCallsOnOneLiveSession(t *testing.T) {
+	h := newRenewalHarness(t)
+	original, delegation := h.grant(t, "full")
+	file := filepath.Join(h.dir, "client-sessions", "client.json")
+	var err error
 	const workers = 6
 	notices := make(chan approval.Request, workers)
 	results := make(chan error, workers)
@@ -100,12 +155,7 @@ func TestAutomaticRenewalCoalescesParallelSSHCallsAndPreservesClientFile(t *test
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			d, err := client.ReadDelegation("client.json", h.dir)
-			if err != nil {
-				results <- err
-				return
-			}
-			defer d.Close()
+			d := delegation
 			c := client.Client{Dir: h.dir, Delegation: d, OnSessionRenewal: func(r approval.Request) { notices <- r }}
 			command := fmt.Sprintf("command-%d", i)
 			r, ticket, err := c.Request(h.ctx, approval.Operation{Host: "fixture", Client: "test AI", Kind: "exec", Command: command}, time.Minute)
@@ -170,9 +220,8 @@ func TestAutomaticRenewalCoalescesParallelSSHCallsAndPreservesClientFile(t *test
 	if h.commands.Load() != workers {
 		t.Fatal("command replayed or failed to run exactly once", h.commands.Load())
 	}
-	after, err := os.ReadFile(file)
-	if err != nil || !bytes.Equal(before, after) {
-		t.Fatal("renewal overwrote client key file", err)
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatal("persisted a session key", err)
 	}
 	audit, err := os.ReadFile(filepath.Join(h.dir, "audit.jsonl"))
 	if err != nil || bytes.Count(audit, []byte(`"event":"renewalRequested"`)) != 1 || !bytes.Contains(audit, []byte(`"generation"`)) {
@@ -238,7 +287,7 @@ func TestExpiredReadScopeDoesNotAskToUpgradeForWrites(t *testing.T) {
 	}
 }
 
-func TestBuiltCLIAutomaticallyRenewsBeforeRunningOnLoopbackSSH(t *testing.T) {
+func TestBuiltCLIRejectsSavedSessionAfterProcessRestart(t *testing.T) {
 	binary := os.Getenv("SSH_CLIENT_CLI_QA_BINARY")
 	if binary == "" {
 		t.Skip("opt-in test of the newly built CLI executable")
@@ -248,56 +297,73 @@ func TestBuiltCLIAutomaticallyRenewsBeforeRunningOnLoopbackSSH(t *testing.T) {
 	}
 	h := newRenewalHarness(t)
 	_, _ = h.grant(t, "full")
-	command := exec.CommandContext(h.ctx, binary, "--data-dir", h.dir, "--client", "test AI", "exec", "fixture", "process-renewal")
-	for _, variable := range os.Environ() {
-		if !strings.HasPrefix(variable, "SSH_CLIENT_SESSION=") {
-			command.Env = append(command.Env, variable)
-		}
-	}
-	command.Env = append(command.Env, "SSH_CLIENT_SESSION=client.json")
+	command := exec.CommandContext(h.ctx, binary, "--data-dir", h.dir, "--broker-key", h.s.PublicKeyPin(), "--session", "client.json", "exec", "fixture", "must-not-run")
 	var out, stderr bytes.Buffer
-	command.Stdout = &out
-	command.Stderr = &stderr
-	done := make(chan error, 1)
+	command.Stdout, command.Stderr = &out, &stderr
+	if err := command.Run(); err == nil || h.commands.Load() != 0 || !strings.Contains(stderr.String(), "session serve") {
+		t.Fatal("CLI reused another process session", err, out.String(), stderr.String())
+	}
+}
+
+func TestBuiltCLIStdioSessionRequiresConsentAndEndsAtProcessExit(t *testing.T) {
+	binary := os.Getenv("SSH_CLIENT_CLI_QA_BINARY")
+	if binary == "" {
+		t.Skip("opt-in built CLI process-boundary test")
+	}
+	h := newRenewalHarness(t)
+	command := exec.CommandContext(h.ctx, binary, "--data-dir", h.dir, "--broker-key", h.s.PublicKeyPin(), "session", "serve", "fixture", "full", "2m", "1m")
+	command.Stdin = strings.NewReader("{\"id\":\"native\",\"operation\":{\"kind\":\"exec\",\"command\":\"native-stdio\"}}\n")
+	var out, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &out, &stderr
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
+	done := make(chan error, 1)
 	go func() { done <- command.Wait() }()
 	tick := time.NewTicker(20 * time.Millisecond)
 	defer tick.Stop()
-	var pending approval.Request
+	var parent approval.Request
 waiting:
 	for {
 		select {
 		case err := <-done:
-			t.Fatal("CLI finished before requesting consent", err, stderr.String())
+			t.Fatal("CLI ended before consent", err, stderr.String())
 		case <-h.ctx.Done():
-			t.Fatal("CLI renewal did not arrive")
+			t.Fatal("CLI never requested consent")
 		case <-tick.C:
-			list, err := h.c.Call(h.ctx, broker.Message{Action: "pending"})
+			page, err := h.c.Call(h.ctx, broker.Message{Action: "pending"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, r := range list.Requests {
-				if r.Renewal && r.Status == "pending" {
-					pending = r
+			for _, r := range page.Requests {
+				if r.Operation.Kind == "grant" && r.Status == "pending" {
+					parent = r
 					break waiting
 				}
 			}
 		}
 	}
-	if h.commands.Load() != 0 {
-		t.Fatal("CLI ran while consent was pending")
+	if h.commands.Load() != 0 || parent.Peer.PID != command.Process.Pid || parent.Peer.Instance == "" {
+		t.Fatal("CLI bypassed consent or hid its process identity")
 	}
-	if err := h.c.DecideReviewedWithOwner(h.ctx, pending, true, false, h.s.Vault); err != nil {
+	if err := h.c.DecideReviewedWithOwner(h.ctx, parent, true, false, h.s.Vault); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case err := <-done:
-		if err != nil || out.String() != "process-renewal" || h.commands.Load() != 1 || strings.Count(stderr.String(), "等待确认续期") != 1 {
-			t.Fatal("CLI did not resume once after renewal", err, out.String(), stderr.String(), h.commands.Load())
+		if err != nil {
+			t.Fatal(err, stderr.String())
 		}
 	case <-h.ctx.Done():
-		t.Fatal("approved CLI did not resume")
+		t.Fatal("approved CLI never finished")
 	}
+	var result struct {
+		ID     string
+		Stdout []byte
+		Error  string
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || result.ID != "native" || string(result.Stdout) != "native-stdio" || result.Error != "" || h.commands.Load() != 1 {
+		t.Fatal("native CLI did not run exactly once", err, out.String(), stderr.String())
+	}
+	waitRevoked(t, h.c, h.ctx, parent.ID)
 }

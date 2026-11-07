@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/approval"
@@ -56,13 +55,15 @@ func approvalAuthReason(r approval.Request) string {
 
 func approvalPermission(r approval.Request) (label, actions, caution string) {
 	switch r.Operation.Kind {
+	case "tunnel":
+		return tr(nil, "SSH 隧道"), tr(nil, "转发 TCP 网络流量"), tr(nil, "监听端口可被同机其他进程使用；动态 SOCKS5 能连接任意 TCP 目标")
 	case "grant":
 		if r.Operation.Grant.ReadRoot != "" || r.Operation.Grant.WriteRoot != "" {
 			return tr(nil, "限定目录访问"), tr(nil, "仅开放授权目录内的文件操作"), tr(nil, "不含命令、终端、状态采样或容器日志")
 		}
 		if r.Operation.Grant.Permission == "full" {
 			if r.Operation.PathProtection {
-				return tr(nil, "读写（受服务器策略限制）"), "", tr(nil, "保护开启时，AI 不开放任意命令和终端")
+				return tr(nil, "读写（受服务器策略限制）"), "", tr(nil, "护栏只拦常见破坏性命令，不能替代核对；交互终端不开放")
 			}
 			return tr(nil, "完整控制"), "", tr(nil, "可使用此 SSH 账户的全部权限，包括任意命令和文件修改")
 		}
@@ -91,6 +92,23 @@ func approvalPermission(r approval.Request) (label, actions, caution string) {
 }
 
 func requestReview(c *ui.Context, r approval.Request, serverNames ...string) {
+	requestReviewWithLifetime(c, r, 0, serverNames...)
+}
+
+// requestReviewWithLifetime shows the duration the owner is about to grant,
+// rather than the one the caller suggested.
+func requestReviewWithLifetime(c *ui.Context, r approval.Request, lifetime int, serverNames ...string) {
+	requestReviewWithTerms(c, r, lifetime, 0, serverNames...)
+}
+
+func grantTermsText(c *ui.Context, lifetime, idle int) string {
+	if idle >= lifetime {
+		return fmt.Sprintf(tr(c, "最长 %s · 闲置不断开"), grantDuration(lifetime))
+	}
+	return fmt.Sprintf(tr(c, "最长 %s · 闲置 %s 后失效"), grantDuration(lifetime), grantDuration(idle))
+}
+
+func requestReviewWithTerms(c *ui.Context, r approval.Request, lifetime, idle int, serverNames ...string) {
 	op := r.Operation
 	panel := ui.Column(c).Key(r.ID).FillWidth().MinWidth(0).Gap(16)
 	details := ui.Local(panel, "details", func() bool { return false })
@@ -148,9 +166,20 @@ func requestReview(c *ui.Context, r approval.Request, serverNames ...string) {
 			})
 			if op.Kind == "grant" {
 				requestGrantRoots(c, op.Grant)
-				term := fmt.Sprintf(tr(c, "最长 %s · 闲置 %s 后失效"), grantDuration(op.Grant.LifetimeSeconds), grantDuration(op.Grant.IdleSeconds))
+				if lifetime <= 0 || r.Status != "pending" {
+					lifetime = op.Grant.LifetimeSeconds
+				}
+				if idle <= 0 || r.Status != "pending" {
+					idle = min(lifetime, op.Grant.IdleSeconds)
+				}
+				term := grantTermsText(c, lifetime, idle)
 				if r.Status == "approved" {
-					term = r.Expires.Local().Format(tr(c, "01-02 15:04 到期")) + tr(c, " · 闲置 ") + grantDuration(op.Grant.IdleSeconds) + tr(c, " 后失效")
+					term = r.Expires.Local().Format(tr(c, "01-02 15:04 到期"))
+					if idle >= lifetime {
+						term += tr(c, " · 闲置不断开")
+					} else {
+						term += tr(c, " · 闲置 ") + grantDuration(idle) + tr(c, " 后失效")
+					}
 				}
 				reviewRow(c, tr(c, "授权期限"), term)
 				ui.Column(c).FillWidth().Padding(12, 14).Radius(8).Gap(5).Background(c.Theme().Accent.Alpha(.06)).Border(1, c.Theme().Accent.Alpha(.16)).Children(func() {
@@ -212,6 +241,15 @@ func (a *app) reviewedApproval(id string) (approval.Request, bool) {
 // Security-relevant operation data is shared by compact prompts and the review center.
 func requestOperationReview(c *ui.Context, r approval.Request) {
 	op := r.Operation
+	if op.Kind == "tunnel" {
+		reviewRow(c, tr(c, "隧道方向"), op.Tunnel.Kind)
+		reviewRow(c, tr(c, "监听地址"), op.Tunnel.Listen)
+		target := op.Tunnel.Target
+		if target == "" {
+			target = tr(c, "任意 TCP 目标（SOCKS5）")
+		}
+		reviewRow(c, tr(c, "转发目标"), target)
+	}
 	if op.Command != "" {
 		ui.Column(c).FillWidth().MinWidth(0).Gap(6).Children(func() {
 			ui.Text(c, tr(c, "完整命令")).FontSize(12).TextColor(c.Theme().TextMuted)
@@ -255,6 +293,18 @@ func requestOperationReview(c *ui.Context, r approval.Request) {
 
 func requestTechnicalReview(c *ui.Context, r approval.Request) {
 	op := r.Operation
+	if r.Peer.PID > 0 {
+		reviewRow(c, tr(c, "进程 ID"), fmt.Sprint(r.Peer.PID))
+	}
+	reviewRow(c, tr(c, "进程路径"), pathTail(r.Peer.Path, 72))
+	reviewRow(c, tr(c, "应用 ID"), r.Peer.Bundle)
+	reviewRow(c, tr(c, "进程实例"), r.Peer.Instance)
+	reviewRow(c, tr(c, "程序摘要"), r.Peer.CodeID)
+	reviewRow(c, tr(c, "操作类型"), operationTitle(op.Kind))
+	reviewRow(c, tr(c, "连接目标"), op.Endpoint)
+	reviewRow(c, tr(c, "命令"), boundedExcerpt(op.Command, 512))
+	reviewRow(c, tr(c, "路径"), op.Path)
+	reviewRow(c, tr(c, "目标路径"), op.Destination)
 	reviewRow(c, tr(c, "主机指纹"), op.HostFingerprint)
 	reviewRow(c, tr(c, "内容摘要"), op.ContentHash)
 	reviewRow(c, tr(c, "原内容摘要"), op.OriginalHash)
@@ -269,7 +319,24 @@ func requestTechnicalReview(c *ui.Context, r approval.Request) {
 	if op.TransferID != "" {
 		reviewRow(c, tr(c, "续传"), fmt.Sprintf(tr(c, "%s · %d / %d 字节"), op.TransferID, op.Offset, op.Size))
 	}
-	reviewRow(c, tr(c, "请求到期"), r.Expires.Local().Format(time.DateTime))
 	reviewRow(c, tr(c, "请求 ID"), r.ID)
 	reviewRow(c, tr(c, "父授权 ID"), r.ParentID)
+}
+
+// pathTail keeps the end of a long executable path, where the app name is.
+func pathTail(path string, limit int) string {
+	runes := []rune(reviewText(path))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return "…" + string(runes[len(runes)-limit:])
+}
+
+// boundedExcerpt keeps one row readable; the full value stays in the request.
+func boundedExcerpt(value string, limit int) string {
+	runes := []rune(reviewText(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit]) + "…"
 }

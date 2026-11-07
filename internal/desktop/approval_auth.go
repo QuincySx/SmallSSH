@@ -103,6 +103,14 @@ func (s *approvalPromptState) start(r approval.Request, allow, system, automatic
 			s.autoRetryUsed, s.autoAttempted, s.autoRetryAt, s.status = true, false, at, ""
 			return
 		}
+		if systemauth.IsAuthenticationNotReady(err) {
+			// The embedded Touch ID view could not appear, even on the retry.
+			// Ask for the vault password in this window instead of opening a
+			// second system dialog.
+			s.passwordMode, s.autoAttempted = true, true
+			s.status = tr(nil, "系统验证暂时不可用，请在这里输入保险库主密码")
+			return
+		}
 		s.status = err.Error()
 	}
 	if !allow {
@@ -154,6 +162,7 @@ func (s *approvalPromptState) start(r approval.Request, allow, system, automatic
 
 func (a *app) bindApprovalFlow(r approval.Request, state *approvalPromptState, post func(func()), current func() bool, done func()) {
 	state.requestKey = approvalRequestKey(r)
+	a.initializeApprovalGrant(r, state)
 	auth, dir, cli := a.auth, a.dir, a.client
 	if state.host != nil && auth != nil && auth.SupportsEmbedded() {
 		state.presentation = systemauth.NewEmbeddedPresentation(mygo.RunOnMain)
@@ -178,6 +187,9 @@ func (a *app) bindApprovalFlow(r approval.Request, state *approvalPromptState, p
 					return nil, errors.New(tr(nil, "系统验证不可用"))
 				}
 				if presentation != nil {
+					// Only the view embedded in our own window is acceptable
+					// here: the system's own sheet would put a second dialog on
+					// top of this one.
 					return auth.OpenEmbedded(ctx, dir, approvalAuthReason(r), presentation)
 				}
 				return auth.Open(ctx, dir, approvalAuthReason(r))
@@ -186,7 +198,12 @@ func (a *app) bindApprovalFlow(r approval.Request, state *approvalPromptState, p
 		},
 		denyOwner: a.unlockedOwner,
 		submit: func(ctx context.Context, reviewed approval.Request, allow bool, owner *vault.Session) error {
-			return cli.DecideReviewedWithOwner(ctx, reviewed, allow, false, owner)
+			lifetime, idle := 0, 0
+			if allow && reviewed.Operation.Kind == "grant" {
+				lifetime = state.chosenLifetime(reviewed)
+				idle = state.chosenIdle(reviewed)
+			}
+			return cli.DecideReviewedWithLifetime(ctx, reviewed, allow, false, lifetime, idle, owner)
 		},
 	}
 }
@@ -237,17 +254,17 @@ func (a *app) clearInlineApproval() {
 }
 
 func (a *app) queueInlineApproval() {
-	state, win := a.inlineApproval, a.win
+	state, win := a.inlineApproval, a.approvalHostWindow()
 	if state == nil || win == nil || state.flow == nil {
 		return
 	}
-	if !a.online || a.page != 3 || a.approvalTab != 0 || a.approvalWin != nil || !state.flow.current() {
+	if !a.online || !a.approvalCenterVisible() || a.approvalTab != 0 || a.approvalWin != nil || !state.flow.current() {
 		a.clearInlineApproval()
 		return
 	}
 	for _, r := range a.requests {
 		if approvalRequestKey(r) == state.requestKey {
-			state.queueAutomatic(r, authReadiness{windowReady: a.mainWindowReady, visible: win.IsVisible(), focused: win.IsFocused(), active: a.isActive(), systemReady: a.approvalSystemReady()}, time.Now, win.Update, func() bool {
+			state.queueAutomatic(r, authReadiness{windowReady: a.approvalHostReady(), visible: win.IsVisible(), focused: win.IsFocused(), active: a.isActive(), systemReady: a.approvalSystemReady()}, time.Now, win.Update, func() bool {
 				return a.inlineApproval == state && state.flow.current() && !win.IsDestroyed() && win.IsVisible() && win.IsFocused() && a.isActive() && a.approvalSystemReady()
 			})
 			return

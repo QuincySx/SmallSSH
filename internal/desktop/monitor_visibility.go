@@ -7,10 +7,14 @@ package desktop
 
 // monitorWanted reports whether this session's status is on screen right now.
 func (a *app) monitorWanted(sess *session) bool {
-	if sess == nil || !a.online || a.page != 1 || a.toolsHidden || a.dock != toolDiagnostics {
+	if sess == nil || !a.online || a.page != 1 {
 		return false
 	}
-	if a.win != nil && (a.win.IsDestroyed() || !a.win.IsVisible()) {
+	mainVisible := a.win == nil || !a.win.IsDestroyed() && a.win.IsVisible()
+	if tool := a.workspaceTools[toolDiagnostics]; tool != nil {
+		return mainVisible && !a.fileExpanded && tool.group.selectedTool == tool && a.workspaceToolSource(tool) == sess
+	}
+	if a.toolsHidden || a.dock != toolDiagnostics {
 		return false
 	}
 	// A detached tools window shows the same session, so it counts as visible
@@ -18,7 +22,7 @@ func (a *app) monitorWanted(sess *session) bool {
 	if a.toolsDetached && a.toolsWin != nil {
 		return sess == a.serverStateSession()
 	}
-	if a.win != nil && (a.win.IsDestroyed() || !a.win.IsVisible()) {
+	if !mainVisible {
 		return false
 	}
 	return sess == a.serverStateSession()

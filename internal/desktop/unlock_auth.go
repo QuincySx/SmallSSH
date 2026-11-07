@@ -304,6 +304,10 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 				}
 				server, err := openBroker(dir, owner) // Takes ownership, even on failure.
 				if err != nil {
+					if ctx.Err() != nil {
+						u.reject()
+						return
+					}
 					a.postUI(func() { finishError(err) })
 					return
 				}

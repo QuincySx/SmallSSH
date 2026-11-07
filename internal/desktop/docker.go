@@ -50,7 +50,7 @@ func (a *app) dockerView(c *ui.Context, info *monitor.Inventory) {
 	state := a.managementState()
 	narrow := a.statusPaneWidth(c) < 560
 	ui.Row(c).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
-		tabs := ui.Tabs(c, &state.dockerTab, tr(c, "容器"), tr(c, "镜像"), "Compose")
+		tabs := components.Tabs(c, &state.dockerTab, tr(c, "容器"), tr(c, "镜像"), "Compose")
 		if narrow {
 			tabs.Grow(1)
 		} else {
@@ -172,7 +172,7 @@ func (a *app) dockerContainers(c *ui.Context, d *monitor.DockerInfo, state *serv
 	if state.containerList {
 		ui.Row(c).FillWidth().Shrink(0).Children(func() {
 			ui.Text(c, fmt.Sprintf(tr(c, "%d 项"), len(rows))).FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
-			actionMenu(c, chosen == nil || state.busy || !a.statusActionsAvailable(), func(m *ui.Menu) {
+			a.actionMenu(c, chosen == nil || state.busy || !a.statusActionsAvailable(), func(m *ui.Menu) {
 				if chosen != nil {
 					a.containerMenu(m, *chosen, d)
 				}
@@ -224,12 +224,12 @@ func (a *app) dockerContainers(c *ui.Context, d *monitor.DockerInfo, state *serv
 			}
 		}
 		cell := ui.Row(c).Fill().AlignItems(ui.Center).Children(func() { components.CellText(c, reviewText(text)).Tooltip(text) })
-		cell.ContextMenu(func(m *ui.Menu) {
+		cell.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) {
 			state.containerSelected = i
 			state.containerChoice.Clear()
 			state.containerChoice.Add(containerIdentity{d.EngineID, row.ID})
 			a.containerMenu(m, row, d)
-		})
+		}))
 		if cell.DoubleClicked() {
 			a.openContainerDetails(row, d)
 		}

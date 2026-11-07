@@ -76,7 +76,7 @@ func (s *Session) SaveServerNote(file, id string, note ServerNote) error {
 	} else {
 		values[id] = note
 	}
-	copy := &Session{header: s.header, key: s.key, profiles: s.profiles, snippets: s.snippets, notes: values}
+	copy := &Session{header: s.header, key: s.key, profiles: s.profiles, snippets: s.snippets, notes: values, auditHead: s.auditHead}
 	if err := Save(file, copy, false); err != nil {
 		return err
 	}

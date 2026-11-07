@@ -24,7 +24,7 @@ func TestConnectionRailSelectsWithoutConnecting(t *testing.T) {
 	tt := ui.NewTester(a.connectionRail, int(components.RailWidth), 360)
 	for _, name := range []string{"连接 A", "连接 B", "连接 C"} {
 		bounds, ok := tt.Find(name)
-		if !ok || bounds.W != 36 || bounds.H != components.NavigationItemHeight || bounds.X < 0 || bounds.X+bounds.W > components.RailWidth {
+		if !ok || bounds.W != 36 || bounds.H != connectionRailItemHeight || bounds.X < 0 || bounds.X+bounds.W > components.RailWidth {
 			t.Fatal("connection lost its clickable avatar", name, bounds)
 		}
 	}
@@ -85,13 +85,20 @@ func TestConnectionRailKeepsConnectionContextActions(t *testing.T) {
 	if err := tt.RightClick("连接 B"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"取消连接", "新建终端标签", "连接终端", "编辑连接", "AI 访问…", "备注…", "删除连接"}
+	want := []string{"取消连接", "新建终端标签", "连接终端", "SSH 隧道…", "编辑连接", "AI 访问…", "备注…", "删除连接"}
 	if !reflect.DeepEqual(tt.Menu(), want) {
 		t.Fatal("compact menu differs from expanded connection actions", tt.Menu())
 	}
 	if err := tt.ChooseMenuItem("取消连接"); err != nil || !cancelled {
 		t.Fatal("cancel connection action missing", err)
 	}
+	if err := tt.RightClick("连接 B"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("SSH 隧道…"); err != nil || !a.tunnels.open || a.tunnels.host != "b" {
+		t.Fatal("tunnel manager did not bind the selected server", err)
+	}
+	a.tunnels.open = false
 	if err := tt.RightClick("连接 B"); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +179,7 @@ func TestConnectionRailKeyboardSkipsGroupsAndTraversesVirtualViewport(t *testing
 			t.Fatal("Down did not select the next connection across virtual rows", i, a.selected)
 		}
 	}
-	if bounds, ok := tt.Find("键盘连接 15"); !ok || bounds.H != components.NavigationItemHeight {
+	if bounds, ok := tt.Find("键盘连接 15"); !ok || bounds.H != connectionRailItemHeight {
 		t.Fatal("keyboard selection did not scroll through the group separator", bounds)
 	}
 	tt.Key(0, ui.KeyUp)
@@ -180,7 +187,7 @@ func TestConnectionRailKeyboardSkipsGroupsAndTraversesVirtualViewport(t *testing
 		t.Fatal("Up stopped at a group separator", a.selected)
 	}
 	tt.Key(0, ui.KeyEnd)
-	if bounds, ok := tt.Find("键盘连接 44"); a.selected != "keyboard-44" || !ok || bounds.H != components.NavigationItemHeight {
+	if bounds, ok := tt.Find("键盘连接 44"); a.selected != "keyboard-44" || !ok || bounds.H != connectionRailItemHeight {
 		t.Fatal("End did not reach the last virtual connection", a.selected, bounds)
 	}
 	tt.Key(0, ui.KeyEnter)
@@ -196,7 +203,7 @@ func TestConnectionRailKeyboardSkipsGroupsAndTraversesVirtualViewport(t *testing
 		t.Fatal("Tab did not restore the rail's single focus stop")
 	}
 	tt.Key(0, ui.KeyHome)
-	if bounds, ok := tt.Find("键盘连接 00"); a.selected != "keyboard-00" || !ok || bounds.H != components.NavigationItemHeight {
+	if bounds, ok := tt.Find("键盘连接 00"); a.selected != "keyboard-00" || !ok || bounds.H != connectionRailItemHeight {
 		t.Fatal("Home did not return to the first virtual connection", a.selected, bounds)
 	}
 	tt.Key(0, ui.KeyUp)
@@ -302,17 +309,28 @@ func TestConnectionSidebarModeChangesPreserveAvatarGeometryAndScroll(t *testing.
 				break
 			}
 		}
+		beforeCompact := compact
 		compact = !compact
 		tt.Frame()
 		afterPixels := tt.Image()
 		for label, was := range before {
 			now, ok := tt.Find(label)
-			if !ok || now.X != was.X || now.Y != was.Y || now.H != was.H {
+			if !ok || now.Y != was.Y || now.H != was.H {
 				t.Fatalf("mode change moved %q: %v -> %v (%v)", label, was, now, ok)
 			}
 			if strings.HasPrefix(label, "稳定连接 ") {
+				beforeAvatarX, afterAvatarX := was.X+10, now.X+10
+				if beforeCompact {
+					beforeAvatarX = was.X + 4
+				}
+				if compact {
+					afterAvatarX = now.X + 4
+				}
+				if beforeAvatarX != afterAvatarX {
+					t.Fatal("avatar moved between sidebar modes", label, beforeAvatarX, afterAvatarX)
+				}
 				// Visible edge rows may be clipped by the virtual viewport.
-				if now.H > components.NavigationItemHeight+0.01 {
+				if now.H > connectionRailItemHeight+0.01 {
 					t.Fatal("connection item height changed", label, now)
 				}
 				// Selection feedback changes from an expanded row to the compact
@@ -321,8 +339,8 @@ func TestConnectionSidebarModeChangesPreserveAvatarGeometryAndScroll(t *testing.
 					continue
 				}
 				// Unselected avatars keep exactly the same pixels in their 36px slot.
-				top := int(was.Y + (components.NavigationItemHeight-28)/2)
-				crop := image.Rect(int(was.X)+5, top+1, int(was.X)+31, top+27)
+				top := int(was.Y + (connectionRailItemHeight-28)/2)
+				crop := image.Rect(int(beforeAvatarX)+1, top+1, int(beforeAvatarX)+27, top+27)
 				for y := max(crop.Min.Y, 0); y < min(crop.Max.Y, pixels.Bounds().Max.Y); y++ {
 					for x := crop.Min.X; x < crop.Max.X; x++ {
 						if pixels.RGBAAt(x, y) != afterPixels.RGBAAt(x, y) {
@@ -415,13 +433,26 @@ func TestCompactConnectionSearchExpandsAndFocusesSharedInput(t *testing.T) {
 		t.Fatal("focused expanded search lost matching connection")
 	}
 	main := ui.NewTester(a.view, 1000, 760)
-	for _, page := range []struct{ tab, region string }{{"授权中心", "授权分类"}, {"设置", "设置分类"}, {"工作台", "连接侧栏"}} {
-		if err := main.Click(page.tab); err != nil {
-			t.Fatal(err)
-		}
-		if _, found := main.Find(page.region); !found || a.sidebarHidden || a.search != "连接 B" {
-			t.Fatal("compact search expansion was not shared across pages", page.tab)
-		}
+	selected := a.selected
+	if err := main.Click("设置"); err != nil {
+		t.Fatal(err)
+	}
+	settings := ui.NewTester(a.settingsWindowView, 1080, 760)
+	if err := settings.Click("设置分类：授权中心"); err != nil {
+		t.Fatal(err)
+	}
+	if a.settingsSection != settingsApprovals || !a.settingsOpen {
+		t.Fatal("approval category did not open in settings")
+	}
+	if err := settings.Click("关闭设置"); err != nil {
+		t.Fatal(err)
+	}
+	main.Frame()
+	if _, found := main.Find("连接侧栏"); !found || a.sidebarHidden || a.search != "连接 B" || a.selected != selected {
+		t.Fatal("settings changed expanded search or selection")
+	}
+	if err := main.Click("搜索连接"); err != nil || !main.Focused("搜索连接") {
+		t.Fatal("search input lost focusability after settings", err)
 	}
 }
 

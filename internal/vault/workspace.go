@@ -2,45 +2,56 @@ package vault
 
 import (
 	"errors"
-	"strings"
+
+	"sshclient/internal/snippet"
 )
 
-// Snippets share the encrypted payload, since saved commands may contain secrets.
-// They are available to the owner desktop, never returned by the public AI RPC.
-type Snippet struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Group string `json:"group"`
-	Body  string `json:"body"`
-}
-
-func (s *Session) Snippets() []Snippet {
+// Snippets share the encrypted payload, since saved commands may contain
+// secrets. They are available to the owner desktop, never returned by the
+// public AI RPC.
+func (s *Session) Snippets() []snippet.Command {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return nil
 	}
-	return append([]Snippet(nil), s.snippets...)
+	values := append([]snippet.Command(nil), s.snippets...)
+	for i := range values {
+		values[i] = values[i].Clone()
+		values[i].History = nil
+	}
+	return values
 }
 
-func (s *Session) SaveSnippet(file string, value Snippet, remove bool) error {
+func (s *Session) SaveSnippet(file string, value snippet.Command, remove bool) error {
 	if value.ID == "" || len(value.ID) > 128 {
 		return errors.New("命令 ID 无效")
 	}
-	if !remove && (strings.TrimSpace(value.Name) == "" || strings.TrimSpace(value.Body) == "" || len(value.Name) > 256 || len(value.Group) > 128 || len(value.Body) > 32768 || strings.ContainsAny(value.Body, "\x00\x1b")) {
-		return errors.New("请填写命令名称和内容；内容最多 32 KiB，不允许控制序列")
+	if !remove {
+		value = value.Clone()
+		if err := snippet.Validate(value); err != nil {
+			return err
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return ErrUnlock
 	}
-	values := make([]Snippet, 0, len(s.snippets)+1)
+	values := make([]snippet.Command, 0, len(s.snippets)+1)
 	found := false
 	for _, v := range s.snippets {
 		if v.ID == value.ID {
 			found = true
 			if !remove {
+				// History is owner-local state, not editor input. Preserve current
+				// records only while this parameter still means the same thing.
+				value.History = nil
+				for _, history := range v.History {
+					if definition := snippet.InputDefinition(value, history.System, history.Parameter); definition != "" && definition == history.Definition {
+						value.History = append(value.History, history)
+					}
+				}
 				values = append(values, value)
 			}
 		} else {
@@ -48,12 +59,13 @@ func (s *Session) SaveSnippet(file string, value Snippet, remove bool) error {
 		}
 	}
 	if !found && !remove {
+		value.History = nil
 		if len(values) >= 1024 {
 			return errors.New("常用命令数量超过上限")
 		}
 		values = append(values, value)
 	}
-	copy := &Session{header: s.header, key: s.key, profiles: s.profiles, snippets: values, notes: s.notes}
+	copy := &Session{header: s.header, key: s.key, profiles: s.profiles, snippets: values, notes: s.notes, auditHead: s.auditHead}
 	if e := Save(file, copy, false); e != nil {
 		return e
 	}
@@ -81,7 +93,7 @@ func (s *Session) DeleteProfile(file, id string) error {
 	}
 	notes := cloneNotes(s.notes)
 	delete(notes, id)
-	copy := &Session{header: s.header, key: s.key, profiles: profiles, snippets: s.snippets, notes: notes}
+	copy := &Session{header: s.header, key: s.key, profiles: profiles, snippets: s.snippets, notes: notes, auditHead: s.auditHead}
 	if e := Save(file, copy, false); e != nil {
 		return e
 	}

@@ -44,8 +44,9 @@ func TestOwnerFileActionsDoNotApproveExternalRequests(t *testing.T) {
 	if len(b.cache[b.dir]) != 1 {
 		t.Fatal("directory was not loaded without extra approval", b.loadError)
 	}
+	windows := fakeEditorFactory(h.a)
 	h.a.readEditor(p.ID, testserver.RemotePath(name))
-	h.wait(func() bool { return h.a.editPath != "" })
+	h.wait(func() bool { return len(*windows) == 1 && h.a.editPath != "" && h.a.editorRead == nil })
 	h.a.edit.Insert("changed ")
 	h.a.saveEditor()
 	h.wait(func() bool { return !h.a.edit.Buffer.Modified() })
@@ -195,13 +196,15 @@ func TestRequestReviewShowsRelevantScopeAndEscapesInvisibleText(t *testing.T) {
 func TestAuxiliaryScreensAndFileFooterFitSmallWindow(t *testing.T) {
 	a := &app{ctx: context.Background(), online: true, page: 4, settingsSection: settingsSecurity, sidebarWidth: 190, groups: map[string]*bool{}}
 	a.authStatus = systemauth.Status{Available: true, Enabled: true, Name: "Touch ID"}
-	tt := ui.NewTester(a.view, 1000, 760)
-	for _, label := range []string{"工作台", "设置", "主密码确认设置", "停用 Touch ID"} {
+	a.settingsOpen = true
+	tt := ui.NewTester(a.settingsWindowView, 1000, 760)
+	for _, label := range []string{"关闭设置", "设置分类：安全与解锁", "主密码确认设置", "停用 Touch ID"} {
 		r, ok := tt.Find(label)
 		if !ok || r.Y < 0 || r.Y+r.H > 760 {
 			t.Fatal("security control clipped", label, r)
 		}
 	}
+	a.closeSettingsWindow()
 	a.page = 1
 	a.selected = "demo"
 	a.toolsHidden = false
@@ -212,8 +215,8 @@ func TestAuxiliaryScreensAndFileFooterFitSmallWindow(t *testing.T) {
 	b.cache[b.dir] = []sshconn.File{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}
 	b.reveal(false, b.dir)
 	b.indexDirectory(false, b.dir)
-	tt.Frame()
-	r, ok := tt.Find("4 项")
+	tt = ui.NewTester(a.view, 1000, 760)
+	r, ok := tt.Find("4 个文件 · 0 个目录 · 已选 0 项")
 	if !ok || r.Y < 0 || r.Y+r.H > 760 {
 		t.Fatal("file footer clipped", r)
 	}
@@ -228,8 +231,18 @@ func TestEditorSaveShortcutWritesOnlyFocusedDocument(t *testing.T) {
 	}
 	updates := make(chan func(), 8)
 	a := &app{ctx: context.Background(), online: true, page: 1, toolsHidden: true, sidebarWidth: 190, dispatch: func(fn func()) { updates <- fn }}
+	windows := fakeEditorFactory(a)
 	a.installEditor(localEndpoint, name, original, textHash([]byte(original)))
-	tt := ui.NewTester(a.view, 1000, 760)
+	select {
+	case fn := <-updates:
+		fn()
+	case <-time.After(3 * time.Second):
+		t.Fatal("editor window was not created")
+	}
+	if len(*windows) != 1 || (*windows)[0].shown != 1 {
+		t.Fatal("editor did not open its standalone window")
+	}
+	tt := ui.NewTester(a.editorWindowView, 1000, 760)
 	if err := tt.Click("文件编辑器"); err != nil {
 		t.Fatal(err)
 	}

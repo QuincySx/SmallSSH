@@ -7,13 +7,22 @@ import (
 	"github.com/egoist/mygo/ui"
 	"path"
 	"sshclient/internal/desktop/components"
+	"sshclient/internal/localipc"
 )
 
 func (a *app) refreshAuth() {
 	if a.auth == nil {
 		return
 	}
-	go func() { st := a.auth.Status(a.ctx, a.dir); a.postUI(func() { a.authStatus = st }) }()
+	auth, ctx, dir, gen := a.auth, a.ctx, a.dir, a.generation
+	go func() {
+		st := auth.Status(ctx, dir)
+		a.postUI(func() {
+			if a.auth == auth && a.generation == gen {
+				a.authStatus = st
+			}
+		})
+	}()
 }
 func (a *app) connectionTree(c *ui.Context) { a.connectionSidebar(c, false) }
 func size(n uint64) string                  { return components.Bytes(n) }
@@ -91,6 +100,13 @@ func (a *app) transferView(c *ui.Context) {
 			}
 			ui.Progress(c, progress).FillWidth()
 			ui.Text(c, fmt.Sprintf("%s · %s / %s · %s/s", transferState(j.State), size(uint64(max(j.Bytes, 0))), size(uint64(max(j.Size, 0))), size(uint64(max(j.Speed, 0))))).SingleLine().FontSize(10).TextColor(c.Theme().TextMuted)
+			if j.Directory {
+				label := fmt.Sprintf(tr(c, "文件夹 · %d / %d 个文件"), j.FilesDone, j.FilesTotal)
+				if j.Phase == "scanning" && j.State == "running" {
+					label = fmt.Sprintf(tr(c, "正在扫描文件夹…已找到 %d 个文件"), j.FilesTotal)
+				}
+				ui.Text(c, label).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)
+			}
 			if j.Error != "" {
 				ui.Text(c, reviewText(j.Error)).SingleLine().FontSize(11).TextColor(c.Theme().Danger).Tooltip(j.Error)
 			}
@@ -98,6 +114,7 @@ func (a *app) transferView(c *ui.Context) {
 	}).FillWidth().Grow(1).MinHeight(0).Label(tr(c, "传输队列"))
 }
 func (a *app) securityView(c *ui.Context) {
+	a.idleSettings(c)
 	name := a.authStatus.Name
 	if name == "" {
 		name = tr(c, "系统验证")
@@ -147,12 +164,39 @@ func (a *app) securityView(c *ui.Context) {
 			})
 		}
 	})
+	if a.server != nil {
+		pin := a.server.PublicKeyPin()
+		ui.Column(c).FillWidth().Padding(16).Radius(8).Gap(10).Background(c.Theme().Surface).Label(tr(c, "本次代理身份")).Children(func() {
+			ui.Text(c, tr(c, "本机代理身份与 CLI 配对")).FontSize(15).Bold()
+			ui.Text(c, pin).FillWidth().Selectable().SingleLine().Ellipsis("…").Tooltip(pin).FontSize(12).Label(tr(c, "代理公钥指纹"))
+			ui.Text(c, tr(c, "代理身份随保险库保持稳定，首次可信解锁后自动配对；锁定或重启无需再复制指纹。客户端会话仍绑定进程与活连接，断线后重新授权。")).FillWidth().FontSize(12).TextColor(c.Theme().TextMuted)
+			if components.Button(c, tr(c, "配对 / 修复本机 CLI")).Disabled(a.busy).Clicked() {
+				server, dir := a.server, a.dir
+				a.ask(tr(nil, "信任此本机代理？"), pin, tr(nil, "只更新当前用户的代理身份信任，不授予服务器访问权限。已有不同身份的配对会被替换。"), "", "", tr(nil, "确认配对"), func(string) {
+					a.work(func() (func(), error) {
+						current, err := server.Vault.BrokerPublicKeyPin()
+						if err != nil {
+							return nil, err
+						}
+						if err := localipc.PairBroker(dir, current, true); err != nil {
+							return nil, err
+						}
+						return func() { a.status = tr(nil, "本机 CLI 已配对，之后会自动验证代理身份") }, nil
+					})
+				})
+			}
+			if components.Button(c, tr(c, "复制代理公钥")).Clicked() {
+				c.WriteClipboard(pin)
+			}
+		})
+	}
 }
 
 func (a *app) configureAuth(enable bool) {
 	if a.auth == nil || a.busy {
 		return
 	}
+	auth, dir := a.auth, a.dir
 	ctx, finish := a.authContext()
 	pass := []byte(a.ownerPass)
 	a.ownerPass = ""
@@ -161,9 +205,9 @@ func (a *app) configureAuth(enable bool) {
 		defer finish()
 		var e error
 		if enable {
-			e = a.auth.Enroll(ctx, a.dir, pass)
+			e = auth.Enroll(ctx, dir, pass)
 		} else {
-			e = a.auth.Disable(a.dir, pass)
+			e = auth.Disable(dir, pass)
 		}
 		return func() { a.refreshAuth(); a.status = tr(nil, "系统验证设置已更新") }, e
 	})

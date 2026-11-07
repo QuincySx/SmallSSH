@@ -10,8 +10,10 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/broker"
 	"sshclient/internal/desktop/components"
 	"sshclient/internal/systemauth"
+	"sshclient/internal/vault"
 )
 
 // Offline settings snapshots use synthetic state and never start the native
@@ -27,6 +29,20 @@ func TestSettingsSnapshotsWithoutWindows(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
+	private, err := os.MkdirTemp("", "pin-preview-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(private) })
+	owner, err := vault.New([]byte("synthetic offline public broker pin preview"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := broker.OpenSession(private, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(server.Close)
 	for _, section := range []string{settingsWorkspace, settingsSecurity} {
 		for _, sidebar := range []struct {
 			name   string
@@ -40,6 +56,7 @@ func TestSettingsSnapshotsWithoutWindows(t *testing.T) {
 				t.Run(section+"-"+size.name+sidebar.name, func(t *testing.T) {
 					a := &app{
 						ctx: context.Background(), online: true, page: 4, settingsSection: section,
+						server:        server,
 						sidebarHidden: sidebar.hidden,
 						authStatus:    systemauth.Status{Available: true, Enabled: true, Name: "Touch ID"},
 					}

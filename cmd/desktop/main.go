@@ -8,10 +8,14 @@ import (
 	"github.com/egoist/mygo"
 	"sshclient/internal/desktop"
 	"sshclient/internal/desktopcontrol"
+	"sshclient/internal/hardware"
 	"sshclient/internal/localipc"
 )
 
 func main() {
+	if hardware.MaybeWorker() {
+		return
+	}
 	background := flag.Bool("background", mygo.IsDev() || os.Getenv("SSH_WORKBENCH_DEV_BACKGROUND") == "1", "后台启动，明确显示前不弹出窗口")
 	dir := flag.String("data-dir", "", "私有数据目录；后台开发默认使用独立目录")
 	flag.Parse()

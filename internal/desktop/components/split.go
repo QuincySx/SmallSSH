@@ -10,6 +10,28 @@ type SplitLimits struct {
 	Min, Max, Default float32
 }
 
+// Split keeps the native resize handle and its hover/focus feedback, without
+// drawing a permanent rule between the panes.
+func Split(c *ui.Context, size *float32, first, second func()) ui.Element {
+	return borderlessSplit(c, ui.Split, size, first, second)
+}
+
+func borderlessSplit(c *ui.Context, build func(*ui.Context, *float32, func(), func()) ui.Element, size *float32, first, second func()) ui.Element {
+	original := c.Theme()
+	chrome := *original
+	chrome.Border = ui.Transparent
+	c.SetTheme(&chrome)
+	defer c.SetTheme(original)
+	pane := func(draw func()) func() {
+		return func() {
+			c.SetTheme(original)
+			defer c.SetTheme(&chrome)
+			draw()
+		}
+	}
+	return build(c, size, pane(first), pane(second))
+}
+
 func (l SplitLimits) Clamp(value float32) float32 {
 	if value <= 0 || math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
 		value = l.Default
@@ -30,12 +52,11 @@ func SplitVerticalPercent(c *ui.Context, share *float32, limits SplitLimits, fir
 
 func boundedSplit(c *ui.Context, share *float32, limits SplitLimits, first, second func(), vertical bool) ui.Element {
 	*share = limits.Clamp(*share)
-	var split ui.Element
+	build := ui.SplitPercent
 	if vertical {
-		split = ui.SplitVerticalPercent(c, share, first, second)
-	} else {
-		split = ui.SplitPercent(c, share, first, second)
+		build = ui.SplitVerticalPercent
 	}
+	split := borderlessSplit(c, build, share, first, second)
 	if clamped := limits.Clamp(*share); clamped != *share {
 		*share = clamped
 		c.Invalidate()

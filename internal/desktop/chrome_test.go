@@ -60,8 +60,8 @@ func TestToolsCollapseMoveAndDiagnosticsPreserveTerminalSpace(t *testing.T) {
 	}
 	tt.SetSize(1000, 760)
 	tt.SetDark(true)
-	if _, ok := tt.Find("锁定"); !ok {
-		t.Fatal("overflow became inaccessible at minimum window size")
+	if _, ok := tt.Find("设置"); !ok {
+		t.Fatal("settings became inaccessible at minimum window size")
 	}
 }
 
@@ -115,14 +115,14 @@ func TestSidebarToggleKeepsTabsPinnedFilesAndRestoreButton(t *testing.T) {
 			if _, ok := tt.Find("连接侧栏"); ok || !a.sidebarHidden || a.sidebarWidth != 220 {
 				t.Fatal("hidden sidebar still occupies layout or lost its width")
 			}
-			if rail, ok := tt.Find("连接窄栏"); !ok || rail.X != 0 || rail.W != components.RailWidth {
+			if rail, ok := tt.Find("连接窄栏"); !ok || rail.X != 8 || rail.W != components.RailWidth {
 				t.Fatal("connection shortcuts disappeared instead of narrowing", rail)
 			}
 			if restore, ok := tt.Find("展开连接侧栏"); !ok || restore != anchor {
 				t.Fatal("sidebar toggle moved after collapsing", anchor, restore)
 			}
 			after, stillVisible := tt.Find("终端区域")
-			if visible != stillVisible || visible && (after.X != components.RailWidth || after.W <= before.W || after.H != before.H) {
+			if visible != stillVisible || visible && (after.X != components.RailWidth+2*components.WorkspaceGap || after.W <= before.W || after.H != before.H) {
 				t.Fatal("sidebar did not return horizontal space to the terminal", before, after)
 			}
 			// A second click at the unchanged pointer position must restore it.
@@ -148,9 +148,21 @@ func TestWorkspaceHeadersAlignWithEmptyAndConnectedTerminals(t *testing.T) {
 			for _, dark := range []bool{false, true} {
 				tt.SetDark(dark)
 				left, l := tt.Find("连接栏标题")
-				right, r := tt.Find("终端栏标题1")
-				if !l || !r || left.Y != right.Y || left.H != right.H {
-					t.Fatalf("headers do not share top and bottom edges (width=%d connected=%v dark=%v): %v %v", width, connected, dark, left, right)
+				tab, r := tt.Find("终端栏标题1")
+				terminal, found := tt.Find("终端区域")
+				header, h := tt.Find("全局导航栏")
+				content, contentOK := tt.Find("主内容")
+				if !l || !r || !found || !h || !contentOK || header.H != 48 || tab.Y < header.Y || tab.Y+tab.H > header.Y+header.H || left.Y != header.Y+header.H || content.Y != left.Y || content.X != left.X+left.W+8 || terminal.Y != content.Y || terminal.X != content.X {
+					t.Fatalf("top tabs or workspace spacing changed (width=%d connected=%v dark=%v): %v %v %v %v %v", width, connected, dark, header, left, tab, content, terminal)
+				}
+				count := 0
+				for _, text := range tt.Texts() {
+					if text == "终端栏标题1" {
+						count++
+					}
+				}
+				if count != 1 {
+					t.Fatal("terminal header duplicated below the top tabs", count)
 				}
 			}
 		}
@@ -164,12 +176,11 @@ func TestStandardLayoutMenuRestoresLeftAndStackedWorkspace(t *testing.T) {
 	if err := tt.Click("设置"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("恢复默认布局"); err != nil {
+	settings := ui.NewTester(a.settingsWindowView, 1080, 760)
+	if err := settings.Click("恢复默认布局"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("工作台"); err != nil {
-		t.Fatal(err)
-	}
+	tt.Frame()
 	left, l := tt.Find("连接侧栏")
 	center, m := tt.Find("终端区域")
 	right, r := tt.Find("工具面板")
@@ -184,7 +195,7 @@ func TestToolsToggleIsIndependentFromConnectionSidebar(t *testing.T) {
 	first, second, pane := a.sessions[0], a.sessions[1], a.primaryFilePane
 	tt := ui.NewTester(a.view, 1280, 900)
 	original, _ := tt.Find("终端区域")
-	if err := tt.Click("隐藏工具面板"); err != nil {
+	if err := tt.Click("收起工具面板"); err != nil {
 		t.Fatal(err)
 	}
 	full, _ := tt.Find("终端区域")

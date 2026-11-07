@@ -1,15 +1,15 @@
 package desktop
 
 import (
-	"fmt"
+	"path"
 	"sshclient/internal/desktop/components"
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/sshconn"
 )
 
-// File panes deliberately have no action toolbar. The tree and list share
-// contextual actions; transfers keep an immutable snapshot of both locations.
+// File panes share their one-line actions with existing context menus; all
+// transfers retain an immutable snapshot of both locations.
 const (
 	toolFiles = iota
 	toolTransfers
@@ -18,6 +18,11 @@ const (
 )
 
 func (a *app) showTool(index int) {
+	if tool := a.workspaceTools[index]; tool != nil {
+		a.activateWorkspaceTab(tool.group, workspaceTab{tool: tool})
+		a.invalidateWindows()
+		return
+	}
 	if index == toolTransfers {
 		a.showTransfers()
 		return
@@ -33,31 +38,64 @@ func (a *app) fileArea(c *ui.Context) {
 	if a.dock == toolTransfers {
 		a.dock = toolFiles // Reserved persisted ID; transfers now have a global entry.
 	}
-	ui.Column(c).Fill().Gap(0).Label(tr(c, "工具面板")).Children(func() {
-		components.PanelBar(c, &a.dock, []components.PanelTab{{ID: toolFiles, Title: tr(c, "文件")}, {ID: toolCommands, Title: tr(c, "命令")}, {ID: toolDiagnostics, Title: tr(c, "服务器状态")}}, func() {
+	var tabs []components.PanelTab
+	for _, kind := range []int{toolCommands, toolFiles, toolDiagnostics} {
+		if a.workspaceTools[kind] == nil {
+			tabs = append(tabs, components.PanelTab{ID: kind, Title: workspaceToolTitle(c, kind)})
+		}
+	}
+	if len(tabs) > 0 && a.workspaceTools[a.dock] != nil {
+		a.dock = tabs[0].ID
+	}
+	area := ui.Column(c).Fill().Gap(0).Label(tr(c, "工具面板"))
+	area.Children(func() {
+		// Commands come first: it is the page an owner usually wants right after a
+		// connection, while files and server status are opened on demand.
+		components.PanelBar(c, &a.dock, tabs, func() {
+			label := tr(c, "在标签页打开功能区")
+			if a.dock == toolFiles {
+				label = tr(c, "在标签页打开文件管理")
+			}
+			if components.SVGButton(c, components.ExpandPanelIcon, label).Disabled(len(tabs) == 0).Clicked() {
+				a.openWorkspaceTool(a.dock)
+			}
 			if a.fileExpanded && !a.renderingToolsWindow {
 				if components.Button(c, tr(c, "恢复分栏")).Label(tr(c, "恢复终端分栏")).Height(28).Clicked() {
 					a.fileExpanded = false
 				}
 			}
-			switch components.PanelLayoutMenu(c, &a.toolsLayoutOpen, a.toolsDockRight(c), a.fileExpanded, a.toolsDetached) {
+			switch components.PanelLayoutMenuAt(c, &a.toolsLayoutOpen, a.effectiveToolsDockSide(c), a.fileExpanded, a.toolsDetached) {
 			case components.PanelDetach:
 				a.detachTools()
 			case components.PanelDockBottom:
 				a.setToolsDock(false)
 			case components.PanelDockRight:
 				a.setToolsDock(true)
+			case components.PanelDockTop:
+				a.setToolsDockSide("top")
+			case components.PanelDockLeft:
+				a.setToolsDockSide("left")
+			case components.PanelPromote:
+				a.openWorkspaceTool(a.dock)
 			case components.PanelToggleExpanded:
 				a.fileExpanded = !a.fileExpanded
-				a.contentFocus = true
+				a.contentFocus = !a.fileExpanded && a.terminalFocusWanted()
 			case components.PanelHide:
 				a.setToolsHidden(true)
 			}
 			if components.SVGButton(c, components.CloseIcon, tr(c, "收起工具面板")).Tooltip(tr(c, "收起工具面板 · Cmd/Ctrl+Shift+J")).Clicked() {
 				a.setToolsHidden(true)
 			}
-		})
+		}, components.PanelBarOptions{Tab: func(tab ui.Element, kind int) {
+			tab.Drag(terminalTabDrag{owner: a, generation: a.generation, fromDock: true, dockKind: kind, toolSource: a.currentTerminal()})
+		}})
 		if a.toolsDetached != a.renderingToolsWindow || a.toolsHidden {
+			return
+		}
+		if len(tabs) == 0 {
+			ui.Column(c).Fill().Center().Children(func() {
+				ui.Text(c, tr(c, "功能区已独立为标签页，可拖回此处停靠")).FontSize(12).TextColor(c.Theme().TextMuted)
+			})
 			return
 		}
 		switch a.dock {
@@ -69,6 +107,12 @@ func (a *app) fileArea(c *ui.Context) {
 			a.fileWindows(c, a.fileLayout)
 		}
 	})
+	if d, ok := ui.DragOver[terminalTabDrag](area); ok && a.validTerminalDrag(d) && d.tool != nil {
+		area.Border(1, c.Theme().Accent)
+	}
+	if d, ok := ui.Drop[terminalTabDrag](area); ok && a.validTerminalDrag(d) && d.tool != nil {
+		a.dockWorkspaceTool(d.tool)
+	}
 }
 
 func (a *app) paneSide(p *filePane) string {
@@ -83,54 +127,49 @@ func (a *app) browserPane(c *ui.Context, p *filePane) {
 	pane := ui.Column(c).FillWidth().Grow(1).MinHeight(0).MinWidth(0).Gap(0).Key(p.id).Label(a.filePaneLabel(p))
 	pane.Children(func() {
 		if width := pane.Bounds().W; width > 0 {
-			if fitted := min(p.treeWidth, max(60, width*.4)); fitted != p.treeWidth {
-				p.treeWidth = fitted
-				c.Invalidate()
-			}
+			p.treeWidth = min(p.treeWidth, max(60, width*.4))
 		}
-		// The header and body share the actual split, including its native
-		// divider limits. There is no separate toolbar offset to keep in sync.
-		ui.Split(c, &p.treeWidth, func() {
-			ui.Column(c).Fill().MinWidth(0).MinHeight(0).Gap(0).Key("directory-column").Children(func() {
-				a.fileLocationHeader(c, p)
-				b := p.browser()
-				if p.endpoint != "" && a.online && a.server != nil && a.filePaneVisible(p) {
-					if _, loaded := b.cache[b.dir]; !loaded && b.loading[b.dir] == nil && b.loadError[b.dir] == "" {
-						a.loadDirectory(p, b.dir, true)
-					}
-				}
-				a.directoryTree(c, p, b)
-			})
-		}, func() {
-			ui.Column(c).Fill().MinWidth(0).MinHeight(0).Gap(0).Key("files-column").Children(func() {
-				a.filePathHeader(c, p)
-				a.fileList(c, p, p.browser())
-			})
-		}).FillWidth().Grow(1).MinHeight(0)
+		a.fileToolbar(c, p, pane.Bounds().W)
 		b := p.browser()
-		text := fmt.Sprintf(tr(c, "%d 项"), len(b.cache[b.dir]))
-		if _, loaded := b.cache[b.dir]; !loaded && len(b.loading) == 0 {
-			text = ""
-		}
-		if n := b.chosen.Len(); n > 0 {
-			text += fmt.Sprintf(tr(c, " · 已选 %d 项"), n)
-		}
-		if len(b.loading) > 0 {
-			text += tr(c, " · 正在读取…")
-		}
-		if b.loadError[b.dir] != "" {
-			text = tr(c, "读取失败 · ") + b.loadError[b.dir]
-		}
-		ui.Row(c).FillWidth().Shrink(0).Padding(3, 8).Gap(8).Children(func() {
-			ui.Text(c, text).SingleLine().Grow(1).FontSize(11).TextColor(c.Theme().TextMuted).Tooltip(text)
-			if b.loadError[b.dir] != "" && components.Button(c, tr(c, "重试")).Clicked() {
+		if p.endpoint != "" && a.online && a.server != nil && a.filePaneVisible(p) {
+			if _, loaded := b.cache[b.dir]; !loaded && b.loading[b.dir] == nil && b.loadError[b.dir] == "" {
 				a.loadDirectory(p, b.dir, true)
 			}
-		})
+		}
+		list := func() {
+			ui.Column(c).Fill().MinWidth(0).MinHeight(0).Gap(0).Children(func() { a.fileList(c, p, b); a.filePaneFooter(c, p, b) })
+		}
+		if p.treeHidden {
+			list()
+		} else {
+			components.Split(c, &p.treeWidth, func() {
+				ui.Column(c).Fill().MinWidth(0).MinHeight(0).Background(c.Theme().Background.Mix(c.Theme().Surface, .6)).Children(func() { a.directoryTree(c, p, b) })
+			}, list).FillWidth().Grow(1).MinHeight(0)
+		}
 	})
 	if pane.FocusWithin() {
 		a.activeFilePane = p
 	}
+}
+
+func (a *app) filePaneFooter(c *ui.Context, p *filePane, b *directoryBrowser) {
+	text := filePaneCounts(b.cache[b.dir], b.chosen.Len())
+	if _, loaded := b.cache[b.dir]; !loaded && len(b.loading) == 0 {
+		text = ""
+	}
+	if len(b.loading) > 0 {
+		text += tr(c, " · 正在读取…")
+	}
+	if b.loadError[b.dir] != "" {
+		text = tr(c, "读取失败 · ") + reviewText(b.loadError[b.dir])
+	}
+	ui.Row(c).FillWidth().Shrink(0).Padding(3, 8).Gap(8).Justify(ui.End).Children(func() {
+		ui.Spacer(c).Grow(1).MinWidth(0)
+		ui.Text(c, text).SingleLine().MinWidth(0).FontSize(11).TextColor(c.Theme().TextMuted).Tooltip(text)
+		if b.loadError[b.dir] != "" && components.Button(c, tr(c, "重试")).Clicked() {
+			a.loadDirectory(p, b.dir, true)
+		}
+	})
 }
 
 func (a *app) fileLocationHeader(c *ui.Context, p *filePane) {
@@ -156,9 +195,7 @@ func (a *app) fileLocationHeader(c *ui.Context, p *filePane) {
 		followLabel = tr(c, "容器宿主机文件来源")
 		tip = tr(c, "浏览容器所在 SSH 服务器的文件（宿主机） · ") + reviewText(a.endpointName(p.endpoint))
 	}
-	ui.Row(c).FillWidth().Height(components.FileHeaderHeight).Shrink(0).MinWidth(0).
-		Background(c.Theme().Background.Mix(c.Theme().Surface, .6)).
-		BorderWidth(0, 0, 1, 0).BorderColor(c.Theme().Border).Children(func() {
+	ui.Row(c).FillWidth().Height(components.FileHeaderHeight).Shrink(0).MinWidth(0).Children(func() {
 		selectPane := ui.SelectBase(c, &choice)
 		selectPane.Trigger.FillWidth().MinWidth(0).Height(components.FileHeaderHeight).
 			Padding(0, 8).Gap(4).Justify(ui.Start).Label(a.paneSide(p) + tr(c, "文件位置")).Tooltip(tip).Children(func() {
@@ -186,39 +223,29 @@ func (a *app) fileLocationHeader(c *ui.Context, p *filePane) {
 	})
 }
 
-func (a *app) filePathHeader(c *ui.Context, p *filePane) {
-	side, b := a.paneSide(p), p.browser()
-	ui.Row(c).FillWidth().Height(components.FileHeaderHeight).Shrink(0).MinWidth(0).Gap(0).
-		AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(c.Theme().Border).Children(func() {
-		// One border DIP + seven padding DIPs align the editable text with
-		// the table header's eight-DIP content inset.
-		c.Key("directory-path")
-		input := ui.TextInput(c, &b.address).Grow(1).MinWidth(28).Height(28).Padding(4, 7).
-			FontSize(components.BodyFont).Background(ui.Transparent).Border(1, ui.Transparent).
-			Label(side + tr(c, "目录路径")).Tooltip(tr(c, "输入目录路径，按 Enter 打开"))
-		if input.Submitted() {
-			a.navigateDirectory(p, b.address)
-		}
-		if components.SVGButton(c, components.RefreshIcon, side+tr(c, "刷新目录")).Size(28, 28).Shrink(0).
-			Tooltip(tr(c, "刷新（F5）")).Disabled(b.loading[b.dir] != nil).Clicked() {
-			a.loadDirectory(p, b.dir, true)
-		}
-		components.SVGButton(c, components.MoreIcon, side+tr(c, "文件窗口菜单")).Size(28, 28).Shrink(0).
-			Tooltip(tr(c, "文件窗口布局")).Menu(func(m *ui.Menu) {
-			a.activeFilePane = p
-			a.fileWindowsMenu(m, p)
-		})
-	})
-}
-
 func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 	endpoint, dir := p.endpoint, b.dir
+	if message := b.loadError[dir]; message != "" {
+		// The pane states the refusal itself: no stale rows, and the retry sits
+		// where the files would be.
+		ui.Column(c).Fill().MinHeight(0).AlignItems(ui.Center).Justify(ui.Center).Gap(10).Padding(16).Children(func() {
+			ui.Text(c, reviewText(message)).FillWidth().MaxLines(3).FontSize(12).TextAlign(ui.Center).TextColor(c.Theme().TextMuted)
+			if components.Button(c, tr(c, "重试")).Clicked() {
+				a.loadDirectory(p, dir, false)
+			}
+			if components.Button(c, tr(c, "上一级")).Clicked() {
+				a.navigateDirectory(p, parentDir(endpoint == localEndpoint, dir))
+			}
+		})
+		return
+	}
 	fs := b.cache[dir]
 	b.table.Selected, b.table.Selection = &b.selected, &b.chosen
+	b.table.MenuKeepsSelection = true
 	table := components.FileList(c, &b.table, len(fs), func(i int) components.FileEntry {
 		f := fs[i]
 		return components.FileEntry{ID: f.Name, Name: reviewText(f.Name), Directory: f.Directory, Bytes: uint64(max(f.Size, 0)), Modified: f.Modified}
-	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: a.fileExpanded || a.renderingToolsWindow, Decorate: func(cell ui.Element, i int) {
+	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: a.fileExpanded || a.renderingToolsWindow || a.filesTabSelected || a.renderingWorkspaceTool != nil && a.renderingWorkspaceTool.kind == toolFiles, Decorate: func(cell ui.Element, i int) {
 		f := fs[i]
 		cell.ContextMenu(func(m *ui.Menu) {
 			if !b.chosen.Has(f.Name) {
@@ -234,7 +261,7 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 		if cell.DoubleClicked() {
 			a.openEntries(p, dir, []sshconn.File{f})
 		}
-		if !f.Directory {
+		if !f.Directory || endpoint != localEndpoint {
 			cell.Drag(fileDrag{endpoint: endpoint, dir: dir, file: f, browser: b})
 		}
 		target := dir
@@ -273,13 +300,13 @@ func (b *directoryBrowser) chooseFile(files []sshconn.File, index int, mods ui.M
 		if anchor < 0 || anchor >= len(files) {
 			anchor = index
 		}
-		if mods&ui.Cmd == 0 {
+		if mods&(ui.Cmd|ui.Ctrl) == 0 {
 			b.chosen.Clear()
 		}
 		for i := min(anchor, index); i <= max(anchor, index); i++ {
 			b.chosen.Add(files[i].Name)
 		}
-	} else if mods&ui.Cmd != 0 {
+	} else if mods&(ui.Cmd|ui.Ctrl) != 0 {
 		name := files[index].Name
 		if b.chosen.Has(name) {
 			b.chosen.Remove(name)
@@ -319,9 +346,12 @@ func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshco
 	other := a.otherPane(p)
 	can := other != nil && endpoint != "" && other.endpoint != "" && (endpoint == localEndpoint) != (other.endpoint == localEndpoint)
 	for _, f := range files {
-		if f.Directory {
+		if f.Directory && endpoint == localEndpoint {
 			can = false
 		}
+	}
+	if endpoint != "" && endpoint != localEndpoint && m.Item(tr(nil, "下载到本机…")).Disabled(len(files) == 0).Chosen() {
+		a.promptDownload(endpoint, dir, files)
 	}
 	label := tr(nil, "上传到另一栏")
 	if endpoint != localEndpoint {
@@ -339,7 +369,7 @@ func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshco
 				}
 				valid := validDrop(endpoint, destination.endpoint) && len(files) > 0
 				for _, file := range files {
-					valid = valid && !file.Directory
+					valid = valid && (!file.Directory || endpoint != localEndpoint)
 				}
 				label := a.filePaneLabel(destination) + " · " + a.endpointName(destination.endpoint) + " · " + destination.browser().dir
 				if m.Item(reviewText(label)).Disabled(!valid).Chosen() {
@@ -363,7 +393,7 @@ func (a *app) fileMutationMenu(m *ui.Menu, source *filePane, dir string, files [
 	if m.Item(tr(nil, "权限 / 属性")).Disabled(len(files) != 1).Chosen() {
 		a.fileOperationAt(source, dir, files, "chmod")
 	}
-	if m.Item(tr(nil, "删除")).Disabled(root || len(files) != 1).Chosen() {
+	if m.Item(tr(nil, "删除")).Disabled(root || len(files) == 0).Chosen() {
 		a.fileOperationAt(source, dir, files, "remove")
 	}
 }
@@ -375,6 +405,9 @@ func (a *app) treeContextMenu(m *ui.Menu, p *filePane, b *directoryBrowser, dir 
 	parent := parentDir(local, dir)
 	if m.Item(tr(nil, "打开文件夹")).Chosen() {
 		a.navigateDirectory(source, dir)
+	}
+	if !local && parent != dir && m.Item(tr(nil, "下载到本机…")).Chosen() {
+		a.promptDownload(endpoint, parent, []sshconn.File{{Name: path.Base(dir), Directory: true}})
 	}
 	m.Separator()
 	if parent == dir {

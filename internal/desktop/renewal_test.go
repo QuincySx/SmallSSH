@@ -29,20 +29,61 @@ func TestRenewalGenerationNotifiesOnceWithSameClientAndSessionID(t *testing.T) {
 	}
 }
 
+func TestNoIdleRenewalCanPromptAndRetainsTheOwnersChoice(t *testing.T) {
+	a, r, now := popupFixture()
+	r.Renewal = true
+	r.Operation.Grant.LifetimeSeconds = approval.MaxGrantLifetime
+	r.Operation.Grant.IdleSeconds = approval.MaxGrantLifetime
+	a.requests = []approval.Request{r}
+	if got, ok := a.nextApprovalPopup(now); !ok || got.ID != r.ID {
+		t.Fatal("a no-idle renewal was silently filtered out")
+	}
+	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
+	state := &approvalPromptState{}
+	tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 420, 620)
+	if !state.noIdle || !tt.HasText("闲置不断开") {
+		t.Fatal("renewal lost the original no-idle choice", tt.Texts())
+	}
+	state.lifetime = 6 * 3600
+	tt.Frame()
+	if !state.noIdle || !tt.HasText("6 小时") || !tt.HasText("闲置不断开") {
+		t.Fatal("changing the total duration re-enabled idle expiry", tt.Texts())
+	}
+	cancelled := false
+	state.busy = true
+	state.cancel = func() { cancelled = true }
+	sequence := state.sequence
+	tt.Frame()
+	if err := tt.Click("会话闲置自动断开开关"); err != nil {
+		t.Fatal(err)
+	}
+	if state.noIdle || state.busy || !cancelled || state.sequence <= sequence {
+		t.Fatal("changing idle during authentication did not cancel it")
+	}
+	state.submitting = true
+	tt.Frame()
+	if err := tt.Click("会话闲置自动断开开关"); err != nil {
+		t.Fatal(err)
+	}
+	if state.noIdle {
+		t.Fatal("the idle choice changed during submission")
+	}
+}
+
 func TestRenewalApprovalMakesExpiredStateAndOriginalScopeClear(t *testing.T) {
 	for _, permission := range []string{"read", "full"} {
 		a, r := reviewFixture(permission)
 		r.Renewal = true
 		a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 		state := &approvalPromptState{}
-		tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 380, 540)
+		tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, 380, 620)
 		button := "续期只读访问"
 		if permission == "full" {
 			button = "续期完整控制"
 		}
-		for _, label := range []string{"会话已过期，允许续期？", "个人服务器", "deploy@192.0.2.10:22", "最长 2 小时 · 闲置 15 分钟 后失效", r.Operation.Grant.PairingCode(), "授权方式：触控 ID"} {
+		for _, label := range []string{"会话已过期，允许续期？", "个人服务器 · deploy@192.0.2.10:22", "2 小时", r.Operation.Grant.PairingCode(), "授权方式：触控 ID"} {
 			bounds, ok := tt.Find(label)
-			if !ok || bounds.X < 0 || bounds.X+bounds.W > 380 || bounds.Y+bounds.H > 540 {
+			if !ok || bounds.X < 0 || bounds.X+bounds.W > 380 || bounds.Y+bounds.H > 620 {
 				t.Fatal("renewal control missing or clipped", permission, label, bounds)
 			}
 		}

@@ -15,12 +15,22 @@ const (
 	PanelToggleExpanded
 	PanelHide
 	PanelDetach
+	PanelDockTop
+	PanelDockLeft
+	PanelPromote
 )
 
 // PanelLayoutMenu follows the DevTools dock selector: visual placement choices
 // live in the overflow popup, separate from the persistent close action.
 func PanelLayoutMenu(c *ui.Context, open *bool, right, expanded bool, floating ...bool) PanelLayoutAction {
-	detached := len(floating) > 0 && floating[0]
+	side := "bottom"
+	if right {
+		side = "right"
+	}
+	return PanelLayoutMenuAt(c, open, side, expanded, len(floating) > 0 && floating[0])
+}
+
+func PanelLayoutMenuAt(c *ui.Context, open *bool, side string, expanded, detached bool) PanelLayoutAction {
 	action := PanelLayoutUnchanged
 	button := SVGButton(c, MoreIcon, tr(c, "工具面板布局")).Tooltip(tr(c, "切换停靠位置与面板大小"))
 	if button.Clicked() {
@@ -28,7 +38,7 @@ func PanelLayoutMenu(c *ui.Context, open *bool, right, expanded bool, floating .
 	}
 	ui.PopoverBase(c, button, open, func(panel ui.Element) {
 		panel.AttachTo(button, ui.AnchorBottomEnd, ui.AnchorTopEnd).Margin(4, 0, 0, 0).
-			Width(244).Padding(4, 0).Radius(8).Background(c.Theme().Background).
+			Width(320).Padding(4, 0).Radius(8).Background(c.Theme().Background).
 			Border(1, c.Theme().Border).Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, .18)).
 			Label(tr(c, "工具面板布局菜单"))
 		ui.Column(c).FillWidth().Gap(0).Children(func() {
@@ -41,7 +51,11 @@ func PanelLayoutMenu(c *ui.Context, open *bool, right, expanded bool, floating .
 						icon       *ui.SVG
 						active     bool
 						action     PanelLayoutAction
-					}{{tr(c, "独立窗口"), DetachPanelIcon, detached, PanelDetach}, {tr(c, "放到底部"), BottomPanelIcon, !right && !detached, PanelDockBottom}, {tr(c, "放到右侧"), RightPanelIcon, right && !detached, PanelDockRight}} {
+					}{{tr(c, "系统窗口"), DetachPanelIcon, detached, PanelDetach},
+						{tr(c, "放到底部"), BottomPanelIcon, side == "bottom" && !detached, PanelDockBottom},
+						{tr(c, "放到右侧"), RightPanelIcon, side == "right" && !detached, PanelDockRight},
+						{tr(c, "放到顶部"), TopPanelIcon, side == "top" && !detached, PanelDockTop},
+						{tr(c, "放到左侧"), SidebarIcon, side == "left" && !detached, PanelDockLeft}} {
 						choice := SVGButton(c, item.icon, item.accessible).Size(32, 32).Radius(4).
 							Role(ui.RoleRadio).Checked(item.active)
 						if item.active {
@@ -70,6 +84,11 @@ func PanelLayoutMenu(c *ui.Context, open *bool, right, expanded bool, floating .
 					*open = false
 				}
 			}
+			promote := panelMenuItem(c, ExpandPanelIcon, tr(c, "独立到标签页"), "")
+			if promote.Clicked() {
+				action = PanelPromote
+				*open = false
+			}
 			shortcut := "Ctrl+Shift+J"
 			if runtime.GOOS == "darwin" {
 				shortcut = "⌘⇧J"
@@ -81,20 +100,30 @@ func PanelLayoutMenu(c *ui.Context, open *bool, right, expanded bool, floating .
 			}
 			// Horizontal arrows stay in the dock row; vertical arrows traverse
 			// the menu rows. Native buttons retain Enter, Space and Tab.
-			if detached {
-				if dock.Shortcut(0, ui.KeyDown) || dock.Shortcut(0, ui.KeyUp) {
-					hide.Focus()
-				} else if hide.Shortcut(0, ui.KeyDown) || hide.Shortcut(0, ui.KeyUp) {
-					currentDock.Focus()
+			rows := []ui.Element{promote, hide}
+			if !detached {
+				rows = append([]ui.Element{resize}, rows...)
+			}
+			if dock.Shortcut(0, ui.KeyDown) {
+				rows[0].Focus()
+			}
+			if dock.Shortcut(0, ui.KeyUp) {
+				rows[len(rows)-1].Focus()
+			}
+			for i, row := range rows {
+				if row.Shortcut(0, ui.KeyDown) {
+					if i+1 == len(rows) {
+						currentDock.Focus()
+					} else {
+						rows[i+1].Focus()
+					}
 				}
-			} else {
-				switch {
-				case dock.Shortcut(0, ui.KeyDown), hide.Shortcut(0, ui.KeyUp):
-					resize.Focus()
-				case dock.Shortcut(0, ui.KeyUp), resize.Shortcut(0, ui.KeyDown):
-					hide.Focus()
-				case resize.Shortcut(0, ui.KeyUp), hide.Shortcut(0, ui.KeyDown):
-					currentDock.Focus()
+				if row.Shortcut(0, ui.KeyUp) {
+					if i == 0 {
+						currentDock.Focus()
+					} else {
+						rows[i-1].Focus()
+					}
 				}
 			}
 		})

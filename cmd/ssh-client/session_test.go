@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"sshclient/internal/accesspolicy"
 	"sshclient/internal/approval"
 	"sshclient/internal/broker"
 	"sshclient/internal/client"
@@ -16,208 +20,172 @@ import (
 	"sshclient/internal/vault"
 )
 
-func TestCLISessionRequestApproveUseAndRevoke(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cli-session-fixture-")
+func sessionFixture(t *testing.T) (client.Client, context.Context) {
+	return sessionFixtureWithPolicy(t, accesspolicy.Policy{Unrestricted: true})
+}
+
+func sessionFixtureWithPolicy(t *testing.T, policy accesspolicy.Policy) (client.Client, context.Context) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "cli-session-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
-	if err = localipc.Prepare(dir); err != nil {
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	if err := localipc.Prepare(dir); err != nil {
 		t.Fatal(err)
 	}
-	f := testserver.New(t)
-	pass := []byte("generated CLI fixture vault password")
-	v, err := vault.New(pass)
+	fixture := testserver.New(t)
+	owner, err := vault.New([]byte("synthetic CLI zero trust test password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = v.Put(f.Profile()); err != nil {
+	profile := fixture.Profile()
+	profile.Policy = policy
+	if err = owner.Put(profile); err != nil {
 		t.Fatal(err)
 	}
-	if err = vault.Save(broker.VaultPath(dir), v, true); err != nil {
-		t.Fatal(err)
-	}
-	v.Close()
-	s, err := broker.Open(dir, pass)
+	server, err := broker.OpenSession(dir, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	c := client.Client{Dir: dir, Owner: s.Vault}
-	done := make(chan error, 1)
-	go func() {
-		_, err := sessionCommand(ctx, c, "CLI fixture", []string{"request", "fixture", "fixture.json", "full", "2m", "1m"})
-		done <- err
-	}()
-	deadline := time.NewTimer(5 * time.Second)
-	defer deadline.Stop()
-	tick := time.NewTicker(20 * time.Millisecond)
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	return client.Client{Dir: dir, Owner: server.Vault}, ctx
+}
+
+func approveCLISession(t *testing.T, ctx context.Context, c client.Client, done <-chan error) approval.Request {
+	t.Helper()
+	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
-	var parent approval.Request
-wait:
 	for {
 		select {
-		case <-deadline.C:
-			t.Fatal("CLI did not request approval")
+		case err := <-done:
+			t.Fatal("session ended before consent", err)
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
 		case <-tick.C:
-			pending, err := c.Call(ctx, broker.Message{Action: "pending"})
+			result, err := c.Call(ctx, broker.Message{Action: "pending"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, r := range pending.Requests {
-				if r.Operation.Kind == "grant" {
-					parent = r
-					break wait
+			for _, r := range result.Requests {
+				if r.Operation.Kind != "grant" || r.Status != "pending" {
+					continue
 				}
+				if r.Peer.PID != os.Getpid() || r.Peer.Instance == "" || r.Peer.CodeID == "" {
+					t.Fatal("missing kernel process instance", r.Peer)
+				}
+				if err := c.DecideReviewedWithOwner(ctx, r, true, false, c.Owner); err != nil {
+					t.Fatal(err)
+				}
+				return r
 			}
 		}
 	}
-	if parent.Operation.Grant.Permission != "full" || parent.Operation.Grant.LifetimeSeconds != 120 || parent.Operation.Grant.IdleSeconds != 60 {
-		t.Fatal("CLI changed requested limits")
-	}
-	if err = c.Decide(ctx, parent.ID, true, false, pass); err != nil {
-		t.Fatal(err)
+}
+
+func TestCLIStdioSessionUsesOneLiveGrantAndRevokesOnEOF(t *testing.T) {
+	c, ctx := sessionFixture(t)
+	input := strings.NewReader(`{"id":"one","operation":{"kind":"exec","command":"first"}}
+{"id":"two","operation":{"kind":"exec","command":"second"}}
+{"id":"cross-host","operation":{"kind":"exec","host":"another-host","command":"must-not-run"}}
+{"id":"status","action":"status"}
+`)
+	var out, notices bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := serveSession(ctx, c, "CLI fixture", []string{"fixture", "full", "2m", "1m"}, input, &out, &notices)
+		done <- err
+	}()
+	parent := approveCLISession(t, ctx, c, done)
+	if parent.Operation.Grant.LifetimeSeconds != 120 || parent.Operation.Grant.IdleSeconds != 60 {
+		t.Fatal("CLI changed grant limits")
 	}
 	select {
-	case err = <-done:
+	case err := <-done:
 		if err != nil {
 			t.Fatal(err)
 		}
 	case <-ctx.Done():
-		t.Fatal("CLI did not save the approved session")
+		t.Fatal(ctx.Err())
 	}
-	if _, err = os.Stat(filepath.Join(dir, "client-sessions", "fixture.json")); err != nil {
-		t.Fatal(err)
-	}
-	savedArgs := os.Args
-	defer func() { os.Args = savedArgs }()
-	os.Args = []string{"ssh-client", "--data-dir", dir, "--session", "fixture.json", "exec", "fixture", "CLI delegated execution"}
-	if code, err := run(); err != nil || code != 0 {
-		t.Fatal("CLI did not execute through its delegated session", code, err)
-	}
-	// Subsequent commands use the same explicitly selected capability. There
-	// is still exactly one owner-approved parent, and no per-command prompts.
-	t.Setenv("SSH_CLIENT_SESSION", "fixture.json")
-	os.Args = []string{"ssh-client", "--data-dir", dir, "exec", "fixture", "CLI environment execution"}
-	for range 3 {
-		if code, err := run(); err != nil || code != 0 {
-			t.Fatal("CLI environment did not reuse the approved parent", code, err)
+	decoder := json.NewDecoder(&out)
+	for i := range 4 {
+		var result sessionOutput
+		if err := decoder.Decode(&result); err != nil {
+			t.Fatal(err)
+		}
+		if i < 2 && (result.Error != "" || !bytes.Contains(result.Stdout, []byte([]string{"first", "second"}[i]))) {
+			t.Fatal("delegated command failed", result)
+		}
+		if i == 2 && result.Error == "" {
+			t.Fatal("stdio session crossed host scope")
+		}
+		if i == 3 && (result.Request == nil || result.Request.ID != parent.ID || result.Request.Status != "approved") {
+			t.Fatal("stdio session lost original control channel")
 		}
 	}
-	os.Args = []string{"ssh-client", "--data-dir", dir, "exec", "different-server", "must not run"}
-	if code, err := run(); err == nil || code == 0 {
-		t.Fatal("session environment crossed server scope")
+	if _, err := os.Stat(filepath.Join(c.Dir, "client-sessions")); !os.IsNotExist(err) {
+		t.Fatal("persisted session credentials", err)
 	}
-	before, err := c.Call(ctx, broker.Message{Action: "pending"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	parents, children := 0, 0
-	for _, r := range before.Requests {
-		if r.Operation.Kind == "grant" {
-			parents++
-			continue
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		status, err := c.Call(ctx, broker.Message{Action: "status", ID: parent.ID})
+		if err == nil && status.Request != nil && status.Request.Status == "revoked" {
+			break
 		}
-		if r.Status == "pending" || r.ParentID != parent.ID {
-			t.Fatal("repeat command queued another approval or changed parent", r.Status, r.ParentID)
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			t.Fatal("EOF left session reusable", ctx.Err())
 		}
-		children++
-	}
-	if parents != 1 || children != 4 {
-		t.Fatal("CLI did not reuse one parent for every command", parents, children)
-	}
-	if _, err = sessionCommand(ctx, c, "fixture", []string{"status", "fixture.json"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = sessionCommand(ctx, c, "fixture", []string{"revoke", "fixture.json"}); err != nil {
-		t.Fatal(err)
-	}
-	os.Args = []string{"ssh-client", "--data-dir", dir, "exec", "fixture", "revoked environment execution"}
-	if code, err := run(); err == nil || code == 0 {
-		t.Fatal("CLI reused a revoked session")
-	}
-	after, err := c.Call(ctx, broker.Message{Action: "pending"})
-	if err != nil || len(after.Requests) != len(before.Requests) {
-		t.Fatal("revoked session silently requested another approval", err)
-	}
-	// A bad environment fails closed, but session management remains usable.
-	t.Setenv("SSH_CLIENT_SESSION", "missing-session.json")
-	if code, err := run(); err == nil || code == 0 || !strings.Contains(err.Error(), "missing-session.json") {
-		t.Fatal("missing environment session fell back to an unscoped request", code, err)
-	}
-	os.Args = []string{"ssh-client", "--data-dir", dir, "session", "status", "fixture.json"}
-	if code, err := run(); err != nil || code != 0 {
-		t.Fatal("stale environment blocked session status", code, err)
 	}
 }
 
-func TestCLIScopedSessionPersistsExactlyTheApprovedRoots(t *testing.T) {
-	dir, err := os.MkdirTemp("", "cli-roots-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-	if err = localipc.Prepare(dir); err != nil {
-		t.Fatal(err)
-	}
-	f := testserver.New(t)
-	v, err := vault.New([]byte("synthetic scoped CLI fixture password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = v.Put(f.Profile()); err != nil {
-		t.Fatal(err)
-	}
-	s, err := broker.OpenSession(dir, v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	c := client.Client{Dir: dir}
-	owner := client.Client{Dir: dir, Owner: s.Vault}
+func TestCLIStdioScopedSessionKeepsApprovedRootsInMemory(t *testing.T) {
+	c, ctx := sessionFixture(t)
+	var out, notices bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		_, err := sessionCommand(ctx, c, "scoped CLI fixture", []string{"request", "--read-root", "/srv/read", "--write-root", "/srv/write", "fixture", "scoped.json", "full", "2m", "1m"})
+		_, err := serveSession(ctx, c, "scoped fixture", []string{"--read-root", "/srv/read", "--write-root", "/srv/write", "fixture", "full", "2m", "1m"}, strings.NewReader(`{"id":"status","action":"status"}`), &out, &notices)
 		done <- err
 	}()
-	tick := time.NewTicker(10 * time.Millisecond)
-	defer tick.Stop()
-	approved := false
-	for !approved {
-		select {
-		case err := <-done:
-			t.Fatal("request ended before approval", err)
-		case <-ctx.Done():
-			t.Fatal(ctx.Err())
-		case <-tick.C:
-			page, err := owner.Call(ctx, broker.Message{Action: "pending"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, r := range page.Requests {
-				if r.Operation.Grant.ReadRoot != "/srv/read" || r.Operation.Grant.WriteRoot != "/srv/write" {
-					t.Fatal("CLI roots changed before approval")
-				}
-				if err = owner.DecideReviewedWithOwner(ctx, r, true, false, s.Vault); err != nil {
-					t.Fatal(err)
-				}
-				approved = true
-			}
+	parent := approveCLISession(t, ctx, c, done)
+	if parent.Operation.Grant.ReadRoot != "/srv/read" || parent.Operation.Grant.WriteRoot != "/srv/write" {
+		t.Fatal("CLI changed roots before consent")
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	var result sessionOutput
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Request == nil || result.Request.Operation.Grant != parent.Operation.Grant {
+		t.Fatal("approved roots changed in live session")
+	}
+}
+
+func TestCLILegacySessionFilesFailClosedBeforeConnecting(t *testing.T) {
+	for _, args := range [][]string{{"request", "fixture", "old.json"}, {"status", "old.json"}, {"revoke", "old.json"}} {
+		if _, err := sessionCommand(context.Background(), client.Client{}, "fixture", args); !errors.Is(err, client.ErrSessionNotExportable) {
+			t.Fatal("accepted cross-process session files", args, err)
 		}
 	}
-	if err = <-done; err != nil {
-		t.Fatal(err)
-	}
-	d, err := client.ReadDelegation("scoped.json", dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	if d.ReadRoot != "/srv/read" || d.WriteRoot != "/srv/write" {
-		t.Fatal("saved roots differ from approved scope")
+	original := os.Args
+	defer func() { os.Args = original }()
+	t.Setenv("SSH_CLIENT_SESSION", "old.json")
+	for _, args := range [][]string{{"smallssh", "exec", "fixture", "must-not-run"}, {"smallssh", "--session", "old.json", "exec", "fixture", "must-not-run"}} {
+		os.Args = args
+		if _, err := run(); !errors.Is(err, client.ErrSessionNotExportable) {
+			t.Fatal("saved session silently became a new request", err)
+		}
 	}
 }

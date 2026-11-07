@@ -57,7 +57,7 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 	a.saveProfile()
 	deadline := time.NewTimer(15 * time.Second)
 	defer deadline.Stop()
-	for len(a.sessions) == 0 {
+	for readyTerminalCount(a) == 0 {
 		select {
 		case update := <-updates:
 			update()
@@ -97,7 +97,9 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 
 func (h *connectionFlowHarness) expectUITerminal() {
 	h.t.Helper()
-	h.wait(func() bool { return len(h.a.sessions) > 0 || h.a.connection.phase == "" })
+	h.wait(func() bool {
+		return readyTerminalCount(h.a) > 0 || (len(h.a.connecting) == 0 && h.a.connection.phase == "")
+	})
 	if len(h.a.sessions) != 1 || h.a.page != 1 {
 		h.t.Fatal("save and connect did not open one terminal", h.a.connection.errors)
 	}
@@ -192,6 +194,13 @@ func TestConnectionFormChangedHostIdentityRequiresExplicitRecheck(t *testing.T) 
 	h.a.selected = p.ID
 	h.a.editConnection()
 	h.ui.Frame()
+	h.wait(func() bool { return h.a.connection.notes != nil && !h.a.connection.notes.loading })
+	if h.a.connection.notes == nil {
+		t.Fatal("connection notes did not start")
+	}
+	if h.a.connection.notes.loadError != "" {
+		t.Fatal("connection notes failed to load", h.a.connection.notes.loadError)
+	}
 	h.click("保存后连接")
 	h.click("保存并连接")
 	h.idle()
@@ -231,7 +240,7 @@ func TestUnlockedDesktopDoubleClickConnectsWithoutPasswordAndCloseStopsStream(t 
 		t.Fatal("single sidebar click started a connection")
 	}
 	h.click(p.Name)
-	h.wait(func() bool { return len(h.a.sessions) > 0 })
+	h.wait(func() bool { return readyTerminalCount(h.a) > 0 })
 	h.expectUITerminal()
 	if h.ui.HasText("服务器密码输入") || h.a.page != 1 || h.a.approvalWin != nil || h.a.ownerPass != "" {
 		t.Fatal("direct action left form or required duplicate auth")
@@ -270,7 +279,7 @@ func TestPendingConnectionDoesNotDiscardNewDraftAndReconnectReplacesOldTab(t *te
 	h.a.newConnection()
 	h.a.form.Name = "keep my draft"
 	h.a.form.Password = "unsaved synthetic credential"
-	h.wait(func() bool { return len(h.a.sessions) == 1 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 })
 	if h.a.page != 0 || h.a.form.Name != "keep my draft" || h.a.form.Password == "" || h.fixture.Auths.Load() != 1 {
 		t.Fatal("late connection replaced active form or duplicated login")
 	}
@@ -284,7 +293,7 @@ func TestPendingConnectionDoesNotDiscardNewDraftAndReconnectReplacesOldTab(t *te
 	old.term.Close()
 	h.wait(func() bool { return old.closed })
 	h.a.openShell()
-	h.wait(func() bool { return len(h.a.sessions) == 1 && h.a.sessions[0] != old })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 && h.a.sessions[0] != old })
 	if h.fixture.Auths.Load() != 2 || h.a.sessions[0].closed {
 		t.Fatal("reconnection did not replace old tab")
 	}
@@ -321,11 +330,11 @@ func TestRepeatedConnectionRailDoubleClicksCreateIndependentTerminals(t *testing
 			}
 			// Completion is queued through dispatch, so all three gestures
 			// arrive before the first login can attach its terminal.
-			if len(h.a.sessions) != 0 || len(h.a.pendingShellOpens[p.ID]) != count-1 {
+			if len(h.a.sessions) != count || readyTerminalCount(h.a) != 0 || len(h.a.pendingShellOpens[p.ID]) != count-1 {
 				t.Fatal("double-click gestures were coalesced", len(h.a.sessions), len(h.a.pendingShellOpens[p.ID]), len(h.a.connecting), h.a.selected, h.a.status, h.a.page, h.a.prompt.open)
 			}
 			h.click(other.Name)
-			h.wait(func() bool { return len(h.a.sessions) == count })
+			h.wait(func() bool { return readyTerminalCount(h.a) == count })
 			if h.fixture.Auths.Load() != count || h.a.selected != other.ID || h.a.primaryFilePane.endpoint != p.ID || h.a.approvalWin != nil || h.a.ownerPass != "" || h.ui.HasText("服务器密码输入") || len(h.a.connecting) != 0 || len(h.a.pendingShellOpens) != 0 {
 				t.Fatal("new terminals changed sidebar selection or required extra authorization", h.fixture.Auths.Load(), h.a.selected, h.a.primaryFilePane.endpoint)
 			}
@@ -334,7 +343,7 @@ func TestRepeatedConnectionRailDoubleClicksCreateIndependentTerminals(t *testing
 			h.ui.Advance(time.Second)
 			h.click(p.Name)
 			h.click(p.Name)
-			h.wait(func() bool { return len(h.a.sessions) == count })
+			h.wait(func() bool { return readyTerminalCount(h.a) == count })
 			if h.a.sessions[count-1].term == closed.term || h.a.sessions[count-1].requestID == closed.requestID || h.fixture.Auths.Load() != count+1 {
 				t.Fatal("reopening a same-server tab reused the closed terminal")
 			}
@@ -381,21 +390,43 @@ func TestCancelPendingTerminalOpensDropsQueuedNewTabs(t *testing.T) {
 	}
 	h.a.connecting[p.ID]()
 	h.wait(func() bool { return len(h.a.connecting) == 0 })
-	if len(h.a.sessions) != 0 || len(h.a.pendingShellOpens) != 0 {
+	if readyTerminalCount(h.a) != 0 || len(h.a.sessions) != 2 || len(h.a.pendingShellOpens) != 0 {
 		t.Fatal("canceled request attached or opened a queued terminal")
 	}
 	h.a.openShellMode(true)
-	h.wait(func() bool { return len(h.a.sessions) == 1 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 })
 }
 
 func TestFailedTerminalOpenDropsQueuedRequests(t *testing.T) {
 	h := newConnectionFlowHarness(t)
 	h.a.page, h.a.selected = 1, "missing-test-connection"
+	h.a.toolsHidden = true
+	h.ui = ui.NewTester(h.a.view, 1000, 760)
 	h.a.openShellMode(true)
 	h.a.openShellMode(true)
 	h.wait(func() bool { return len(h.a.connecting) == 0 })
-	if len(h.a.sessions) != 0 || len(h.a.pendingShellOpens) != 0 || h.a.status == "" {
+	if readyTerminalCount(h.a) != 0 || len(h.a.sessions) != 2 || h.a.sessions[0].connectionState != "error" || len(h.a.pendingShellOpens) != 0 || h.a.status == "" {
 		t.Fatal("failed login retained or retried queued terminal requests")
+	}
+	if !h.ui.HasText("连接未完成") || !h.ui.HasText("重试连接") {
+		t.Fatal("failed tab has no recovery", h.ui.Texts())
+	}
+	p := h.fixture.Profile()
+	p.ID = "missing-test-connection"
+	if err := h.a.client.SaveConnection(h.ctx, vault.ProfileChange{Profile: p}, h.server.Vault); err != nil {
+		t.Fatal(err)
+	}
+	h.a.connections = h.server.Vault.Summaries()
+	first := h.a.sessions[0]
+	h.a.activateTerminal(first, true)
+	h.ui.Frame()
+	h.click("重试连接")
+	if first.connectionState != "connecting" || len(h.a.sessions) != 2 {
+		t.Fatal("retry did not reuse its existing tab")
+	}
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 })
+	if h.a.sessions[0] != first || first.term == nil || first.closed {
+		t.Fatal("recovered terminal did not fill the original tab")
 	}
 }
 
@@ -415,8 +446,8 @@ func TestCancelledTerminalOpenKeepsLaterNewRequest(t *testing.T) {
 	// Retry before the canceled result is dispatched. Its completion must
 	// neither discard this later gesture nor remove the retry's cancel entry.
 	h.a.openShellMode(true)
-	h.wait(func() bool { return len(h.a.sessions) == 1 && len(h.a.connecting) == 0 })
-	if len(h.a.pendingShellOpens) != 0 || h.a.sessions[0].closed || h.a.sessions[0].host != p.ID {
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 && len(h.a.connecting) == 0 })
+	if len(h.a.pendingShellOpens) != 0 || h.a.sessions[2].closed || h.a.sessions[2].host != p.ID {
 		t.Fatal("canceled completion discarded or closed the later terminal")
 	}
 }

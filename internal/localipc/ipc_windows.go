@@ -93,3 +93,15 @@ func PeerPID(c net.Conn) (int, error) {
 	}
 	return int(pid), nil
 }
+
+func ServerPID(c net.Conn) (int, error) {
+	f, ok := c.(interface{ Fd() uintptr })
+	if !ok {
+		return 0, errors.New("本地连接类型异常")
+	}
+	var pid uint32
+	if err := windows.GetNamedPipeServerProcessId(windows.Handle(f.Fd()), &pid); err != nil {
+		return 0, err
+	}
+	return int(pid), nil
+}

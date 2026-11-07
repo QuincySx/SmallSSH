@@ -72,6 +72,10 @@ func TestConnectionUIValidatesTrustSavesEncryptedAndEditsWithoutSecretReadback(t
 	input("服务器地址", fixture.Profile().Host)
 	input("用户名", fixture.Profile().User)
 	input("服务器密码", fixture.Profile().Password)
+	input("服务器备注", "生产入口 · 值班手册第 3 节")
+	if a.formNote.Manual != "生产入口 · 值班手册第 3 节" {
+		t.Fatal("note input was not captured", a.formNote)
+	}
 	a.port = strconv.Itoa(fixture.Profile().Port)
 	tt.Frame()
 	if err = tt.Click("保存连接"); err != nil {
@@ -116,8 +120,18 @@ func TestConnectionUIValidatesTrustSavesEncryptedAndEditsWithoutSecretReadback(t
 	a.selected = a.connections[0].ID
 	a.editConnection()
 	tt.Frame()
+	wait(func() bool { return a.connection.notes != nil && !a.connection.notes.loading })
+	if a.connection.notes == nil {
+		t.Fatal("connection notes did not start")
+	}
+	if a.connection.notes.loadError != "" {
+		t.Fatal("connection notes failed to load", a.connection.notes.loadError)
+	}
 	if a.form.Password != "" || !tt.HasText("更换登录凭据") {
 		t.Fatal("editing read back secrets or lacks replacement control")
+	}
+	if a.formNote.Manual != "生产入口 · 值班手册第 3 节" {
+		t.Fatal("editing lost the server note", a.formNote)
 	}
 	if err = tt.Click("名称输入"); err != nil {
 		t.Fatal(err)
@@ -140,6 +154,9 @@ func TestConnectionUIValidatesTrustSavesEncryptedAndEditsWithoutSecretReadback(t
 	p, err := stored.Profile(a.connections[0].ID)
 	if err != nil || p.Name != "Renamed by UI" || p.Password != fixture.Profile().Password {
 		t.Fatal("metadata edit changed credential or failed", err)
+	}
+	if note, err := stored.ServerNote(a.connections[0].ID); err != nil || note.Manual != "生产入口 · 值班手册第 3 节" {
+		t.Fatal("server note was not saved with the connection", note, err)
 	}
 }
 
@@ -222,5 +239,27 @@ func TestPrivateKeyPickerReturnsToUIAndIgnoresCancelledSelection(t *testing.T) {
 	drain()
 	if a.connection.phase != "" || a.connection.keyInfo == nil || a.connection.errors["key"] != "" {
 		t.Fatal("selected key was not checked", a.connection.errors)
+	}
+}
+
+func TestFirstConnectionPromptsAndRecordsTheHost(t *testing.T) {
+	h := newConnectionFlowHarness(t)
+	h.fillTarget()
+	h.input("服务器密码", h.fixture.Profile().Password)
+	h.click("保存并连接")
+	h.wait(func() bool { return h.a.prompt.open && h.a.connection.identity != nil })
+	if h.a.prompt.title != tr(nil, "首次连接") || len(h.a.connections) != 0 {
+		t.Fatal("the first connection did not ask before saving", h.a.prompt.title, h.a.connections)
+	}
+	tt := ui.NewTester(h.a.view, 1000, 760)
+	if !tt.HasText("首次连接") || !tt.HasText(h.fixture.Profile().Fingerprint) {
+		t.Fatal("the prompt did not show the observed fingerprint", tt.Texts())
+	}
+	if err := tt.Click("信任指纹并连接"); err != nil {
+		t.Fatal(err)
+	}
+	h.wait(func() bool { return h.a.page == 1 && len(h.a.sessions) > 0 })
+	if h.a.prompt.open || h.a.connection.review || len(h.a.connections) != 1 || h.a.connections[0].Fingerprint != h.fixture.Profile().Fingerprint {
+		t.Fatal("accepting the first-use prompt did not record the fingerprint", h.a.prompt.open, h.a.connection.review, h.a.connections)
 	}
 }

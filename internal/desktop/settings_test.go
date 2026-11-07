@@ -19,6 +19,28 @@ func settingsTester(a *app, width, height int) *ui.Tester {
 	}, width, height)
 }
 
+func TestSecuritySettingsCopiesOnlyTheCurrentBrokerPublicKey(t *testing.T) {
+	h := newConnectionFlowHarness(t)
+	h.a.settingsSection = settingsSecurity
+	for _, width := range []int{560, 1000} {
+		tt := settingsTester(h.a, width, 800)
+		if !tt.HasText("本机代理身份与 CLI 配对") {
+			t.Fatal("settings did not expose the current broker identity")
+		}
+		pin, ok := tt.Find("代理公钥指纹")
+		if !ok || pin.X < 0 || pin.X+pin.W > float32(width) {
+			t.Fatal("broker pin escaped the settings panel", pin)
+		}
+		tt.SetClipboard("synthetic clipboard")
+		if err := tt.Click("复制代理公钥"); err != nil {
+			t.Fatal(err)
+		}
+		if tt.Clipboard() != h.server.PublicKeyPin() {
+			t.Fatal("copied a stale or truncated broker pin")
+		}
+	}
+}
+
 func TestSettingsDefaultAndUnknownCategoryShowWorkspace(t *testing.T) {
 	for _, selected := range []string{"", "removed-category"} {
 		t.Run(selected, func(t *testing.T) {
@@ -97,9 +119,6 @@ func TestSettingsWorkspaceControlsChangeActualLayoutWithoutLeavingSettings(t *te
 			t.Fatal("settings control failed to update its real preference or stole terminal focus", action.label)
 		}
 		navigation := "设置分类"
-		if a.sidebarHidden {
-			navigation = "设置分类窄栏"
-		}
 		if _, found := tt.Find(navigation); !found {
 			t.Fatal("settings sidebar did not follow its shared layout preference", action.label, navigation)
 		}
@@ -158,7 +177,7 @@ func TestSettingsControlsFitNarrowWindowAndContentScrolls(t *testing.T) {
 	}
 	tt.SetSize(560, 240)
 	viewport, ok := tt.Find("设置内容")
-	if !ok || viewport.W < 300 || viewport.H != 240 {
+	if !ok || viewport.X != 228 || viewport.Y != 48 || viewport.W != 312 || viewport.H != 172 {
 		t.Fatal("narrow settings lost its independent content viewport", viewport)
 	}
 	before, foundBefore := tt.Find("恢复默认布局")
@@ -257,11 +276,9 @@ func TestSettingsSidebarCollapsePreservesSecuritySelectionPasswordAndFocus(t *te
 		t.Fatal(err)
 	}
 	categoryBounds := map[string]ui.Rect{}
-	iconBounds := map[string]ui.Rect{}
 	for _, category := range settingsCategories {
 		label := "设置分类：" + category.title
 		categoryBounds[label], _ = tt.Find(label)
-		iconBounds[label], _ = tt.Find(category.title + "图标")
 	}
 
 	password := "synthetic sidebar toggle password"
@@ -275,23 +292,14 @@ func TestSettingsSidebarCollapsePreservesSecuritySelectionPasswordAndFocus(t *te
 		for _, category := range settingsCategories {
 			label := "设置分类：" + category.title
 			item, ok := tt.Find(label)
-			icon, iconOK := tt.Find(category.title + "图标")
-			if !ok || !iconOK || item.H != components.NavigationItemHeight || item.Y != categoryBounds[label].Y || icon != iconBounds[label] {
-				t.Fatal("settings sidebar width change moved a category or replaced its icon geometry", hidden, label, item, icon)
+			if !ok || item.H != 32 || item != categoryBounds[label] {
+				t.Fatal("workbench sidebar preference moved an independent settings category", hidden, label, item)
 			}
 		}
 		_, categoryMounted := tt.Find("设置分类")
 		viewport, ok := tt.Find("设置内容")
-		expectedX := float32(152)
-		if hidden {
-			expectedX = components.RailWidth
-			rail, ok := tt.Find("设置分类窄栏")
-			if !ok || rail.W != components.RailWidth || rail.H != 600 {
-				t.Fatal("collapsed settings lost its category rail", rail)
-			}
-		}
-		if categoryMounted == hidden || !ok || viewport.X != expectedX || viewport.W != 1000-expectedX || viewport.Y != 0 || viewport.H != 600 {
-			t.Fatal("sidebar toggle did not preserve the content viewport beside its category navigation", hidden, categoryMounted, viewport)
+		if !categoryMounted || !ok || viewport.X != 228 || viewport.W != 752 || viewport.Y != 48 || viewport.H != 532 {
+			t.Fatal("workbench sidebar preference changed the settings viewport", hidden, categoryMounted, viewport)
 		}
 		tt.Type("!")
 		password += "!"
@@ -351,26 +359,22 @@ func TestSettingsCollapsedControlsFitNarrowWindowAndScroll(t *testing.T) {
 				status:     "合成的安全设置反馈",
 			}
 			tt := settingsTester(a, 560, 760)
-			if _, ok := tt.Find("设置分类"); ok {
-				t.Fatal("collapsed settings kept the expanded category sidebar mounted")
+			if _, ok := tt.Find("设置分类"); !ok {
+				t.Fatal("workbench collapse removed independent settings navigation")
 			}
 			viewport, ok := tt.Find("设置内容")
-			if !ok || viewport.X != components.RailWidth || viewport.W != 560-components.RailWidth || viewport.Y != 0 || viewport.H != 760 {
-				t.Fatal("collapsed settings did not fill the page beside its 48px rail", viewport)
-			}
-			rail, ok := tt.Find("设置分类窄栏")
-			if !ok || rail.W != components.RailWidth || rail.H != 760 {
-				t.Fatal("collapsed settings lost its full-height category rail", rail)
+			if !ok || viewport.X != 228 || viewport.W != 312 || viewport.Y != 48 || viewport.H != 692 {
+				t.Fatal("independent settings viewport changed with workbench collapse", viewport)
 			}
 			for _, label := range []string{"设置分类：工作区", "设置分类：安全与解锁"} {
 				item, ok := tt.Find(label)
-				if !ok || item.W != 36 || item.H != components.NavigationItemHeight || item.X < 0 || item.X+item.W > components.RailWidth {
-					t.Fatal("collapsed settings lost its clickable category", label, item)
+				if !ok || item.W != 176 || item.H != 32 || item.X < 8 || item.X+item.W > 208 {
+					t.Fatal("settings lost its clickable category", label, item)
 				}
 			}
 			for _, label := range category.controls {
 				r, ok := tt.Find(label)
-				if !ok || r.X < components.RailWidth || r.X+r.W > 560 || r.W < 32 || r.H < 20 {
+				if !ok || r.X < viewport.X || r.X+r.W > 560 || r.W < 32 || r.H < 20 {
 					t.Fatal("collapsed settings clipped a preference at the minimum width", label, r)
 				}
 			}
@@ -415,7 +419,7 @@ func TestSettingsCollapsedCategoryPointerAndKeyboardClearPasswordAndCancelAuthen
 		t.Fatal("collapsed category lost keyboard access to security")
 	}
 	tt.Key(0, ui.KeyTab)
-	if !tt.Focused("主密码确认设置") || a.page != 4 || a.contentFocus {
+	if !tt.Focused("保险库闲置自动锁定开关") || a.page != 4 || a.contentFocus {
 		t.Fatal("collapsed categories did not retain a single Tab stop before settings controls")
 	}
 }

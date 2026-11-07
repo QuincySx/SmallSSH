@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/desktop/components"
 	"sshclient/internal/sshconn"
 )
 
@@ -243,9 +244,9 @@ func (a *app) fileWindows(c *ui.Context, n *fileLayoutNode) {
 	}
 	first, second := n.first, n.second
 	if n.vertical {
-		ui.SplitVerticalPercent(c, &n.share, func() { a.fileWindows(c, first) }, func() { a.fileWindows(c, second) }).FillWidth().Grow(1).MinHeight(0)
+		components.SplitVerticalPercent(c, &n.share, components.SplitLimits{Min: 0, Max: 100, Default: 50}, func() { a.fileWindows(c, first) }, func() { a.fileWindows(c, second) }).FillWidth().Grow(1).MinHeight(0)
 	} else {
-		ui.SplitPercent(c, &n.share, func() { a.fileWindows(c, first) }, func() { a.fileWindows(c, second) }).FillWidth().Grow(1).MinHeight(0)
+		components.SplitPercent(c, &n.share, components.SplitLimits{Min: 0, Max: 100, Default: 50}, func() { a.fileWindows(c, first) }, func() { a.fileWindows(c, second) }).FillWidth().Grow(1).MinHeight(0)
 	}
 }
 

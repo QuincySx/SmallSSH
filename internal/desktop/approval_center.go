@@ -155,27 +155,42 @@ func (a *app) approvalView(c *ui.Context) {
 					})
 				}
 				ui.Column(c).Key("approval-details").Label(tr(c, "授权详情区域")).Fill().MinWidth(0).Gap(14).Children(func() {
-					c.Key("approval-review")
-					ui.Scroll(c).FillWidth().Grow(1).Children(func() { requestReview(c, chosen, a.approvalServerName(chosen)) })
 					if chosen.Status == "pending" {
 						key := approvalRequestKey(chosen)
-						if key != a.approvalReviewKey || a.inlineApproval == nil {
+						if key != a.approvalReviewKey || a.inlineApproval == nil || a.inlineApproval.host != a.approvalHostWindow() {
 							a.clearInlineApproval()
 							a.approvalReviewKey = key
-							state := &approvalPromptState{host: a.win}
+							state := &approvalPromptState{host: a.approvalHostWindow()}
 							a.inlineApproval = state
 							reviewed := chosen
 							a.bindApprovalFlow(reviewed, state, a.postUI, func() bool {
-								return a.inlineApproval == state && a.approvalTab == 0 && a.selectedRequest == reviewed.ID && a.pendingApproval(reviewed) && (a.win == nil || a.online && a.page == 3 && a.approvalWin == nil)
+								return a.inlineApproval == state && a.approvalTab == 0 && a.selectedRequest == reviewed.ID && a.pendingApproval(reviewed) && (a.win == nil || a.online && a.approvalCenterVisible() && a.approvalWin == nil)
 							}, func() {
 								a.status = tr(nil, "授权决定已处理")
 								a.clearInlineApproval()
 							})
 						}
+					}
+					lifetime, idle := 0, 0
+					if a.inlineApproval != nil && chosen.Status == "pending" {
+						a.initializeApprovalGrant(chosen, a.inlineApproval)
+						lifetime = a.inlineApproval.chosenLifetime(chosen)
+						idle = a.inlineApproval.chosenIdle(chosen)
+					}
+					c.Key("approval-review")
+					ui.Scroll(c).FillWidth().Grow(1).Children(func() { requestReviewWithTerms(c, chosen, lifetime, idle, a.approvalServerName(chosen)) })
+					if chosen.Status == "pending" {
 						state := a.inlineApproval
 						a.approvalActions(c, chosen, state, func(allow, system bool) {
 							state.start(chosen, allow, system, false)
-						}, func() { a.clearInlineApproval(); a.page = 1 })
+						}, func() {
+							a.clearInlineApproval()
+							if a.settingsOpen && a.settingsSection == settingsApprovals {
+								a.closeSettingsWindow()
+							} else {
+								a.page = 1
+							}
+						})
 						a.ownerPass, a.approvalPasswordMode = state.password, state.passwordMode
 					} else if chosen.Status == "running" || chosen.Status == "approved" {
 						if components.Button(c, tr(c, "撤销并断开")).Height(36).Disabled(a.busy).Clicked() {

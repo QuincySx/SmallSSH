@@ -1,0 +1,28 @@
+{
+  "family": "JetBrains Mono",
+  "version": "2.304",
+  "commit": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+  "license": "OFL-1.1",
+  "files": [
+    {
+      "file": "JetBrainsMono-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/fonts/ttf/JetBrainsMono-Regular.ttf",
+      "sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+      "bytes": 273900
+    },
+    {
+      "file": "JetBrainsMono-OFL.txt",
+      "url": "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9/OFL.txt",
+      "sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad",
+      "bytes": 4399
+    },
+    {
+      "file": "JetBrainsMono-Regular.woff",
+      "derivedFrom": "JetBrainsMono-Regular.ttf",
+      "sha256": "73a716b578ce3f463dba4fc46220fa52fe7f62af2e9f8d55852671fe80ae2b6c",
+      "bytes": 127516,
+      "formatConversionOnly": true
+    }
+  ],
+  "preservedOutlinesAndMetrics": true
+}

@@ -270,6 +270,13 @@ func TestConnectionCredentialsSurviveBrokerRestartAndSourceKeyRemoval(t *testing
 			h.a.selected = id
 			h.a.editConnection()
 			h.ui.Frame()
+			h.wait(func() bool { return h.a.connection.notes != nil && !h.a.connection.notes.loading })
+			if h.a.connection.notes == nil {
+				t.Fatal("connection notes did not start")
+			}
+			if h.a.connection.notes.loadError != "" {
+				t.Fatal("connection notes failed to load", h.a.connection.notes.loadError)
+			}
 			if h.a.form.Password != "" || h.a.form.PrivateKey != "" || h.a.keyFile != "" || !h.ui.HasText("更换登录凭据") {
 				t.Fatal("edit read back secrets or required source key again")
 			}

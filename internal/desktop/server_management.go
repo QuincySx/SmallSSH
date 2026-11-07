@@ -36,6 +36,9 @@ type serverManagementUI struct {
 	resourceOverviewScroll, resourceDetailScroll           ui.ScrollState
 	resourceViewportHeight                                 float32
 	resourceViewportWidth                                  float32
+	portTable                                              ui.ListState
+	portSort                                               ui.SortOrder
+	portSearch, portScope                                  string
 }
 
 type processIdentity struct {
@@ -68,8 +71,8 @@ func (a *app) statusActionsAvailable() bool {
 	return a.online && s != nil && !s.closed && s.target.Endpoint != "" && s.target.HostFingerprint != ""
 }
 
-func actionMenu(c *ui.Context, disabled bool, menu func(*ui.Menu)) {
-	components.Button(c, tr(c, "操作 ▾")).Label(tr(c, "列表操作")).Disabled(disabled).Menu(menu)
+func (a *app) actionMenu(c *ui.Context, disabled bool, menu func(*ui.Menu)) {
+	components.Button(c, tr(c, "操作 ▾")).Label(tr(c, "列表操作")).Disabled(disabled).Menu(a.workspaceBoundMenu(menu))
 }
 
 func (a *app) processMenu(m *ui.Menu, p monitor.Process, stats *monitor.Stats) {

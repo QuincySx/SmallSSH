@@ -138,7 +138,8 @@ func TestProtectedAutomationRejectsOpaqueAndLexicalWritesBeforeApproval(t *testi
 	p.Policy = accesspolicy.Policy{ProtectedPaths: []string{"/srv/protected"}}
 	s, cli, ctx := policyHarness(t, p)
 	for _, op := range []approval.Operation{
-		{Kind: "exec", Command: "python harmless"}, {Kind: "shell"},
+		{Kind: "shell"},
+		{Kind: "exec", Command: "rm -rf /"},
 		{Kind: "remove", Path: "/srv/protected/value"},
 		{Kind: "rename", Path: "/srv", Destination: "/safe"},
 		{Kind: "rename", Path: "/safe", Destination: "/srv/protected/new"},
@@ -155,10 +156,58 @@ func TestProtectedAutomationRejectsOpaqueAndLexicalWritesBeforeApproval(t *testi
 		t.Fatal("lexically blocked operation reached SSH")
 	}
 	d := policySession(t, s, cli, ctx, p.ID, "full")
-	if _, _, err := cli.RequestDelegated(ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "safe", Client: "AI"}, time.Minute, d); err == nil {
-		t.Fatal("full grant bypassed server protection")
+	if _, _, err := cli.RequestDelegated(ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "rm -rf /", Client: "AI"}, time.Minute, d); err == nil {
+		t.Fatal("full grant bypassed the destructive-command guard")
 	}
 	assertPolicyNoPending(t, cli, ctx)
+}
+
+func TestProtectedAutomationRunsCommandsWithTheDestructiveGuard(t *testing.T) {
+	f := testserver.NewWithExec(t, func(command string) (string, string, int) { return "ran:" + command, "", 0 })
+	p := f.Profile()
+	p.Policy = accesspolicy.Policy{}
+	s, cli, ctx := policyHarness(t, p)
+
+	for _, command := range []string{"id -un", "uname -n", "ip route show default", "systemctl restart nginx"} {
+		r, ticket, err := cli.Request(ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: command, Client: "policy test AI"}, time.Minute)
+		if err != nil {
+			t.Fatal("protected read-only check was refused", command, err)
+		}
+		if err = cli.DecideReviewedWithOwner(ctx, r, true, false, s.Vault); err != nil {
+			t.Fatal(err)
+		}
+		stream, err := cli.Start(ctx, r.ID, ticket, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		code, _, err := stream.Copy(&out, io.Discard)
+		stream.Close()
+		if err != nil || code != 0 || out.String() != "ran:"+command {
+			t.Fatal("read-only check did not run", command, err, code, out.String())
+		}
+	}
+
+	if _, _, err := cli.Request(ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "rm -rf /", Client: "policy test AI"}, time.Minute); err == nil {
+		t.Fatal("a destructive command was accepted")
+	}
+	assertPolicyNoPending(t, cli, ctx)
+
+	d := policySession(t, s, cli, ctx, p.ID, "full")
+	r, ticket, err := cli.RequestDelegated(ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "uname -n", Client: "AI"}, time.Minute, d)
+	if err != nil {
+		t.Fatal("a full session could not run a fixed read-only check", err)
+	}
+	stream, err := cli.Start(ctx, r.ID, ticket, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	code, _, err := stream.Copy(&out, io.Discard)
+	stream.Close()
+	if err != nil || code != 0 || out.String() != "ran:uname -n" {
+		t.Fatal("delegated read-only check did not run", err, code, out.String())
+	}
 }
 
 func TestProtectedSFTPRejectsAliasesButPermitsSafeTypedWrite(t *testing.T) {
@@ -333,7 +382,7 @@ func TestDisablingAutomationCancelsActiveGrantAndLeavesNoRenewal(t *testing.T) {
 func TestInvalidRenewalProofAndOwnerSpoofAreAuditedWithoutApproval(t *testing.T) {
 	h := newRenewalHarness(t)
 	original, d := h.grant(t, "read")
-	challenge, err := h.c.Call(h.ctx, broker.Message{Action: "renewalChallenge", ID: original.ID, Ticket: d.Ticket})
+	challenge, err := h.c.CallWithSession(h.ctx, broker.Message{Action: "renewalChallenge", ID: original.ID, Ticket: d.Ticket}, d)
 	if err != nil || challenge.Renewal == nil {
 		t.Fatal("renewal challenge missing", err)
 	}
@@ -366,5 +415,32 @@ func TestInvalidRenewalProofAndOwnerSpoofAreAuditedWithoutApproval(t *testing.T)
 	}
 	if invalid != 3 || owner != 1 || h.commands.Load() != 0 {
 		t.Fatal("authority refusals lost or executed", invalid, owner, h.commands.Load())
+	}
+}
+
+func TestOwnerLifetimeOnAOneShotRequestIsIgnored(t *testing.T) {
+	f := testserver.NewWithExec(t, func(command string) (string, string, int) { return "ran", "", 0 })
+	p := f.Profile()
+	s, cli, ctx := policyHarness(t, p)
+	r, ticket, err := cli.Request(ctx, approval.Operation{Host: p.ID, Kind: "exec", Command: "id -un", Client: "AI"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The desktop always sends its chosen session duration; a one-shot command
+	// must ignore it instead of failing the decision.
+	if err = cli.DecideReviewedWithLifetime(ctx, r, true, false, 3600, 0, s.Vault); err != nil {
+		t.Fatal("one-shot decision with a session duration was refused", err)
+	}
+	stream, err := cli.Start(ctx, r.ID, ticket, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	var out strings.Builder
+	if code, _, err := stream.Copy(&out, io.Discard); err != nil || code != 0 {
+		t.Fatal("approved one-shot did not run", err, code)
+	}
+	if out.String() != "ran" {
+		t.Fatal("unexpected output", out.String())
 	}
 }

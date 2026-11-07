@@ -121,6 +121,9 @@ func TestApprovalCategoryCollapseKeepsRequestSelectionAndPasswordFocus(t *testin
 		a.requests = []approval.Request{first, second}
 		a.selectedRequest = second.ID
 		tt := ui.NewTester(a.approvalView, width, 760)
+		if err := tt.Click("允许"); err != nil {
+			t.Fatal(err)
+		}
 		if err := tt.Click("保险库主密码"); err != nil {
 			t.Fatal(err)
 		}
@@ -153,7 +156,7 @@ func TestApprovalCategoryCollapseKeepsRequestSelectionAndPasswordFocus(t *testin
 			if _, ok := tt.Find(selection); !ok {
 				t.Fatal("category collapse hid request navigation", width, collapsed)
 			}
-			for _, label := range []string{"保险库主密码", "不允许", "允许"} {
+			for _, label := range []string{"保险库主密码", "拒绝"} {
 				bounds, ok := tt.Find(label)
 				if !ok || bounds.X < 0 || bounds.X+bounds.W > float32(width) || bounds.Y < 0 || bounds.Y+bounds.H > 760 {
 					t.Fatal("category navigation clipped an authentication action", width, collapsed, label, bounds)

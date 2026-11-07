@@ -3,7 +3,7 @@ package broker
 
 import (
 	"context"
-	"crypto/hmac"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,96 +11,59 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"sshclient/internal/accesspolicy"
 	"sshclient/internal/approval"
-	"sshclient/internal/auditlog"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/fileattrs"
 	"sshclient/internal/localipc"
-	"sshclient/internal/monitor"
-	"sshclient/internal/serverops"
+	"sshclient/internal/ownercap"
+	"sshclient/internal/protocol"
 	"sshclient/internal/sshconn"
 	"sshclient/internal/vault"
 )
 
-// Message is the local wire protocol. Credentials are never response fields.
-type Message struct {
-	Challenge string `json:"challenge,omitempty"`
-	After     string `json:"after,omitempty"`
-	Next      string `json:"next,omitempty"`
-	Limit     int    `json:"limit,omitempty"`
-	// Redacted marks a host list served without owner proof: connection IDs,
-	// names and groups only.
-	Redacted      bool                          `json:"redacted,omitempty"`
-	AuditQuery    *auditlog.Query               `json:"auditQuery,omitempty"`
-	AuditPage     *auditlog.Page                `json:"auditPage,omitempty"`
-	Renewal       *approval.RenewalChallenge    `json:"renewal,omitempty"`
-	ErrorCode     string                        `json:"errorCode,omitempty"`
-	ComposePlan   *serverops.ComposePlan        `json:"composePlan,omitempty"`
-	ComposeStatus []serverops.ComposeStatus     `json:"composeStatus,omitempty"`
-	Phase         string                        `json:"phase,omitempty"`
-	FileInfo      *fileattrs.Info               `json:"fileInfo,omitempty"`
-	Delegation    *approval.DelegationChallenge `json:"delegation,omitempty"`
-	HostIdentity  *sshconn.HostIdentity         `json:"hostIdentity,omitempty"`
-	Identities    []sshconn.KeyInfo             `json:"identities,omitempty"`
-	ProfileChange *vault.ProfileChange          `json:"profileChange,omitempty"`
-	Port          int                           `json:"port,omitempty"`
-	MonitorError  string                        `json:"monitorError,omitempty"`
-	// MonitorActive is whether the client still shows this session's server
-	// status. The broker samples a server only while some subscriber shows it.
-	MonitorActive bool                  `json:"monitorActive,omitempty"`
-	Transfer      *sshconn.TransferMeta `json:"transfer,omitempty"`
-	Stats         *monitor.Stats        `json:"stats,omitempty"`
-	Action        string                `json:"action,omitempty"`
-	Operation     approval.Operation    `json:"operation,omitempty"`
-	TTL           int                   `json:"ttl,omitempty"`
-	ID            string                `json:"id,omitempty"`
-	Ticket        string                `json:"ticket,omitempty"`
-	Allow         bool                  `json:"allow,omitempty"`
-	Proof         []byte                `json:"proof,omitempty"`
-	Request       *approval.Request     `json:"request,omitempty"`
-	Requests      []approval.Request    `json:"requests,omitempty"`
-	Hosts         []string              `json:"hosts,omitempty"`
-	Files         []sshconn.File        `json:"files,omitempty"`
-	Data          []byte                `json:"data,omitempty"`
-	Cols          int                   `json:"cols,omitempty"`
-	Rows          int                   `json:"rows,omitempty"`
-	ExitCode      int                   `json:"exitCode,omitempty"`
-	Error         string                `json:"error,omitempty"`
-	Profile       *vault.Profile        `json:"profile,omitempty"`
-	Connections   []vault.Summary       `json:"connections,omitempty"`
-	Details       *vault.Summary        `json:"details,omitempty"`
-	Target        string                `json:"target,omitempty"`
-}
+// Message preserves the existing broker-facing name for the shared contract.
+type Message = protocol.Message
 
 type Server struct {
-	Vault          *vault.Session
-	Approvals      *approval.Manager
-	listener       net.Listener
-	ctx            context.Context
-	cancel         context.CancelFunc
-	release        func()
-	once           sync.Once
-	wg             sync.WaitGroup
-	slots          chan struct{}
-	ownerMu        sync.Mutex
-	challenges     map[string]time.Time
-	dir            string
-	writes         sync.Mutex
-	monitorBudgets sync.Map
-	monitorMu      sync.Mutex
-	monitors       map[monitorTarget]*monitorCollector
-	monitorClosed  bool
-	monitorWG      sync.WaitGroup
-	audit          *audit
-	auditFault     atomic.Bool
-	roots          protectedRootCache
-	conns          connPool
-	sealOnce       sync.Once
-	sealErr        error
+	Vault           *vault.Session
+	Approvals       *approval.Manager
+	listener        net.Listener
+	ctx             context.Context
+	cancel          context.CancelFunc
+	release         func()
+	once            sync.Once
+	wg              sync.WaitGroup
+	errMu           sync.Mutex
+	err             error
+	slots           chan struct{}
+	ownerMu         sync.Mutex
+	challenges      map[string]time.Time
+	ownerRegistry   *ownercap.Registry
+	ownerLeases     map[string]*OwnerLease
+	dir             string
+	writes          sync.Mutex
+	monitorBudgets  sync.Map
+	monitorMu       sync.Mutex
+	monitors        map[monitorTarget]*monitorCollector
+	monitorClosed   bool
+	monitorWG       sync.WaitGroup
+	audit           *audit
+	auditFault      atomic.Bool
+	roots           protectedRootCache
+	conns           connPool
+	sealOnce        sync.Once
+	sealErr         error
+	channels        map[string]*callerChannel
+	requestChannels map[string]*callerChannel
+	requestOwners   map[string]string
+	tlsConfig       *tls.Config
+	publicKeyPin    string
 }
 
 // Open takes exclusive ownership of the vault until Close. The caller reads the
@@ -120,11 +83,30 @@ func OpenSession(dir string, v *vault.Session) (*Server, error) {
 }
 
 func openSession(dir string, v *vault.Session, now func() time.Time) (*Server, error) {
+	return openSessionWithOwnerRegistry(dir, v, now, "", false)
+}
+
+// OpenManagedSession is the authenticated host entry point. It has the same
+// vault ownership and failure cleanup as OpenSession and additionally creates
+// the in-memory owner-session registry for this Server. The epoch comes from
+// the trusted local host; the legacy constructor never enables management.
+func OpenManagedSession(dir string, owner *vault.Session, epoch string) (*Server, error) {
+	return openSessionWithOwnerRegistry(dir, owner, time.Now, epoch, true)
+}
+
+func openSessionWithOwnerRegistry(dir string, v *vault.Session, now func() time.Time, epoch string, managed bool) (*Server, error) {
+	if v == nil {
+		return nil, errors.New("保险库会话为空")
+	}
 	release, e := localipc.Acquire(dir)
 	if e != nil {
 		v.Close()
 		return nil, e
 	}
+	return openSessionWithRelease(dir, v, now, epoch, managed, release)
+}
+
+func openSessionWithRelease(dir string, v *vault.Session, now func() time.Time, epoch string, managed bool, release func()) (*Server, error) {
 	l, e := localipc.Listen(dir)
 	if e != nil {
 		v.Close()
@@ -166,7 +148,39 @@ func openSession(dir string, v *vault.Session, now func() time.Time) (*Server, e
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Server{Vault: v, Approvals: approval.NewWithClock(v.Proof, now), listener: l, ctx: ctx, cancel: cancel, release: release, slots: make(chan struct{}, 32), challenges: make(map[string]time.Time), dir: dir, audit: log}
+	identity, err := v.BrokerIdentity()
+	var tlsConfig *tls.Config
+	var publicKeyPin string
+	if err == nil {
+		tlsConfig, publicKeyPin, err = localipc.ServerTLS(identity)
+		clear(identity)
+	}
+	if err != nil {
+		cancel()
+		l.Close()
+		log.close()
+		v.Close()
+		release()
+		return nil, err
+	}
+	s := &Server{Vault: v, Approvals: approval.NewWithClock(v.Proof, now), listener: l, ctx: ctx, cancel: cancel, release: release, slots: make(chan struct{}, 64), challenges: make(map[string]time.Time), dir: dir, audit: log, channels: make(map[string]*callerChannel), requestChannels: make(map[string]*callerChannel), requestOwners: make(map[string]string), tlsConfig: tlsConfig, publicKeyPin: publicKeyPin}
+	if managed {
+		registry, err := ownercap.NewRegistry(epoch, func(id string) { s.ownerSessionRevoked(id) })
+		if err != nil {
+			cancel()
+			l.Close()
+			log.close()
+			localipc.DestroyServerTLS(tlsConfig)
+			v.Close()
+			release()
+			return nil, err
+		}
+		s.ownerRegistry = registry
+		s.ownerLeases = make(map[string]*OwnerLease)
+	}
+	// Only an authenticated owner session can publish initial trust. Existing
+	// different anchors remain untouched and require explicit owner repair.
+	_ = localipc.PairBroker(dir, publicKeyPin, false)
 	s.wg.Add(2)
 	go s.serve()
 	go func() {
@@ -178,6 +192,10 @@ func openSession(dir string, v *vault.Session, now func() time.Time) (*Server, e
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				s.checkChannels()
+				if s.ownerRegistry != nil {
+					s.ownerRegistry.Sweep()
+				}
 				s.Approvals.Sweep()
 				s.auditExpiries()
 				// A pooled connection whose profile is never used again has no
@@ -194,6 +212,10 @@ func (s *Server) serve() {
 	for {
 		c, e := s.listener.Accept()
 		if e != nil {
+			if s.ctx.Err() == nil {
+				s.recordFault(fmt.Errorf("代理核心接受连接: %w", e))
+				go s.Close()
+			}
 			return
 		}
 		select {
@@ -205,14 +227,56 @@ func (s *Server) serve() {
 		}
 	}
 }
+
+var closedServerDone = func() <-chan struct{} {
+	done := make(chan struct{})
+	close(done)
+	return done
+}()
+
+// Done reports when this authority has stopped accepting new work. Close is
+// still the barrier for complete resource cleanup.
+func (s *Server) Done() <-chan struct{} {
+	if s == nil || s.ctx == nil {
+		return closedServerDone
+	}
+	return s.ctx.Done()
+}
+
+// Err returns the first fatal serving error, if any. A normal Close is not a
+// fault.
+func (s *Server) Err() error {
+	if s == nil {
+		return nil
+	}
+	s.errMu.Lock()
+	defer s.errMu.Unlock()
+	return s.err
+}
+
+func (s *Server) recordFault(err error) {
+	if s == nil || err == nil {
+		return
+	}
+	s.errMu.Lock()
+	if s.err == nil {
+		s.err = err
+	}
+	s.errMu.Unlock()
+}
+
 func (s *Server) Close() {
 	s.once.Do(func() {
 		s.roots.clear()
 		s.cancel()
 		s.listener.Close()
+		if s.ownerRegistry != nil {
+			s.ownerRegistry.Close()
+		}
 		s.Approvals.Lock()
 		s.stopMonitorCollectors()
 		s.wg.Wait()
+		localipc.DestroyServerTLS(s.tlsConfig)
 		s.monitorWG.Wait()
 		_ = s.SealAudit()
 		s.conns.clear()
@@ -244,434 +308,96 @@ func (s *Server) SealAudit() error {
 	})
 	return s.sealErr
 }
-func (s *Server) handle(c net.Conn) {
-	defer c.Close()
-	stop := context.AfterFunc(s.ctx, func() { c.Close() })
-	defer stop()
-	w := &localipc.Wire{Conn: c}
-	// The broker counts one caller's share of the approval queue by the process
-	// the kernel reports, not by the label the caller writes in the request.
-	bucket := ""
-	if pid, err := localipc.PeerPID(c); err == nil && pid > 0 {
-		bucket = fmt.Sprintf("pid:%d", pid)
+func (s *Server) handleMessage(w *localipc.Wire, q Message, channel *callerChannel) error {
+	if q.Action == "run" {
+		w.Conn.SetReadDeadline(time.Time{})
+		s.run(w, q, channel)
+		return nil
 	}
-	c.SetDeadline(time.Now().Add(20 * time.Second))
-	var q Message
-	if w.Receive(&q) != nil {
-		return
+	var response Message
+	var err error
+	if q.Action == "probeHost" || q.Action == "measureRoutes" {
+		response, err = s.probeHost(w, q, channel)
+	} else {
+		response, err = s.controlMessage(q, channel)
 	}
-	fail := func(e error) {
-		code := ""
-		if errors.Is(e, approval.ErrSessionExpired) {
-			code = "session_expired"
-		}
-		if errors.Is(e, approval.ErrSessionRenewing) {
-			code = "session_renewing"
-		}
-		if policyDenial(e) {
-			code = "automation_policy"
-		}
-		_ = w.Send(Message{Action: "error", Error: e.Error(), ErrorCode: code})
+	if err != nil {
+		response = errorResponse(err)
 	}
-	if s.auditFault.Load() {
-		switch q.Action {
-		case "request", "ownerRequest", "decide", "delegate", "renewSession", "run", "profileChange", "profilePut", "profileDetails", "profileDelete":
-			fail(errAuditUnavailable)
-			return
-		}
-	}
-	switch q.Action {
-	case "renewalChallenge", "renewSession":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		result, e := s.renewSession(q)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(result)
-	case "sessionStatus":
-		r, e := s.queryRequest(q)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Request: &r})
-	case "delegationChallenge":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		p, e := s.Vault.Profile(q.Operation.Host)
-		if e != nil {
-			fail(s.recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e))
-			return
-		}
-		q.Operation.Endpoint = fmt.Sprintf("%s@%s", p.User, net.JoinHostPort(p.Host, fmt.Sprint(p.Port)))
-		q.Operation.HostFingerprint = p.Fingerprint
-		if e = s.checkAutomation(p, q.Operation, q.ID); e != nil {
-			fail(e)
-			return
-		}
-		if _, e := s.Approvals.GetForTicket(q.ID, q.Ticket); e != nil {
-			fail(s.recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e))
-			return
-		}
-		challenge, e := s.Approvals.DelegationChallenge(q.ID, q.Operation, time.Duration(q.TTL)*time.Second)
-		if e != nil {
-			if !errors.Is(e, approval.ErrSessionExpired) && !errors.Is(e, approval.ErrSessionRenewing) {
-				e = s.recordRefusal(q.Operation, q.ID, "scope_denied", p.Name, e)
-			}
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Delegation: &challenge})
-	case "delegate":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		op, parent, known := s.Approvals.DelegationOperation(q.ID)
-		r, t, e := s.Approvals.MintDelegated(q.ID, q.Proof)
-		if e != nil {
-			if !known {
-				op = approval.Operation{Kind: "delegate"}
-			}
-			fail(s.recordAuthorityFailure(op, parent, "invalid_authority", e))
-			return
-		}
-		p, e := s.Vault.Profile(r.Operation.Host)
-		if e == nil {
-			e = s.checkAutomation(p, r.Operation, r.ParentID)
-		}
-		if e != nil {
-			s.Approvals.InvalidateAutomationHost(r.Operation.Host)
-			fail(e)
-			return
-		}
-		if e = s.auditRequest("delegated", &r); e != nil {
-			s.Approvals.Lock()
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Request: &r, Ticket: t})
-	case "probeHost":
-		if !s.ownerQuery(q) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
-		defer cancel()
-		watch := context.AfterFunc(ctx, func() { c.Close() })
-		defer watch()
-		// A disconnect cancels the unauthenticated probe too.
-		go func() { var ignored Message; _ = w.Receive(&ignored); cancel() }()
-		identity, e := sshconn.ProbeHost(ctx, q.Target, q.Port)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{HostIdentity: &identity})
-	case "agentIdentities":
-		if !s.ownerQuery(q) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		keys, e := sshconn.AgentIdentities(s.ctx)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Identities: keys})
-	case "profileChange":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		expires, ok := s.challenges[q.ID]
-		delete(s.challenges, q.ID)
-		if !ok || time.Now().After(expires) || q.ProfileChange == nil {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		expected, e := ProfileChangeProof(q.ID, *q.ProfileChange, s.Vault.Proof)
-		if e != nil || !hmac.Equal(expected, q.Proof) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		profile, e := s.Vault.ResolveChange(*q.ProfileChange)
-		if e == nil && profile.Auth == "key" {
-			_, e = sshconn.InspectPrivateKey(profile.PrivateKey, profile.KeyPassphrase)
-		}
-		if e != nil {
-			fail(e)
-			return
-		}
-		previous, previousErr := s.Vault.Profile(profile.ID)
-		if e = s.Vault.SaveProfile(VaultPath(s.dir), profile); e != nil {
-			fail(e)
-			return
-		}
-		s.invalidateProfile(previous, previousErr == nil, profile)
-		if e = s.auditPolicyChange(previous.Policy, previousErr == nil, profile); e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Action: "ok"})
-	case "ownerRequest":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		expires, ok := s.challenges[q.ID]
-		delete(s.challenges, q.ID)
-		if !ok || time.Now().After(expires) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		expected, e := OwnerRequestProof(q.ID, q.Operation, s.Vault.Proof)
-		if e != nil || !hmac.Equal(expected, q.Proof) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		profile, e := s.Vault.Profile(q.Operation.Host)
-		if e != nil {
-			fail(e)
-			return
-		}
-		endpoint := fmt.Sprintf("%s@%s", profile.User, net.JoinHostPort(profile.Host, fmt.Sprint(profile.Port)))
-		if (q.Operation.Endpoint != "" && q.Operation.Endpoint != endpoint) || (q.Operation.HostFingerprint != "" && q.Operation.HostFingerprint != profile.Fingerprint) {
-			fail(errors.New("连接目标已变化，请重新连接后操作"))
-			return
-		}
-		q.Operation.Endpoint = endpoint
-		q.Operation.HostFingerprint = profile.Fingerprint
-		r, t, e := s.Approvals.CreateOwner(q.Operation)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Request: &r, Ticket: t})
+	return w.Send(response)
+}
 
-	case "withdraw":
-		if e := s.Approvals.Withdraw(q.ID, q.Ticket); e != nil {
-			attempt := managementAttempt(q)
-			if r, err := s.Approvals.Get(q.ID); err == nil {
-				attempt.Host = r.Operation.Host
-			}
-			fail(s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", e))
-			return
-		}
-		if r, e := s.Approvals.Get(q.ID); e == nil {
-			if e = s.auditRequest("withdrawn", &r); e != nil {
-				fail(e)
-				return
-			}
-		}
-		_ = w.Send(Message{Action: "ok"})
-	case "profileChallenge":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		for k, v := range s.challenges {
-			if time.Now().After(v) {
-				delete(s.challenges, k)
-			}
-		}
-		if len(s.challenges) >= 128 {
-			fail(errors.New("管理请求过多"))
-			return
-		}
-		id := vault.ShortID()
-		s.challenges[id] = time.Now().Add(time.Minute)
-		_ = w.Send(Message{ID: id})
-	case "auditHistory":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		expires, ok := s.challenges[q.ID]
-		delete(s.challenges, q.ID)
-		denied := approval.Operation{Kind: "audit-history", Client: q.Operation.Client}
-		if !ok || time.Now().After(expires) || q.AuditQuery == nil {
-			fail(s.recordAuthorityFailure(denied, "", "owner_required", approval.ErrDenied))
-			return
-		}
-		expected, e := AuditHistoryProof(q.ID, *q.AuditQuery, s.Vault.Proof)
-		if e != nil || !hmac.Equal(expected, q.Proof) {
-			fail(s.recordAuthorityFailure(denied, "", "owner_required", approval.ErrDenied))
-			return
-		}
-		page, e := s.audit.history(*q.AuditQuery)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{AuditPage: &page})
-	case "profilePut":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		expires, ok := s.challenges[q.ID]
-		delete(s.challenges, q.ID)
-		if !ok || time.Now().After(expires) || q.Profile == nil {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		proof, e := ProfileProof(q.ID, *q.Profile, s.Vault.Proof)
-		if e != nil || !hmac.Equal(proof, q.Proof) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		previous, previousErr := s.Vault.Profile(q.Profile.ID)
-		if e = s.Vault.SaveProfile(VaultPath(s.dir), *q.Profile); e != nil {
-			fail(e)
-			return
-		}
-		s.invalidateProfile(previous, previousErr == nil, *q.Profile)
-		if e = s.auditPolicyChange(previous.Policy, previousErr == nil, *q.Profile); e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Action: "ok"})
-	case "profileDetails":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		expires, ok := s.challenges[q.ID]
-		delete(s.challenges, q.ID)
-		if !ok || time.Now().After(expires) || q.Details == nil {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		b, _ := json.Marshal(q.Details)
-		expected, e := s.Vault.Proof(append([]byte("ssh-client/profile-details/v1\x00"+q.ID+"\x00"), b...))
-		if e != nil || !hmac.Equal(expected, q.Proof) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		previous, previousErr := s.Vault.Profile(q.Details.ID)
-		if e = s.Vault.SaveDetails(VaultPath(s.dir), *q.Details); e != nil {
-			fail(e)
-			return
-		}
-		updated, e := s.Vault.Profile(q.Details.ID)
-		if e != nil {
-			fail(e)
-			return
-		}
-		s.invalidateProfile(previous, previousErr == nil, updated)
-		if e = s.auditPolicyChange(previous.Policy, previousErr == nil, updated); e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Action: "ok"})
-	case "profileDelete":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		expires, ok := s.challenges[q.ID]
-		delete(s.challenges, q.ID)
-		if !ok || time.Now().After(expires) || q.Target == "" || len(q.Target) > 128 {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		expected, e := s.Vault.Proof([]byte("ssh-client/profile-delete/v1\x00" + q.ID + "\x00" + q.Target))
-		if e != nil || !hmac.Equal(expected, q.Proof) {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied))
-			return
-		}
-		if e = s.Vault.DeleteProfile(VaultPath(s.dir), q.Target); e != nil {
-			fail(e)
-			return
-		}
-		s.Approvals.InvalidateHost(q.Target)
-		_ = w.Send(Message{Action: "ok"})
-	case "hosts":
-		// Without owner proof a caller gets what it needs to ask for access and
-		// nothing about where the machine is or how to log in to it.
-		owner := s.ownerQuery(q)
-		list := s.Vault.Summaries()
-		if !owner {
-			list = redactedSummaries(list)
-			_ = w.Send(Message{Connections: list, Redacted: true})
-			return
-		}
-		_ = w.Send(Message{Hosts: s.Vault.Names(), Connections: list})
-	case "pending":
-		page, e := s.pendingPage(q)
-		if e != nil {
-			fail(s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", e))
-			return
-		}
-		_ = w.Send(page)
-	case "request":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		p, e := s.Vault.Profile(q.Operation.Host)
-		if e != nil {
-			fail(s.recordAuthorityFailure(q.Operation, "", "invalid_authority", e))
-			return
-		}
-		q.Operation.Endpoint = fmt.Sprintf("%s@%s", p.User, net.JoinHostPort(p.Host, fmt.Sprint(p.Port)))
-		q.Operation.HostFingerprint = p.Fingerprint
-		q.Operation.PathProtection = q.Operation.Kind == "grant" && !p.Policy.Unrestricted
-		if e = s.checkAutomation(p, q.Operation, ""); e != nil {
-			fail(e)
-			return
-		}
-		r, t, e := s.Approvals.CreateFrom(q.Operation, time.Duration(q.TTL)*time.Second, bucket)
-		if e != nil {
-			fail(s.recordRefusal(q.Operation, "", "invalid_operation", p.Name, e))
-			return
-		}
-		if e = s.auditRequest("requested", &r); e != nil {
-			s.Approvals.Lock()
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Request: &r, Ticket: t})
-	case "status":
-		r, e := s.queryRequest(q)
-		if e != nil {
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Request: &r})
-	case "decide":
-		s.ownerMu.Lock()
-		defer s.ownerMu.Unlock()
-		if e := s.Approvals.Decide(q.ID, q.Allow, q.Proof); e != nil {
-			attempt := managementAttempt(q)
-			if r, err := s.Approvals.Get(q.ID); err == nil {
-				attempt.Host = r.Operation.Host
-			}
-			fail(s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", e))
-			return
-		}
-		r, e := s.Approvals.Get(q.ID)
-		if e != nil {
-			fail(e)
-			return
-		}
-		if e = s.auditRequest(r.Status, &r); e != nil {
-			s.Approvals.Lock()
-			fail(e)
-			return
-		}
-		_ = w.Send(Message{Action: "ok"})
-	case "revoke":
-		if e := s.Approvals.Revoke(q.ID, q.Proof); e != nil {
-			attempt := managementAttempt(q)
-			if r, err := s.Approvals.Get(q.ID); err == nil {
-				attempt.Host = r.Operation.Host
-			}
-			fail(s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", e))
-			return
-		}
-		r, e := s.Approvals.Get(q.ID)
-		if e != nil {
-			r, e = s.Approvals.SessionStatus(q.ID)
-		}
-		if e == nil {
-			if e = s.auditRequest("revoked", &r); e != nil {
-				fail(e)
-				return
-			}
-		}
-		_ = w.Send(Message{Action: "ok"})
-	case "run":
-		c.SetDeadline(time.Time{})
-		s.run(w, q)
-	default:
-		fail(errors.New("不支持的本地操作"))
+// The unauthenticated SSH probe needs the wire only to observe disconnects.
+// Authorization state transitions use the transport-free controlMessage path.
+func (s *Server) probeHost(w *localipc.Wire, q Message, channel *callerChannel) (result Message, resultErr error) {
+	if !s.ownerQuery(q, channel) {
+		return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 	}
+	ctx, cancel := context.WithTimeout(channel.ctx, 8*time.Second)
+	defer cancel()
+	watch := context.AfterFunc(ctx, func() { _ = w.Close() })
+	defer watch()
+	// A disconnect cancels the unauthenticated probe too.
+	go func() { var ignored Message; _ = w.Receive(&ignored); cancel() }()
+	network := connectcfg.Network{}
+	if q.Network != nil {
+		network = *q.Network
+	}
+	if q.ID != "" {
+		if saved, err := s.Vault.Profile(q.ID); err == nil {
+			if q.Network == nil {
+				network = saved.Network
+			}
+			if q.KeepProxyCredential && network.Proxy.Public() == saved.Network.Proxy.Public() {
+				network.Proxy.Password = saved.Network.Proxy.Password
+			}
+		}
+	}
+	route, e := s.Vault.ResolveRoute(vault.Profile{ID: q.ID, Network: network})
+	if e != nil {
+		return Message{}, e
+	}
+	if len(route) > 1 {
+		// The relay authenticates even though the destination probe does not.
+		request := approval.Request{ID: vault.ShortID(), Nonce: vault.ShortID(), OwnerIssued: true, Status: "running", Expires: time.Now().Add(8 * time.Second), Operation: approval.Operation{Kind: "route-probe", Host: q.ID, Client: "所有者连接探测", Endpoint: net.JoinHostPort(q.Target, strconv.Itoa(q.Port)), HostFingerprint: q.ExpectedFingerprint, Destination: network.Relay}}
+		if e := s.auditRequest("started", &request); e != nil {
+			return Message{}, e
+		}
+		defer func() {
+			outcome := "success"
+			if resultErr != nil {
+				outcome = "failed"
+			}
+			if ctx.Err() != nil {
+				outcome = "cancelled"
+			}
+			if len(result.RouteMeasurements) > 0 {
+				available := false
+				for _, measurement := range result.RouteMeasurements {
+					available = available || measurement.Available
+				}
+				if !available {
+					outcome = "failed"
+				}
+			}
+			if e := s.auditCompletion(&request, outcome, nil); e != nil {
+				result, resultErr = Message{}, e
+			}
+		}()
+	}
+	if q.Action == "measureRoutes" {
+		if q.ExpectedFingerprint == "" {
+			return Message{}, errors.New("请先保存并核对目标主机指纹")
+		}
+		route[0].Host, route[0].Port, route[0].Fingerprint = q.Target, q.Port, q.ExpectedFingerprint
+		measured, e := sshconn.MeasureRoutes(ctx, route)
+		return Message{RouteMeasurements: measured}, e
+	}
+	identity, e := sshconn.ProbeRoute(ctx, q.Target, q.Port, network, route[1:])
+	if e != nil {
+		return Message{}, e
+	}
+	return Message{HostIdentity: &identity}, nil
 }
 
 type dataWriter struct {
@@ -692,7 +418,7 @@ func (d dataWriter) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-func (s *Server) run(w *localipc.Wire, q Message) {
+func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 	fail := func(e error) { _ = w.Send(Message{Action: "error", Error: e.Error()}) }
 	s.ownerMu.Lock()
 	if s.auditFault.Load() {
@@ -700,7 +426,12 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		fail(errAuditUnavailable)
 		return
 	}
-	ctx, op, cancel, e := s.Approvals.Start(s.ctx, q.ID, q.Ticket)
+	if !s.ownsRequest(channel, q.ID) {
+		s.ownerMu.Unlock()
+		fail(s.recordAuthorityFailure(approval.Operation{Kind: "run"}, q.ID, "invalid_authority", approval.ErrDenied))
+		return
+	}
+	ctx, op, cancel, e := s.Approvals.Start(channel.ctx, q.ID, q.Ticket)
 	if e != nil {
 		s.ownerMu.Unlock()
 		attempt := approval.Operation{Kind: "run", Client: q.Operation.Client}
@@ -721,6 +452,10 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		return
 	}
 	p, e := s.Vault.Profile(op.Host)
+	var route []vault.Profile
+	if e == nil {
+		route, e = s.Vault.ResolveRoute(p)
+	}
 	var scope approval.GrantScope
 	if e == nil && r.ParentID != "" {
 		parent, err := s.Approvals.Get(r.ParentID)
@@ -780,20 +515,62 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			_ = s.auditCompletion(&r, outcome, nil)
 		}
 	}()
-	stop := context.AfterFunc(ctx, func() { w.Conn.Close() })
+	stop := context.AfterFunc(ctx, func() { w.Close() })
 	defer stop()
-	s.ownerMu.Unlock()
+	// Read from the instant execution starts, including while SSH is still
+	// dialing/handshaking. EOF must cancel that work before a ready frame exists.
+	input := make(chan Message, 1)
+	var inputReady atomic.Bool
+	streamInput := op.Kind == "shell" || op.Kind == "docker-terminal" || op.Kind == "put" || op.Kind == "replace" || op.Kind == "put-resume"
+	go func() {
+		defer close(input)
+		for {
+			var message Message
+			if err := w.Receive(&message); err != nil {
+				cancel()
+				return
+			}
+			if !streamInput || !inputReady.Load() {
+				cancel()
+				return
+			}
+			select {
+			case input <- message:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	receive := func(message *Message) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		select {
+		case value, ok := <-input:
+			if !ok {
+				return io.EOF
+			}
+			*message = value
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	// A short operation reuses the connection the previous one left behind. A
 	// terminal or a stream keeps its own, bound to its own context: revoking it
 	// must still end the transport it opened.
-	key := pooledKey(p.ID, p.Fingerprint)
+	key := pooledKey(p)
+	// Snapshot configuration while ownerMu protects the profile. Both transport
+	// reuse and canonical path caches retain this exact configuration identity.
+	lease := s.conns.lease(key)
 	recyclable := pooledKinds[op.Kind]
 	var c *sshconn.Client
 	if recyclable {
-		c = s.conns.take(key)
+		c = s.conns.take(ctx, lease)
 	}
+	s.ownerMu.Unlock()
 	if c == nil {
-		if c, e = sshconn.Dial(ctx, p); e != nil {
+		if c, e = sshconn.DialRoute(ctx, route); e != nil {
 			fail(e)
 			return
 		}
@@ -802,7 +579,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		// A failed operation may leave its channel wedged, so only a clean one
 		// hands the connection on.
 		if recyclable && !opFailed && ctx.Err() == nil {
-			s.conns.put(key, c)
+			s.conns.put(lease, c)
 			return
 		}
 		c.Close()
@@ -826,7 +603,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		// path being changed is still resolved on every operation.
 		var canonical []string
 		if len(accesspolicy.MutationPaths(op)) > 0 || len(accesspolicy.ReadPaths(op)) > 0 {
-			key := rootCacheKey(p.ID, roots)
+			key := rootCacheKey(lease, roots)
 			cached, ok := s.roots.get(key)
 			if !ok {
 				if cached, e = c.ResolveProtectedRoots(ctx, roots); e != nil {
@@ -867,6 +644,15 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 	var up *sshconn.UploadSession
 	var down *sshconn.DownloadSession
 	var meta *sshconn.TransferMeta
+	var forward *sshconn.Forward
+	if op.Kind == "tunnel" {
+		forward, e = c.Forward(ctx, op.Tunnel)
+		if e != nil {
+			fail(e)
+			return
+		}
+		defer forward.Close()
+	}
 	var shell *sshconn.Shell
 	if op.Kind == "shell" || op.Kind == "docker-terminal" {
 		command := ""
@@ -907,14 +693,22 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		defer down.Close()
 		meta = &down.Meta
 	}
-	if e = w.Send(Message{Action: "ready", Transfer: meta}); e != nil {
+	inputReady.Store(true)
+	if e = w.Send(Message{Action: "ready", Transfer: meta, ListenAddress: func() string {
+		if forward != nil {
+			return forward.Address()
+		}
+		return ""
+	}()}); e != nil {
 		return
 	}
-	// Non-streaming input operations cancel immediately if the client disappears.
-	if op.Kind != "shell" && op.Kind != "docker-terminal" && op.Kind != "put" && op.Kind != "replace" && op.Kind != "put-resume" {
-		go func() { var ignored Message; _ = w.Receive(&ignored); cancel() }()
-	}
 	switch op.Kind {
+	case "tunnel":
+		if e := forward.Wait(); e != nil && ctx.Err() == nil {
+			fail(e)
+			return
+		}
+		_ = finish(Message{Action: "done"})
 	case "docker-logs", "compose-plan", "compose-update":
 		if err := s.runDockerWork(ctx, c, w, op, finish); err != nil {
 			fail(err)
@@ -1003,7 +797,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 		go func() {
 			for {
 				var m Message
-				if e := w.Receive(&m); e != nil {
+				if e := receive(&m); e != nil {
 					writer.CloseWithError(e)
 					cancel()
 					return
@@ -1084,7 +878,7 @@ func (s *Server) run(w *localipc.Wire, q Message) {
 			defer cancel()
 			for {
 				var m Message
-				if w.Receive(&m) != nil {
+				if receive(&m) != nil {
 					return
 				}
 				switch m.Action {

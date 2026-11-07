@@ -9,7 +9,7 @@ import (
 // Surface and the metric primitives are shared by host and container resources.
 func Surface(c *ui.Context, label string) ui.Element {
 	return ui.Column(c).FillWidth().MinWidth(0).Padding(9).Gap(7).Radius(7).
-		Background(c.Theme().Surface).Border(1, c.Theme().Border.Alpha(.6)).Label(label)
+		Background(c.Theme().Background.Mix(c.Theme().Surface, .5)).Label(label)
 }
 
 // ResourceColumns fits complete cards, including their gaps, before adding a

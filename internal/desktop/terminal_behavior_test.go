@@ -243,15 +243,20 @@ func TestSidebarToggleKeepsLiveTerminalBufferAndTyping(t *testing.T) {
 	if err := tt.Click("设置"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("恢复默认布局"); err != nil {
+	settings := ui.NewTester(a.settingsWindowView, 1080, 760)
+	if err := settings.Click("恢复默认布局"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("工作台"); err != nil {
+	if err := settings.Click("关闭设置"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Terminal"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Type("standard typing")
 	expectTerminalInput(t, recorder, "standard typing")
-	for _, label := range []string{"隐藏工具面板", "显示工具面板"} {
+	for _, label := range []string{"收起工具面板", "显示工具面板"} {
 		if err := tt.Click(label); err != nil {
 			t.Fatal(err)
 		}
@@ -285,10 +290,22 @@ func TestWorkspaceNavigationAndMenusLeaveOrdinaryTerminalKeysAlone(t *testing.T)
 	defer term.Close()
 	a := &app{online: true, page: 1, toolsHidden: true, sidebarWidth: 190, groups: map[string]*bool{}, sessions: []*session{{name: "Shell", host: "one", term: term}}}
 	tt := ui.NewTester(a.view, 560, 760)
-	for _, label := range []string{"授权中心", "设置", "工作台"} {
-		if err := tt.Click(label); err != nil {
-			t.Fatal(err)
-		}
+	if err := tt.Click("设置"); err != nil {
+		t.Fatal(err)
+	}
+	settings := ui.NewTester(a.settingsWindowView, 1080, 760)
+	if err := settings.Click("设置分类：授权中心"); err != nil {
+		t.Fatal(err)
+	}
+	if a.settingsSection != settingsApprovals || !a.settingsOpen {
+		t.Fatal("approval category did not open in settings")
+	}
+	if err := settings.Click("关闭设置"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("Terminal"); err != nil {
+		t.Fatal(err)
 	}
 	for _, key := range []ui.Key{ui.KeyUp, ui.KeyDown, ui.KeyLeft, ui.KeyRight} {
 		tt.Key(0, key)

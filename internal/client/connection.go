@@ -11,16 +11,18 @@ import (
 	"sshclient/internal/vault"
 )
 
-func (c Client) SaveConnection(ctx context.Context, change vault.ProfileChange, owner *vault.Session) error {
-	p, err := owner.ResolveChange(change)
-	if err != nil {
+// SaveConnection signs the unmodified profile change. The client checks only
+// the public target and a newly supplied private key; the broker resolves kept
+// credentials and performs the final profile validation.
+func (c Client) SaveConnection(ctx context.Context, change vault.ProfileChange, owner OwnerProof) error {
+	if !HasOwnerProof(owner) {
+		return errors.New("保险库已锁定")
+	}
+	if err := sshconn.ValidateTarget(change.Profile.Host, change.Profile.Port); err != nil {
 		return err
 	}
-	if err = sshconn.ValidateTarget(p.Host, p.Port); err != nil {
-		return err
-	}
-	if p.Auth == "key" {
-		if _, err = sshconn.InspectPrivateKey(p.PrivateKey, p.KeyPassphrase); err != nil {
+	if change.Profile.Auth == "key" && !change.KeepCredential {
+		if _, err := sshconn.InspectPrivateKey(change.Profile.PrivateKey, change.Profile.KeyPassphrase); err != nil {
 			return err
 		}
 	}
@@ -38,14 +40,14 @@ func (c Client) SaveConnection(ctx context.Context, change vault.ProfileChange, 
 
 // An explicit desktop action uses its already-unlocked in-process owner session
 // to approve only this exact request. CLI/AI requests retain their normal queue.
-func (c Client) ConnectWithOwner(ctx context.Context, host string, owner *vault.Session) (*Stream, error) {
+func (c Client) ConnectWithOwner(ctx context.Context, host string, owner OwnerProof) (*Stream, error) {
 	return c.StartWithOwner(ctx, approval.Operation{Host: host, Kind: "shell", ServerStatus: true}, owner)
 }
 
 // StartWithOwner is an in-process owner frontend helper, never a wire action.
 // It signs only the newly returned immutable request, irrespective of its label.
-func (c Client) StartWithOwner(ctx context.Context, op approval.Operation, owner *vault.Session) (*Stream, error) {
-	if owner == nil {
+func (c Client) StartWithOwner(ctx context.Context, op approval.Operation, owner OwnerProof) (*Stream, error) {
+	if !HasOwnerProof(owner) {
 		return nil, errors.New("保险库已锁定")
 	}
 	op.Client = "桌面操作（自报名称）"
@@ -80,8 +82,8 @@ func (c Client) StartWithOwner(ctx context.Context, op approval.Operation, owner
 	return s, nil
 }
 
-func (c Client) RequestWithOwner(ctx context.Context, op approval.Operation, owner *vault.Session) (approval.Request, string, error) {
-	if owner == nil {
+func (c Client) RequestWithOwner(ctx context.Context, op approval.Operation, owner OwnerProof) (approval.Request, string, error) {
+	if !HasOwnerProof(owner) {
 		return approval.Request{}, "", errors.New("保险库已锁定")
 	}
 	challenge, err := c.Call(ctx, broker.Message{Action: "profileChallenge"})
@@ -92,7 +94,7 @@ func (c Client) RequestWithOwner(ctx context.Context, op approval.Operation, own
 	if err != nil {
 		return approval.Request{}, "", err
 	}
-	result, err := c.Call(ctx, broker.Message{Action: "ownerRequest", ID: challenge.ID, Operation: op, Proof: proof})
+	result, err := c.request(ctx, broker.Message{Action: "ownerRequest", ID: challenge.ID, Operation: op, Proof: proof})
 	if err != nil {
 		return approval.Request{}, "", err
 	}

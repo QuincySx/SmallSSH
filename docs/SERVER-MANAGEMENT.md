@@ -21,6 +21,14 @@
 
 服务器无需安装额外守护进程。当前主机状态针对 Linux；服务控制针对 systemd。OpenRC / SysV 保留只读清单。精简路由系统若缺少兼容的 `ps`，会明确说明进程清单不可用；磁盘探测在不支持 `df -T` 时回退并通过 `/proc/mounts` 补类型和模式。
 
+## 端口
+
+「端口」页同时提供监听端口与当前外部连接，按范围筛选：非回环监听 / UDP 绑定、本机监听、当前外部连接。列表含协议、状态、本地地址、对端地址、进程和 PID，可搜索和排序；一个 socket 的多个可见进程会一起展示。
+
+非回环地址也包括内网和通配地址，不表示公网可达；当前外部连接按非回环对端分类，不推断是谁发起连接。UDP 显示绑定或当前对端，不能按 TCP 监听状态理解。
+
+采样复用现有 Linux 监控授权与 SSH channel，不额外登录、提权或安装工具。固定使用 `ss`，失败回退到 `netstat`；每个候选最多1024条 / 512 KiB，超限会标记截断。缺工具、工具失败、未完成、部分解析和进程不可见均单独反馈，不把未知当零条。端口时间单独显示；旧版无端口字段显示尚未采样。整条监控仍受原6秒超时约束，端口工具卡死时该次完整采样可能失败。远端 macOS / Windows 尚未接入此页的采样。
+
 ## 操作方式
 
 选中一行后使用「操作」，或直接右键。容器卡片也有「⋯」菜单。所有变更先显示目标和影响，再确认：
@@ -78,18 +86,18 @@ CLI / AI 同样经过所有者审批或已批准会话。只读子授权可读�
 Docker 工作流另有显式启用的真实本机验收：创建唯一命名、无发布端口 / 无宿主机挂载的测试项目，web 从 Alpine 3.21 更新为 3.22；验证原数据卷内容、未选容器及 orphan 容器 ID 保持，在 `COMPOSE_REMOVE_ORPHANS=1` 的干扰下仍不扩大清理范围。日志、真实容器 sh 交互输入经回环 SSH 和共享 broker 完成，PTY 请求 / 缩放另有协议测试；测试后清理专用项目及卷。没有操作生产服务器或已有项目。
 
 ```sh
-SSH_CLIENT_DOCKER_QA=1 go test ./internal/broker \
-  -run TestLiveDockerComposeUpdatePreservesDataAndUnselectedService -count=1 -timeout 300s
+SSH_CLIENT_DOCKER_QA=1 go run ./tools test -pkg ./internal/broker \
+  -run TestLiveDockerComposeUpdatePreservesDataAndUnselectedService -timeout 300s
 ```
 
-离屏工作流：[日志区](docker-work-logs.png)、[暗色](docker-work-logs-dark.png)、[小工具窗](docker-work-logs-small.png)、[窄右侧](docker-work-logs-right.png)、[Compose 计划](docker-work-compose.png)、[任务中心](docker-work-task-center.png)、[失败结果](docker-work-task-error.png)、[容器终端](docker-work-terminal.png)。
+Docker 日志、容器、Compose 更新与全局任务的布局见 [SmallPen 页面目录](design/DESIGN.md)。历史导出图已移出文档，验收记录保留原轮次信息。
 
 离线预览来自实际原生组件，不创建窗口、不连接生产服务器：
 
 ```sh
-SSH_CLIENT_PREVIEW_QA=1 SSH_CLIENT_UI_SNAPSHOT_DIR=/tmp/ssh-management \
-  go test -tags preview_qa,terminal_integration ./internal/desktop \
+SSH_CLIENT_PREVIEW_QA=1 SSH_CLIENT_UI_SNAPSHOT_DIR="$PWD/build/snapshots/management" \
+  go run ./tools test -tags preview_qa,terminal_integration -pkg ./internal/desktop \
   -run TestManagementResourceSnapshotsWithoutWindows
 ```
 
-[CPU](management-cpu.png) · [网络](management-network.png) · [挂载点](management-mounts.png) · [Docker 卡片](management-docker.png) · [Docker 暗色](management-docker-dark.png) · [右侧面板](management-right.png)
+资源概览与详情的布局见 [SmallPen 页面目录](design/DESIGN.md)；实际离屏截图按开发说明生成到 build/。

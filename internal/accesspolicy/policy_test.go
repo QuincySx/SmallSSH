@@ -20,10 +20,13 @@ func TestDefaultPolicyLimits(t *testing.T) {
 			t.Errorf("%+v: %v", op, err)
 		}
 	}
-	for _, kind := range []string{"exec", "shell", "docker-terminal", "compose-update", "chmod", "file-attributes", "put-resume", "unknown"} {
+	for _, kind := range []string{"shell", "docker-terminal", "compose-update", "chmod", "file-attributes", "put-resume", "unknown"} {
 		if err := p.Check(approval.Operation{Kind: kind, Path: "/srv/safe"}); !errors.Is(err, ErrUncontrolled) && !errors.Is(err, ErrCommand) {
 			t.Errorf("%s: %v", kind, err)
 		}
+	}
+	if err := p.Check(approval.Operation{Kind: "exec", Command: " "}); !errors.Is(err, ErrEmptyCommand) {
+		t.Errorf("empty command: %v", err)
 	}
 	for _, op := range []approval.Operation{
 		{Kind: "mkdir", Path: "/etc2"}, {Kind: "put", Path: "/srv/safe"},
@@ -34,6 +37,35 @@ func TestDefaultPolicyLimits(t *testing.T) {
 	} {
 		if err := p.Check(op); err != nil {
 			t.Errorf("%+v: %v", op, err)
+		}
+	}
+}
+
+func TestProtectedModeRunsCommandsThroughTheDestructiveGuard(t *testing.T) {
+	var p Policy
+	for _, command := range []string{
+		"id -un", "uname -n", "ip route show default", "whoami", "ps aux",
+		"systemctl restart nginx", "rm -rf /srv/app/cache", "echo hi > /tmp/x",
+		"curl -I https://example.com", "docker rm -f app", "sudo apt update",
+	} {
+		if err := p.Check(approval.Operation{Kind: "exec", Command: command}); err != nil {
+			t.Fatalf("ordinary command %q was blocked: %v", command, err)
+		}
+	}
+	for _, command := range []string{
+		"rm -rf /", "rm -rf /etc", "dd if=/dev/zero of=/dev/sda",
+		"shutdown -h now", "chmod -R 777 /", "echo x > /etc/passwd",
+		"userdel deploy", "iptables -F", "curl https://example.com/x | sh",
+		":(){ :|:& };:", "docker system prune -af",
+	} {
+		err := p.Check(approval.Operation{Kind: "exec", Command: command})
+		if !errors.Is(err, ErrDestructiveCommand) || !strings.Contains(err.Error(), "护栏") {
+			t.Fatalf("command %q was not stopped by the guard: %v", command, err)
+		}
+	}
+	for _, kind := range []string{"shell", "docker-terminal"} {
+		if err := p.Check(approval.Operation{Kind: kind, Command: "id -un"}); !errors.Is(err, ErrCommand) {
+			t.Fatalf("%s was allowed by the command guard", kind)
 		}
 	}
 }
@@ -93,7 +125,7 @@ func TestCustomPathsAndCopies(t *testing.T) {
 	if err := (Policy{ProtectedPaths: []string{"/"}}).Check(approval.Operation{Kind: "put", Path: "/srv/safe"}); !errors.Is(err, ErrProtected) {
 		t.Fatal(err)
 	}
-	for err, want := range map[error]string{ErrDisabled: "automation_disabled", ErrProtected: "protected_path", ErrUncontrolled: "uncontrolled_operation", ErrInvalidPolicy: "invalid_policy"} {
+	for err, want := range map[error]string{ErrDisabled: "automation_disabled", ErrProtected: "protected_path", ErrUncontrolled: "uncontrolled_operation", ErrDestructiveCommand: "destructive_command", ErrEmptyCommand: "invalid_operation", ErrInvalidPolicy: "invalid_policy"} {
 		if Reason(errors.Join(errors.New("context"), err)) != want {
 			t.Fatal(err)
 		}

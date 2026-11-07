@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/approval"
 	"sshclient/internal/systemauth"
 )
 
@@ -23,7 +24,7 @@ func TestApprovalPromptSnapshotsWithoutWindows(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, variant := range []string{"read", "protected-read", "scoped", "full", "full-dark", "full-narrow", "command", "renewal", "renewal-narrow", "password", "password-only", "busy", "error"} {
+	for _, variant := range []string{"read", "protected-read", "scoped", "full", "full-protected", "details", "peer", "long-session", "no-idle-renewal", "full-dark", "full-narrow", "command", "renewal", "renewal-narrow", "password", "password-only", "busy", "error"} {
 		t.Run(variant, func(t *testing.T) {
 			a, r := reviewFixture("full")
 			if variant == "read" || variant == "protected-read" {
@@ -34,6 +35,9 @@ func TestApprovalPromptSnapshotsWithoutWindows(t *testing.T) {
 			}
 			if variant == "scoped" {
 				r.Operation.Grant.ReadRoot, r.Operation.Grant.WriteRoot = "/srv/project", "/srv/project"
+				r.Operation.PathProtection = true
+			}
+			if variant == "full-protected" {
 				r.Operation.PathProtection = true
 			}
 			if variant == "command" {
@@ -49,6 +53,14 @@ func TestApprovalPromptSnapshotsWithoutWindows(t *testing.T) {
 			}
 			a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 			state := &approvalPromptState{}
+			if variant == "long-session" {
+				state.lifetime = 24 * 3600
+			}
+			if variant == "no-idle-renewal" {
+				r.Renewal = true
+				r.Operation.Grant.LifetimeSeconds = approval.MaxGrantLifetime
+				r.Operation.Grant.IdleSeconds = approval.MaxGrantLifetime
+			}
 			if variant == "password" {
 				state.passwordMode = true
 			}
@@ -64,6 +76,19 @@ func TestApprovalPromptSnapshotsWithoutWindows(t *testing.T) {
 			}
 			tt := ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, width, approvalWindowHeight)
 			tt.SetDark(variant == "full-dark" || variant == "renewal-narrow")
+			if variant == "peer" {
+				r.Peer = approval.Peer{PID: 48815, Path: "/Applications/Orca.app/Contents/MacOS/Orca", Bundle: "com.stablyai.orca"}
+				state = &approvalPromptState{}
+				tt = ui.NewTester(func(c *ui.Context) { a.approvalPrompt(c, r, state, func(bool, bool) {}, func() {}) }, width, approvalWindowHeight)
+				if err := tt.Click("详情"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if variant == "details" {
+				if err := tt.Click("详情"); err != nil {
+					t.Fatal(err)
+				}
+			}
 			f, err := os.Create(filepath.Join(dir, "approval-"+variant+".png"))
 			if err != nil {
 				t.Fatal(err)

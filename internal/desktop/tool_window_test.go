@@ -53,7 +53,7 @@ func detachFromMenu(t *testing.T, tt *ui.Tester) {
 	if err := tt.Click("工具面板布局"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("独立窗口"); err != nil {
+	if err := tt.Click("系统窗口"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -92,7 +92,7 @@ func TestToolsWindowMovesSharedFileStateAndRedocks(t *testing.T) {
 			if err := tools.Click("工具面板布局"); err != nil {
 				t.Fatal(err)
 			}
-			if !tools.Focused("独立窗口") || tools.HasText("放大工具面板") {
+			if !tools.Focused("系统窗口") || tools.HasText("放大工具面板") {
 				t.Fatal("floating mode was not selected or offered an inapplicable pane action")
 			}
 			label := "放到底部"

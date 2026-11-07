@@ -1,10 +1,13 @@
 package broker
 
 import (
+	"context"
+	"encoding/json"
 	"sync"
 	"time"
 
 	"sshclient/internal/sshconn"
+	"sshclient/internal/vault"
 )
 
 // A verified SSH connection is worth keeping for a moment. Browsing a directory
@@ -32,10 +35,24 @@ type pooledConn struct {
 	idleAt time.Time
 }
 
+// Only public connection identity is a cache key. Credential changes are
+// fenced by the generation advanced whenever configuration invalidates a pool.
+type poolKey struct {
+	profile, host, user, fingerprint, auth, agent string
+	options                                       string
+	port                                          int
+}
+
+type poolLease struct {
+	key        poolKey
+	generation uint64
+}
+
 type connPool struct {
-	mu      sync.Mutex
-	entries map[string][]pooledConn
-	now     func() time.Time
+	mu         sync.Mutex
+	entries    map[poolKey][]pooledConn
+	generation uint64
+	now        func() time.Time
 }
 
 func (p *connPool) clock() time.Time {
@@ -45,16 +62,28 @@ func (p *connPool) clock() time.Time {
 	return time.Now()
 }
 
-// take returns an idle connection for key, dropping the ones that idled too long.
-func (p *connPool) take(key string) *sshconn.Client {
+func (p *connPool) lease(key poolKey) poolLease {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return poolLease{key: key, generation: p.generation}
+}
+
+// take returns a current-generation connection already bound to the new
+// operation's cancellation, including while opening SSH or SFTP channels.
+func (p *connPool) take(ctx context.Context, lease poolLease) *sshconn.Client {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if lease.generation != p.generation {
+		return nil
+	}
+	key := lease.key
 	list := p.entries[key]
 	for len(list) > 0 {
 		entry := list[len(list)-1]
 		list = list[:len(list)-1]
 		if p.clock().Sub(entry.idleAt) <= pooledIdleTTL {
 			p.entries[key] = list
+			entry.client.Bind(ctx)
 			return entry.client
 		}
 		entry.client.Close()
@@ -65,18 +94,23 @@ func (p *connPool) take(key string) *sshconn.Client {
 
 // put keeps a connection for the next operation, or closes it when its share is
 // already full.
-func (p *connPool) put(key string, c *sshconn.Client) {
+func (p *connPool) put(lease poolLease, c *sshconn.Client) {
 	if c == nil {
 		return
 	}
-	// The operation that opened this connection is over. Only the pool decides
-	// when it ends now, so the next operation's context cannot close it.
-	c.Detach()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.entries == nil {
-		p.entries = map[string][]pooledConn{}
+	if lease.generation != p.generation {
+		c.Close()
+		return
 	}
+	// Check, detach and publish under the same lock as clear. A connection
+	// checked out before a configuration change can never re-enter this pool.
+	c.Detach()
+	if p.entries == nil {
+		p.entries = map[poolKey][]pooledConn{}
+	}
+	key := lease.key
 	if len(p.entries[key]) >= pooledPerKey {
 		c.Close()
 		return
@@ -113,6 +147,7 @@ func (p *connPool) sweep() {
 func (p *connPool) clear() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.generation++
 	for key, list := range p.entries {
 		for _, entry := range list {
 			entry.client.Close()
@@ -121,9 +156,11 @@ func (p *connPool) clear() {
 	}
 }
 
-// pooledKey identifies a connection by the profile and the host key it was
-// verified against, so a changed address or a changed fingerprint never reuses a
-// connection confirmed under the old one.
-func pooledKey(profileID, fingerprint string) string {
-	return profileID + "\x00" + fingerprint
+func pooledKey(profile vault.Profile) poolKey {
+	b, _ := json.Marshal(struct {
+		Network  any
+		Hardware any
+		Terminal any
+	}{profile.Network.Public(), profile.Hardware.Public(), profile.Terminal})
+	return poolKey{profile: profile.ID, host: profile.Host, port: profile.Port, user: profile.User, fingerprint: profile.Fingerprint, auth: profile.Auth, agent: profile.AgentFingerprint, options: string(b)}
 }

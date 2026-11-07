@@ -105,9 +105,10 @@ func (s *Server) invalidateProfile(old vault.Profile, existed bool, p vault.Prof
 	// old address must not be reused.
 	s.roots.clear()
 	s.conns.clear()
+	s.invalidateRelayDependents(p.ID)
 	if existed && !samePolicy(old.Policy, p.Policy) && old.Host == p.Host && old.Port == p.Port && old.User == p.User &&
 		old.Fingerprint == p.Fingerprint && old.Auth == p.Auth && old.AgentFingerprint == p.AgentFingerprint &&
-		old.Password == p.Password && old.PrivateKey == p.PrivateKey && old.KeyPassphrase == p.KeyPassphrase {
+		old.Password == p.Password && old.PrivateKey == p.PrivateKey && old.KeyPassphrase == p.KeyPassphrase && old.Network == p.Network && old.Terminal == p.Terminal && old.Hardware == p.Hardware {
 		s.Approvals.InvalidateAutomationHost(p.ID)
 		return
 	}
@@ -116,7 +117,9 @@ func (s *Server) invalidateProfile(old vault.Profile, existed bool, p vault.Prof
 
 func policyDenial(err error) bool {
 	return errors.Is(err, accesspolicy.ErrDisabled) || errors.Is(err, accesspolicy.ErrProtected) ||
-		errors.Is(err, accesspolicy.ErrUncontrolled) || errors.Is(err, accesspolicy.ErrCommand) || errors.Is(err, accesspolicy.ErrInvalidPolicy)
+		errors.Is(err, accesspolicy.ErrUncontrolled) || errors.Is(err, accesspolicy.ErrCommand) ||
+		errors.Is(err, accesspolicy.ErrEmptyCommand) || errors.Is(err, accesspolicy.ErrDestructiveCommand) ||
+		errors.Is(err, accesspolicy.ErrInvalidPolicy)
 }
 
 func managementAttempt(q Message) approval.Operation {
@@ -134,4 +137,28 @@ func managementAttempt(q Message) approval.Operation {
 		op.Host = q.Operation.Host
 	}
 	return op
+}
+
+func (s *Server) invalidateRelayDependents(id string) {
+	// A relay's credentials or endpoint also belong to every dependent route.
+	for _, summary := range s.Vault.Summaries() {
+		if summary.ID == id {
+			continue
+		}
+		candidate, e := s.Vault.Profile(summary.ID)
+		if e != nil {
+			continue
+		}
+		route, e := s.Vault.ResolveRoute(candidate)
+		if e != nil {
+			s.Approvals.InvalidateHost(summary.ID)
+			continue
+		}
+		for _, hop := range route[1:] {
+			if hop.ID == id {
+				s.Approvals.InvalidateHost(summary.ID)
+				break
+			}
+		}
+	}
 }

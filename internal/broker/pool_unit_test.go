@@ -1,6 +1,7 @@
 package broker
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,28 +13,32 @@ import (
 func TestConnPoolDropsIdleConnections(t *testing.T) {
 	now := time.Now()
 	pool := connPool{now: func() time.Time { return now }}
-	if got := pool.take("key"); got != nil {
+	key := poolKey{profile: "key"}
+	if got := pool.take(context.Background(), pool.lease(key)); got != nil {
 		t.Fatal("empty pool handed out a connection")
 	}
-	pool.put("key", &sshconn.Client{})
-	if _, ok := pool.entries["key"]; !ok {
+	lease := pool.lease(key)
+	pool.put(lease, &sshconn.Client{})
+	if _, ok := pool.entries[key]; !ok {
 		t.Fatal("connection was not kept")
 	}
 	now = now.Add(pooledIdleTTL + time.Second)
-	if got := pool.take("key"); got != nil {
+	if got := pool.take(context.Background(), pool.lease(key)); got != nil {
 		t.Fatal("an expired connection was handed out")
 	}
-	if _, ok := pool.entries["key"]; ok {
+	if _, ok := pool.entries[key]; ok {
 		t.Fatal("expired entry stayed in the pool")
 	}
 }
 
 func TestConnPoolCapsEachKeyAndClears(t *testing.T) {
 	pool := connPool{}
+	key := poolKey{profile: "key"}
+	lease := pool.lease(key)
 	for i := 0; i < pooledPerKey+2; i++ {
-		pool.put("key", &sshconn.Client{})
+		pool.put(lease, &sshconn.Client{})
 	}
-	if got := len(pool.entries["key"]); got != pooledPerKey {
+	if got := len(pool.entries[key]); got != pooledPerKey {
 		t.Fatalf("pool kept %d connections for one key, want %d", got, pooledPerKey)
 	}
 	pool.clear()
@@ -47,15 +52,18 @@ func TestConnPoolCapsEachKeyAndClears(t *testing.T) {
 func TestConnPoolSweepsConnectionsNoOperationTouches(t *testing.T) {
 	now := time.Now()
 	pool := connPool{now: func() time.Time { return now }}
-	pool.put("unused", &sshconn.Client{})
+	unused, used := poolKey{profile: "unused"}, poolKey{profile: "used"}
+	oldLease := pool.lease(unused)
+	newLease := pool.lease(used)
+	pool.put(oldLease, &sshconn.Client{})
 	now = now.Add(pooledIdleTTL / 2)
-	pool.put("used", &sshconn.Client{})
+	pool.put(newLease, &sshconn.Client{})
 	now = now.Add(pooledIdleTTL/2 + time.Second)
 	pool.sweep()
-	if _, ok := pool.entries["unused"]; ok {
+	if _, ok := pool.entries[unused]; ok {
 		t.Fatal("sweep kept a connection idle past the TTL")
 	}
-	if _, ok := pool.entries["used"]; !ok {
+	if _, ok := pool.entries[used]; !ok {
 		t.Fatal("sweep dropped a connection that is still fresh")
 	}
 }

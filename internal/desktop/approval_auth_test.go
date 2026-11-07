@@ -346,13 +346,13 @@ func TestApprovalBusyRejectionCancelsAuthenticationInOneAction(t *testing.T) {
 	h.state.start(r, true, true, false)
 	awaitApprovalValue(t, h.started)
 	tt.Frame()
-	if err := tt.Click("不允许"); err != nil {
+	if err := tt.Click("拒绝"); err != nil {
 		t.Fatal(err)
 	}
 	if !h.state.submitting {
 		t.Fatal("one-click rejection did not start the denial")
 	}
-	if err := tt.Click("不允许"); err != nil {
+	if err := tt.Click("拒绝"); err != nil {
 		t.Fatal(err)
 	}
 	awaitApprovalValue(t, h.submitted)
@@ -378,7 +378,7 @@ func TestApprovalCenterEscapeCancelsVerificationAndKeepsExpandedPassword(t *test
 	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 	a.requests = []approval.Request{r}
 	tt := ui.NewTester(a.approvalView, 560, 760)
-	if err := tt.Click("授权方式：触控 ID"); err != nil {
+	if err := tt.Click("允许"); err != nil {
 		t.Fatal(err)
 	}
 	var cancelled int

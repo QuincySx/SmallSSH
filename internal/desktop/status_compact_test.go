@@ -82,7 +82,7 @@ func TestStatusCardsAdaptToActualViewportWhenDraggingAndRedocking(t *testing.T) 
 	tt := ui.NewTester(a.view, 1000, 760)
 	short, _ := tt.Find("CPU详情")
 	term, _ := tt.Find("终端区域")
-	x, y := term.X+term.W/2, term.Y+term.H
+	x, y := term.X+term.W/2, term.Y+term.H+4
 	tt.Press(x, y)
 	tt.Move(x, y-240)
 	tt.Release(x, y-240)
@@ -91,7 +91,7 @@ func TestStatusCardsAdaptToActualViewportWhenDraggingAndRedocking(t *testing.T) 
 		t.Fatal("dragging the dock taller did not restore trend cards", short, tall)
 	}
 	term, _ = tt.Find("终端区域")
-	x, y = term.X+term.W/2, term.Y+term.H
+	x, y = term.X+term.W/2, term.Y+term.H+4
 	tt.Press(x, y)
 	tt.Move(x, y+240)
 	tt.Release(x, y+240)

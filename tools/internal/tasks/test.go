@@ -18,17 +18,21 @@ import (
 
 // pipeline is what test and check share: go vet, then go test with one log.
 type pipeline struct {
-	packages string
-	race     bool
-	short    bool
-	vet      bool
-	serial   bool
-	timeout  time.Duration
+	packages   string
+	runPattern string
+	tags       string
+	race       bool
+	short      bool
+	vet        bool
+	serial     bool
+	timeout    time.Duration
 }
 
 func bindPipeline(fs *flag.FlagSet) *pipeline {
 	p := &pipeline{}
 	fs.StringVar(&p.packages, "pkg", "./...", "packages to check and test")
+	fs.StringVar(&p.runPattern, "run", "", "run tests matching this expression")
+	fs.StringVar(&p.tags, "tags", "", "additional Go build tags, including preview_qa for opt-in offline snapshots")
 	fs.BoolVar(&p.race, "race", false, "run the tests with the race detector")
 	fs.BoolVar(&p.short, "short", false, "skip tests that take longer")
 	fs.BoolVar(&p.vet, "vet", true, "run go vet before the tests")
@@ -56,12 +60,19 @@ func runTest(args []string) error {
 func (p *pipeline) run(out *tee, logPath string) error {
 	if p.vet {
 		fmt.Fprintf(out, "== go vet -mod=vendor %s\n", p.packages)
-		if e := step(out, "go", "vet", "-mod=vendor", p.packages); e != nil {
+		arguments := []string{"vet", "-mod=vendor"}
+		if p.tags != "" {
+			arguments = append(arguments, "-tags", p.tags)
+		}
+		if e := step(out, "go", append(arguments, p.packages)...); e != nil {
 			fmt.Fprintf(out, "\n静态检查失败：%s\n", logPath)
 			return errors.New("go vet 失败")
 		}
 	}
 	args := []string{"test", "-mod=vendor", "-count=1", "-timeout", p.timeout.String()}
+	if p.tags != "" {
+		args = append(args, "-tags", p.tags)
+	}
 	if p.serial {
 		// Several suites assert on timing windows; running packages in parallel
 		// makes those windows depend on what else the machine is doing.
@@ -72,6 +83,9 @@ func (p *pipeline) run(out *tee, logPath string) error {
 	}
 	if p.short {
 		args = append(args, "-short")
+	}
+	if p.runPattern != "" {
+		args = append(args, "-run", p.runPattern)
 	}
 	fmt.Fprintf(out, "\n== go %s %s\n", strings.Join(args, " "), p.packages)
 	if e := step(out, "go", append(args, p.packages)...); e != nil {

@@ -20,7 +20,7 @@ func TestDockMinimumRestoresWithPinnedFilesAndSessions(t *testing.T) {
 	pane, sess := a.primaryFilePane, a.sessions[0]
 	tt := ui.NewTester(a.view, 1280, 900)
 	term, _ := tt.Find("终端区域")
-	x, y := term.X+term.W, term.Y+term.H/2
+	x, y := term.X+term.W+4, term.Y+term.H/2
 	tt.Press(x, y)
 	tt.Move(x-700, y)
 	tt.Release(x-700, y)
@@ -48,10 +48,10 @@ func TestDockDividerStopsAtBoundaryWithoutResetting(t *testing.T) {
 			a.toolsRight, a.terminalWidthShare = right, 65
 			tt := ui.NewTester(a.view, 1000, 760)
 			term, _ := tt.Find("终端区域")
-			x, y := term.X+term.W/2, term.Y+term.H
+			x, y := term.X+term.W/2, term.Y+term.H+4
 			position := func(r ui.Rect) float32 { return r.Y + r.H }
 			if right {
-				x, y = term.X+term.W, term.Y+term.H/2
+				x, y = term.X+term.W+4, term.Y+term.H/2
 				position = func(r ui.Rect) float32 { return r.X + r.W }
 			}
 			tt.Press(x, y)
@@ -87,9 +87,9 @@ func TestDockDividerStopsAtBoundaryWithoutResetting(t *testing.T) {
 				t.Fatal("divider did not reverse smoothly from the boundary", delta)
 			}
 			// The opposite bound must behave the same way, including release.
-			x, y = reversed.X+reversed.W/2, reversed.Y+reversed.H
+			x, y = reversed.X+reversed.W/2, reversed.Y+reversed.H+4
 			if right {
-				x, y = reversed.X+reversed.W, reversed.Y+reversed.H/2
+				x, y = reversed.X+reversed.W+4, reversed.Y+reversed.H/2
 			}
 			tt.Press(x, y)
 			previous = position(reversed)
@@ -231,9 +231,9 @@ func TestVisualDockMenuKeepsActionsVisibleAndWorkspaceState(t *testing.T) {
 				tt.SetSize(1280, 760)
 				term, _ := tt.Find("终端区域")
 				share := a.terminalWidthShare
-				tt.Press(term.X+term.W, term.Y+100)
-				tt.Move(term.X+term.W-60, term.Y+100)
-				tt.Release(term.X+term.W-60, term.Y+100)
+				tt.Press(term.X+term.W+4, term.Y+100)
+				tt.Move(term.X+term.W+4-60, term.Y+100)
+				tt.Release(term.X+term.W+4-60, term.Y+100)
 				resized, _ := tt.Find("终端区域")
 				if a.terminalWidthShare >= share || resized.W >= term.W-30 {
 					t.Fatal("dragging the dock divider lost its new width", term, resized)

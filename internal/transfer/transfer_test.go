@@ -78,14 +78,24 @@ func TestPersistentResumeRequiresFreshGrantAndChecksIntegrity(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- m.Run(ctx, j.ID, "test") }()
 	waiting := waitJob(t, m, j.ID, "waiting")
-	// Pausing a pending task also withdraws its old authorization ticket.
+	// Pausing closes the original connection and revokes its authorization.
 	New(dir).Pause(j.ID) // A different frontend/process can request a pause.
 	if e = <-done; e == nil {
 		t.Fatal("pause succeeded as completed")
 	}
-	r, _ := cli.Call(ctx, broker.Message{Action: "status", ID: waiting.RequestID})
-	if r.Request == nil || r.Request.Status != "withdrawn" {
-		t.Fatal(r)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		r, err := cli.Call(ctx, broker.Message{Action: "status", ID: waiting.RequestID})
+		if err == nil && r.Request != nil && r.Request.Status == "revoked" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("pause left the old connection authorized", r.Request, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := cli.Decide(ctx, waiting.RequestID, true, false, pass); err == nil {
+		t.Fatal("paused request was approved after its connection closed")
 	}
 	m = New(dir)
 	go func() { done <- m.Run(ctx, j.ID, "test") }()

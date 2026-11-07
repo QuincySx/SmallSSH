@@ -78,9 +78,8 @@ func (a *app) handleDesktopControl(ctx context.Context, action string) (desktopc
 		}
 		reply, err := a.startup.control(action, controlEffects{
 			show: func() {
-				mygo.App.SetActivationPolicy(mygo.ActivationPolicyRegular)
-				a.win.Show()
-				a.win.Focus()
+				a.restorePresence()
+				a.showFromPresence()
 			},
 			snapshot: func() desktopcontrol.State {
 				return desktopcontrol.State{Visible: a.win.IsVisible(), Focused: a.win.IsFocused()}

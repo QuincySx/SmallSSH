@@ -1,0 +1,1205 @@
+{
+  "basePresentationId": "pres_00_7_u20f38e26_desktop",
+  "counterparts": [],
+  "id": "scr_00_7_u20f38e26",
+  "name": "00 页面目录 / 页面地图 7",
+  "presentations": [
+    {
+      "id": "pres_00_7_u20f38e26_desktop",
+      "interactions": [],
+      "name": "desktop",
+      "nodes": {
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u3cd8e436",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_ue69643c5"
+          ],
+          "cornerRadius": 16,
+          "fills": [
+            {
+              "color": "#FFFFFF",
+              "type": "solid"
+            }
+          ],
+          "height": 705,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-gap": {
+            "column-gap": 8,
+            "row-gap": 8
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fill",
+          "layout-padding": {
+            "p1": 24,
+            "p2": 24,
+            "p3": 24,
+            "p4": 24
+          },
+          "layout-padding-type": "multiple",
+          "name": "目录",
+          "tokenBindings": {
+            "cornerRadius": {
+              "assetId": "tok_3c576058bda23f9b520ba8759ed568d1",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "fill": {
+              "assetId": "tok_befb4eb1d017b911231b0b9cb3aa90a3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "FRAME",
+          "width": 435,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_ue69643c5"
+          ],
+          "fills": [],
+          "height": 202,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-gap": {
+            "column-gap": 12,
+            "row-gap": 12
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "auto",
+          "layout-padding": {
+            "p1": 0,
+            "p2": 0,
+            "p3": 0,
+            "p4": 0
+          },
+          "layout-padding-type": "multiple",
+          "name": "待实现；曾有离线视觉原型",
+          "type": "FRAME",
+          "width": 387,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u77c193eb",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u1f5db337",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_ub5fcf5aa",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u7ffd2ae3",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u857bc5e6",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_uf010f4db",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_uf3f2614f"
+          ],
+          "cornerRadius": 8,
+          "fills": [
+            {
+              "color": "#F8F9FB",
+              "type": "solid"
+            }
+          ],
+          "height": 167,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-gap": {
+            "column-gap": 4,
+            "row-gap": 4
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "auto",
+          "layout-padding": {
+            "p1": 12,
+            "p2": 12,
+            "p3": 12,
+            "p4": 12
+          },
+          "layout-padding-type": "multiple",
+          "name": "planned-server-key",
+          "tokenBindings": {
+            "cornerRadius": {
+              "assetId": "tok_24e403d8899ec35d81881fa91721303a",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "fill": {
+              "assetId": "tok_2cfceeef0ace0a5d379198b547c8bafd",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "FRAME",
+          "width": 387,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u1f5db337": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u1f5db337",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "源码",
+          "text": "源码：docs/REQUIREMENTS.md §服务器专属密钥与 onboarding",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 329,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u77c193eb": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#6555CD",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u77c193eb",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "画布",
+          "text": "画布：10 待实现 / 登录公钥安装",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_5e5dd698605807bd1335364dbd6b0645",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 157,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u7ffd2ae3": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u7ffd2ae3",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "状态",
+          "text": "状态：待实现",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 67,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u857bc5e6": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_u857bc5e6",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "操作",
+          "text": "操作：计划选择专用软件/硬件身份、安装公钥、独立验证",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 281,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_ub5fcf5aa": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_ub5fcf5aa",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "边界",
+          "text": "边界：生产未接公钥部署或独立向导；代理公钥配对不是SSH登录公钥安装",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 363,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_uf010f4db": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_uf010f4db",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "入口",
+          "text": "入口：需求：服务器安全与密钥入口",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 177,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_uf3f2614f": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 23,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_planned_server_key_uf3f2614f",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "名称",
+          "text": "安装登录公钥向导",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 15,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_0fcb27288fde016cee904c0466801df4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 122,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_ue69643c5": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 23,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u06902fc6_ue69643c5",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "标题",
+          "text": "待实现；曾有离线视觉原型",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 15,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_0fcb27288fde016cee904c0466801df4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 182,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u3cd8e436": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 20,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_u3cd8e436",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "范围",
+          "text": "设计目录，不是 App 内的新页面。以正式源码和需求状态为准。",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 13,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_da8835713e2e1f7a4c8a5bfb42dccfc9",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 369,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_ue69643c5": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 30,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_ue69643c5",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "标题",
+          "text": "SmallSSH · 页面与承载地图",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 22,
+            "fontWeight": 400,
+            "lineHeight": 1.35
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_5216acc67bfd5b5d14b0fc35f5494846",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 288,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_ue69643c5"
+          ],
+          "fills": [],
+          "height": 381,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-gap": {
+            "column-gap": 12,
+            "row-gap": 12
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "auto",
+          "layout-padding": {
+            "p1": 0,
+            "p2": 0,
+            "p3": 0,
+            "p4": 0
+          },
+          "layout-padding-type": "multiple",
+          "name": "待实现",
+          "type": "FRAME",
+          "width": 361,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u77c193eb",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u1f5db337",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_ub5fcf5aa",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u7ffd2ae3",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u857bc5e6",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_uf010f4db",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_uf3f2614f"
+          ],
+          "cornerRadius": 8,
+          "fills": [
+            {
+              "color": "#F8F9FB",
+              "type": "solid"
+            }
+          ],
+          "height": 167,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-gap": {
+            "column-gap": 4,
+            "row-gap": 4
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "auto",
+          "layout-padding": {
+            "p1": 12,
+            "p2": 12,
+            "p3": 12,
+            "p4": 12
+          },
+          "layout-padding-type": "multiple",
+          "name": "planned-migration",
+          "tokenBindings": {
+            "cornerRadius": {
+              "assetId": "tok_24e403d8899ec35d81881fa91721303a",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "fill": {
+              "assetId": "tok_2cfceeef0ace0a5d379198b547c8bafd",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "FRAME",
+          "width": 333,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u1f5db337": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u1f5db337",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "源码",
+          "text": "源码：docs/REQUIREMENTS.md §导入 / 导出与本地加密备份",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 309,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u77c193eb": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#6555CD",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u77c193eb",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "画布",
+          "text": "画布：10 待实现 / 配置迁移与备份",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_5e5dd698605807bd1335364dbd6b0645",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 168,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u7ffd2ae3": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u7ffd2ae3",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "状态",
+          "text": "状态：待实现",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 67,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u857bc5e6": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_u857bc5e6",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "操作",
+          "text": "操作：计划来源选择、预览、冲突处理、恢复验证",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 243,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_ub5fcf5aa": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_ub5fcf5aa",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "边界",
+          "text": "边界：OpenSSH/FinalShell导入、完整备份UI未实现",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 259,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_uf010f4db": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_uf010f4db",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "入口",
+          "text": "入口：需求：配置迁移",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 111,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_uf3f2614f": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 23,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_migration_uf3f2614f",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "名称",
+          "text": "导入导出与加密备份",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 15,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_0fcb27288fde016cee904c0466801df4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 137,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u77c193eb",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u1f5db337",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_ub5fcf5aa",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u7ffd2ae3",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u857bc5e6",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_uf010f4db",
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_uf3f2614f"
+          ],
+          "cornerRadius": 8,
+          "fills": [
+            {
+              "color": "#F8F9FB",
+              "type": "solid"
+            }
+          ],
+          "height": 167,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-gap": {
+            "column-gap": 4,
+            "row-gap": 4
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "auto",
+          "layout-padding": {
+            "p1": 12,
+            "p2": 12,
+            "p3": 12,
+            "p4": 12
+          },
+          "layout-padding-type": "multiple",
+          "name": "planned-terminal-extras",
+          "tokenBindings": {
+            "cornerRadius": {
+              "assetId": "tok_24e403d8899ec35d81881fa91721303a",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "fill": {
+              "assetId": "tok_2cfceeef0ace0a5d379198b547c8bafd",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "FRAME",
+          "width": 361,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u1f5db337": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u1f5db337",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "源码",
+          "text": "源码：docs/REQUIREMENTS.md §tmux、串口、剪贴板与连接恢复",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 337,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u77c193eb": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#6555CD",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u77c193eb",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "画布",
+          "text": "画布：10 待实现 / 终端增强与完整变量",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_5e5dd698605807bd1335364dbd6b0645",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 190,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u7ffd2ae3": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u7ffd2ae3",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "状态",
+          "text": "状态：待实现",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 67,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u857bc5e6": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_u857bc5e6",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "操作",
+          "text": "操作：计划tmux会话、串口、远程桌面及更完整变量体系",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 281,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_ub5fcf5aa": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_ub5fcf5aa",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "边界",
+          "text": "边界：不要把现有PTY、SSH保活或参数历史误称上述功能",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 283,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_uf010f4db": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#626B7A",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 16,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_uf010f4db",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "入口",
+          "text": "入口：需求：终端工具/连接类型",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 11,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_88dae447f93698b2585221c145249b10",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_ecc2c6c2db50e39c64d143dbcbb88be4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 160,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_uf3f2614f": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 23,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_planned_terminal_extras_uf3f2614f",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "名称",
+          "text": "终端增强与其他连接",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 15,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_0fcb27288fde016cee904c0466801df4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 137,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_ue69643c5": {
+          "children": [],
+          "fills": [
+            {
+              "color": "#272A34",
+              "type": "solid"
+            }
+          ],
+          "growType": "auto-height",
+          "height": 23,
+          "id": "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0_uefaab0ef_ue69643c5",
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "标题",
+          "text": "待实现",
+          "textStyle": {
+            "fontFamily": "SmallSSH UI",
+            "fontSize": 15,
+            "fontWeight": 400,
+            "lineHeight": 1.5
+          },
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "typography": {
+              "assetId": "tok_0fcb27288fde016cee904c0466801df4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "TEXT",
+          "width": 47,
+          "x": 0,
+          "y": 0
+        },
+        "node_00_7_u20f38e26_desktop_root": {
+          "children": [
+            "node_00_7_u20f38e26_desktop_7_desktop_u07d83f6f_u865f3fc0"
+          ],
+          "fills": [
+            {
+              "color": "#F3F4F7",
+              "type": "solid"
+            }
+          ],
+          "height": 1200,
+          "id": "node_00_7_u20f38e26_desktop_root",
+          "layout": "flex",
+          "layout-flex-dir": "column",
+          "layout-item-h-sizing": "fix",
+          "layout-item-v-sizing": "fix",
+          "name": "页面地图 7 · desktop",
+          "tokenBindings": {
+            "fill": {
+              "assetId": "tok_02d9caca71815b93c8ab6422131fcc6b",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            }
+          },
+          "type": "FRAME",
+          "width": 1400,
+          "x": 0,
+          "y": 0
+        }
+      },
+      "platform": "desktop",
+      "rootId": "node_00_7_u20f38e26_desktop_root",
+      "viewport": {
+        "height": 1200,
+        "width": 1400
+      }
+    }
+  ]
+}

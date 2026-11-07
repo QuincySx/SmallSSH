@@ -26,8 +26,10 @@ type task struct {
 var tasks = []task{
 	{"build", "编译原生组件与各平台 CLI 并打包桌面应用（-platform、-check）", runBuild},
 	{"check", "格式检查、go vet 与测试一次跑完（CI 与本机同一批命令）", runCheck},
+	{"compile", "只编译 Go 代码与 CLI，不启动桌面（-platform、-pkg）", runCompile},
 	{"dev", "静默开发进程：run / status / show / stop（-data-dir）", runDev},
-	{"test", "只跑 go vet 与测试（-race、-short、-pkg、-timeout）", runTest},
+	{"install", "安装已打包的本机 macOS 应用，保留旧版且不启动", runInstall},
+	{"test", "只跑 go vet 与测试（-race、-short、-pkg、-run、-timeout）", runTest},
 }
 
 // Main runs the task this command owns. A tool with no fixed name is the front

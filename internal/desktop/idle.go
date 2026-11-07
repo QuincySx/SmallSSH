@@ -31,10 +31,14 @@ var idleTime = func() time.Duration {
 // exceed the limit when the vault is unlocked after a break: a window that was
 // just unlocked must not lock itself again on the next tick.
 func lockWhenIdle(online bool, idle, unlockedFor time.Duration) bool {
-	if !online || idle <= 0 || unlockedFor <= 0 {
+	return lockWhenIdleAfter(online, idle, unlockedFor, idleLockAfter)
+}
+
+func lockWhenIdleAfter(online bool, idle, unlockedFor, delay time.Duration) bool {
+	if !online || delay <= 0 || idle <= 0 || unlockedFor <= 0 {
 		return false
 	}
-	return idle >= idleLockAfter && unlockedFor >= idleLockAfter
+	return idle >= delay && unlockedFor >= delay
 }
 
 // watchIdle starts the watcher once per process, from the first rendered frame.
@@ -66,7 +70,7 @@ func (a *app) watchIdle() {
 // checkIdle locks the vault once it has been left alone long enough. It runs on
 // the UI thread, where locking is allowed.
 func (a *app) checkIdle() {
-	if !a.online {
+	if !a.online || a.idleLockDelay() <= 0 {
 		a.idleUnlockedAt = time.Time{}
 		return
 	}
@@ -80,7 +84,7 @@ func (a *app) checkIdle() {
 }
 
 func (a *app) idleExpired(now time.Time, unlockedAt time.Time) bool {
-	return lockWhenIdle(a.online, idleTime(), now.Sub(unlockedAt))
+	return lockWhenIdleAfter(a.online, idleTime(), now.Sub(unlockedAt), a.idleLockDelay())
 }
 
 var idleWatch sync.Once

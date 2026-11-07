@@ -63,9 +63,9 @@ func (a *app) composeProjectMenu(c *ui.Context, p monitor.ComposeProject, d *mon
 }
 
 func (a *app) composeProjectMenuButton(c *ui.Context, p monitor.ComposeProject, d *monitor.DockerInfo, state *serverManagementUI) {
-	components.IconButton(c, "⋯", tr(c, "项目菜单 ")+p.Name).Menu(func(m *ui.Menu) {
+	components.IconButton(c, "⋯", tr(c, "项目菜单 ")+p.Name).Menu(a.workspaceBoundMenu(func(m *ui.Menu) {
 		a.composeProjectMenu(c, p, d, state, m)
-	})
+	}))
 }
 
 func (a *app) confirmComposeLifecycle(p monitor.ComposeProject, d *monitor.DockerInfo, action string) {

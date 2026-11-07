@@ -33,7 +33,7 @@ func TestVisualDockSelectorKeyboardAndDismissal(t *testing.T) {
 	for _, step := range []struct {
 		key  ui.Key
 		want string
-	}{{ui.KeyDown, "放大工具面板"}, {ui.KeyDown, "收起面板"}, {ui.KeyDown, "放到底部"}, {ui.KeyUp, "收起面板"}, {ui.KeyUp, "放大工具面板"}, {ui.KeyUp, "放到底部"}} {
+	}{{ui.KeyDown, "放大工具面板"}, {ui.KeyDown, "独立到标签页"}, {ui.KeyDown, "收起面板"}, {ui.KeyDown, "放到底部"}, {ui.KeyUp, "收起面板"}, {ui.KeyUp, "独立到标签页"}, {ui.KeyUp, "放大工具面板"}, {ui.KeyUp, "放到底部"}} {
 		tt.Key(0, step.key)
 		if !tt.Focused(step.want) || !open || choices != 0 {
 			t.Fatal("vertical menu navigation changed layout or lost focus", step.want, open, choices)
@@ -83,13 +83,13 @@ func TestDockMenuUsesCompactSingleRowAndVisibleSelection(t *testing.T) {
 				heading, ok := tt.Find("停靠侧")
 				bottom, b := tt.Find("放到底部")
 				rightChoice, r := tt.Find("放到右侧")
-				if !ok || !b || !r || popup.H > 130 || bottom.W != 32 || bottom.H != 32 || rightChoice.Y != bottom.Y || rightChoice.X-bottom.X-bottom.W != 4 {
+				if !ok || !b || !r || popup.H > 170 || bottom.W != 32 || bottom.H != 32 || rightChoice.Y != bottom.Y || rightChoice.X-bottom.X-bottom.W != 4 {
 					t.Fatal("dock choices became separate cards or vertical rows", popup, heading, bottom, rightChoice)
 				}
 				if math.Abs(float64(heading.Y+heading.H/2-bottom.Y-bottom.H/2)) > 1 || heading.X+heading.W > bottom.X {
 					t.Fatal("heading and dock icons are not on one row", heading, bottom)
 				}
-				for _, label := range []string{"放大工具面板", "收起面板"} {
+				for _, label := range []string{"放大工具面板", "独立到标签页", "收起面板"} {
 					row, found := tt.Find(label)
 					if !found || row.Y < bottom.Y+bottom.H || row.X < popup.X || row.X+row.W > popup.X+popup.W {
 						t.Fatal("menu row was clipped or mixed with dock choices", label, row, popup)
@@ -123,13 +123,16 @@ func TestDockMenuActionsActivateByKeyboardAndDismiss(t *testing.T) {
 			}
 		})
 	}, 330, 240)
-	for _, want := range []PanelLayoutAction{PanelToggleExpanded, PanelToggleExpanded, PanelHide} {
+	for _, want := range []PanelLayoutAction{PanelToggleExpanded, PanelToggleExpanded, PanelPromote, PanelHide} {
 		if err := tt.Click("工具面板布局"); err != nil {
 			t.Fatal(err)
 		}
 		tt.Key(0, ui.KeyDown)
-		if want == PanelHide {
+		if want == PanelPromote || want == PanelHide {
 			tt.Key(0, ui.KeyDown)
+			if want == PanelHide {
+				tt.Key(0, ui.KeyDown)
+			}
 		} else if expanded && !tt.Focused("恢复分栏") {
 			t.Fatal("expanded menu did not offer the restore action")
 		}
@@ -178,11 +181,11 @@ func TestDetachedDockSelectorKeyboardAndApplicableActions(t *testing.T) {
 	if err := tt.Click("工具面板布局"); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.Focused("独立窗口") || tt.HasText("放大工具面板") {
+	if !tt.Focused("系统窗口") || tt.HasText("放大工具面板") {
 		t.Fatal("undocked mode is not selected or contains pane-only controls")
 	}
 	tt.Key(0, ui.KeyDown)
-	if !tt.Focused("收起面板") {
+	if !tt.Focused("独立到标签页") {
 		t.Fatal("Down did not skip the inapplicable resize action")
 	}
 	tt.Key(0, ui.KeyUp)

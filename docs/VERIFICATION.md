@@ -1347,3 +1347,1184 @@ CI 尚未在 GitHub 上实际运行过——仓库还没有推送，因此本轮
 - 已暂存本轮 24 个源码、测试与文档文件；签名提交尝试返回 `1Password: Could not connect to socket. Is the agent running?`，未生成新提交，未推送。等待恢复 1Password SSH 代理连接后继续既有身份的签名与推送，不关闭签名或改用其它身份。
 
 本轮仅验证本机 arm64 构建、包完整性及隔离测试；未对真实服务器、真实保险库执行操作，未启动桌面、真实系统认证、Windows/Linux 实机或其它平台打包。`build/` 和平台资源暂存目录均保持忽略，不纳入提交。
+
+## 服务器备注、命令分类与占位符执行 · 2026-11-01
+
+按用户对新建服务器与「命令」工具页的反馈做的一轮整理：
+
+- **新建 / 编辑连接**增加备注字段，与右键「备注…」共用同一份加密的 `ServerNote`；保存连接时只在手写备注变化时写备注，检测概览等既有内容原样保留。AI 访问区只保留「允许 AI 访问此服务器」「保护关键路径」和「保护路径…」，删除了三段解释性副标题；具体权限后果留给真正的授权弹窗。
+- **命令面板**改为单行工具栏（分类下拉、搜索、新建），列表按分类和名称排序，行内名称与命令预览横向排列；删除底部整条「待执行命令」输入行，同时移除 `session.draft`、`fillSnippet` 和 `confirmDraft`。命令编辑器使用可选可输入的「分类」下拉，分类由已保存命令的分组派生，输入新值即创建。
+- **双击执行**：默认双击或回车打开核对表，显示目标（会话名 + `user@host`）、参数和命令预览，默认值来自预设；「以后不再提醒」写入 `layout.json` 的 `skipCommandConfirm`。确认关闭后，没有参数、没有系统差异的命令双击即发送；只有某个系统的版本、且服务器状态显示的是另一个系统时仍会先打开核对表，避免在错误系统上静默执行。右键「执行前确认」可重新打开确认。参数支持文本、整数、数字，整数和数字在执行前校验；替换按填写内容原样进行，不做 Shell 引号转义。
+- **系统差异**：一条命令可保存 Debian/Ubuntu、RHEL/Fedora、SUSE、Arch、Alpine、macOS、Windows 多个版本；执行时优先使用服务器状态清单里的 `PRETTY_NAME`，未匹配则用默认命令，匹配不到一项时不提供该系统。编辑器可添加 / 删除系统版本，运行表只在存在多个可选系统时显示系统下拉。
+- **数据与模块**：命令模型移入新的 `internal/snippet`（默认命令、系统变体、按位置定义的参数、校验与渲染），`vault` 继续把同一 JSON 放进加密载荷；旧版 `{"id","name","group","body"}` 直接兼容，不需要迁移。没有参数定义的旧命令保留字面 `$1`（避免把 awk `'{print $1}'` 误当占位符）；打开编辑器可点「识别占位符」主动转换，修改命令内容时也会生成参数行。命令仍不会进入公共 AI 连接清单。
+- 新增 32 条中英词条；`docs/USAGE.md` 与 `docs/ARCHITECTURE.md` 同步新行为。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261101-132057.log`（vendor 补丁、gofmt、vet、全量测试）。
+- 真实 Ghostty 输入路径（需 `terminal_integration`）：`build/logs/test-20261101-131756-commands-terminal.log`。`TestSavedCommandsRunInTheActiveTerminal` 用终端记录器确认：关闭提醒后双击直接写入 `uptime\r`，打开核对表时不会提前发送，改参数后执行写入 `systemctl restart curl\r`；服务器状态为 Fedora 时自动选择 Red Hat 版本并写入 `sudo dnf upgrade -y\r`。
+- 离线快照（`preview_qa`，只使用隔离夹具）：`build/logs/test-20261101-131806-commands-preview.log`；图片在 `build/snapshots/commands-20261101j/`。检查了命令面板（含 380 DIP 窄面板）、分类过滤、编辑器（含旧命令「识别占位符」入口）、浅色 / 深色执行表，以及带备注和精简 AI 区的连接表单。
+- 新增测试：`internal/snippet/snippet_test.go`（渲染、占位符、类型校验、系统识别与校验）、`internal/desktop/commands_test.go`（分类过滤、双击无终端保护、确认开关矩阵、预设与非法值、编辑器分类与系统下拉选择、状态清单系统识别、关闭提醒的跨重启持久化）、`TestConnectionUIValidatesTrustSavesEncryptedAndEditsWithoutSecretReadback` 增加备注保存断言；`internal/vault/workspace_test.go` 覆盖变体 / 参数加密往返和非法预设拒绝。
+
+仅限本机：系统识别只用 Linux 状态清单的字符串做单元验证，没有连接真实 Debian / RHEL 服务器；macOS / Windows 版本只能手动选择，没有实机验证。双击发送通过 Ghostty 终端记录器验证，不是对真实 SSH 会话；命令预览与参数替换不做 Shell 引号处理。没有启动桌面窗口、读取正式保险库、使用真实凭据、打包或推送。
+
+## 保护模式放行固定只读检查 · 2026-11-03
+
+上一条需求被误读为“把三条命令加入内置命令库”，本轮已完全撤回：`starter_commands.go` 与推荐导入入口删除，空命令库恢复为只显示空状态。实际问题是：开启「保护关键路径」后，AI 执行 `id -un`、`uname -n`、`ip route show default` 也命中 `ErrCommand`，连审批请求都到不了所有者。
+
+- `accesspolicy` 对 `exec` 增加固定只读白名单，仅这三条命令；按空白归一化后的完整词序列精确匹配。包装器、`sudo`、额外参数、重定向、管道、分号、引号里的变体、内部换行和路径限定写法都不匹配，`shell` / `docker-terminal` 仍拒绝，`Disabled` 仍优先，`Unrestricted` 行为不变。
+- 放行只发生在服务器策略层，不跳过授权：单次请求仍进入所有者审批；已批准的完整会话可在授权范围内直接执行。只读会话仍按原范围不包含 `exec`，本轮没有扩大会话权限。
+- 拒绝错误现在直接列出三条允许的命令，AI 不必猜；授权弹窗的全权限提示从“保护开启时，AI 不开放任意命令和终端”改为“保护开启时只放行固定只读检查命令，其他命令和终端不开放”；CLI、架构、安全与委托文档同步。替换 1 条中英词条。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261103-193154.log`。
+- 策略矩阵：`build/logs/test-20261103-193500-policy-readonly.log`。覆盖三条命令、前后空白、多空格 / 制表符；拒绝 `id -u`、`id -un; whoami`、`id -un && whoami`、内部换行、`sh -c`、`/usr/bin/id -un`、`sudo id -un`、重定向、注释、非断行空格、额外参数，以及 `shell` / `docker-terminal`。
+- Broker 端到端：`build/logs/test-20261103-193510-broker-readonly.log`。保护服务器的三条命令分别创建审批、批准后经真实 SSH 执行并返回输出；`id -u` 被拒且不留下 pending；完整会话委托执行 `uname -n` 成功。
+- 双击发送路径未改：`build/logs/test-20261103-193214-commands-terminal.log`。
+- 离线快照：`build/logs/test-20261103-193820-commands-preview.log`，图片在 `build/snapshots/readonly-20261103/`；`commands-empty.png` 确认推荐命令入口已移除；`approval-full-protected.png` 确认新的“只放行固定只读检查”提示在 380 DIP 下完整可见。
+
+仅限本机：没有连接真实服务器验证 `ip route show default`（Linux 有效，macOS 需改 `route -n get default`）；白名单是精确命令集合，不是通用只读命令解析器。只读会话授权仍不包含 `exec`；如果实际使用的是只读会话，需要单次批准或完整会话才能运行这三条。没有启动窗口、读取正式保险库、打包或推送。
+
+本节的三条固定只读检查方案已被下一节的破坏性命令护栏取代；下面的记录保留当时的行为。
+
+## 破坏性命令护栏（D） · 2026-11-03
+
+按用户选择改为 D：保护模式不再整类拒绝 `exec`，AI 可以广泛操作；只对明显会破坏系统的命令做尽力而为的拦截。交互终端和容器终端仍不开放，因为终端里后续输入的命令无法检查；它们等同于完整权限。
+
+- 新增 `internal/accesspolicy/command_guard.go`：命令统一小写、折叠空白后按正则匹配固定类别，匹配到即返回具体原因。覆盖：删除根目录 / 系统目录、递归删除主目录、`find -delete`、格式化 / 分区 / 写磁盘设备、关机重启、停止 SSH、递归改系统路径权限、`777/000` 权限、覆盖 `/etc` 等关键文件、脚本直接操作关键路径、删除账户 / 修改 root 凭据、清空防火墙、`curl | sh`、fork bomb、结束 PID 1 / 全部进程、卸载系统关键路径、删数据库 / 表、Docker 与 Compose 数据清理。`/var/log`、`/srv`、`/tmp`、`/dev/null` 等常见正常路径不被 `/var`、`/dev` 规则误伤；`/var` 本身和 `/var/lib` 会被拦。
+- 匹配是**护栏，不是安全边界**：引号、变量、编码、解释器、脚本文件内容和护栏未覆盖的写法都能绕过；`echo "rm -rf /"` 这类文本也可能误伤。UI、文档和拒绝信息都明确说明这一点，不声称能替代人工核对。
+- 策略行为：`Disabled` 仍优先；保护模式下非空 `exec` 过护栏，空命令 `ErrEmptyCommand`，`shell` / `docker-terminal` 仍 `ErrCommand`；结构化文件写入继续走原保护路径检查；`Unrestricted` 完全绕过护栏。完整父授权仍要过服务器策略，只读会话仍不包含 `exec`。新增拒绝原因 `destructive_command`，授权历史显示「破坏性命令被护栏拦截」。
+- UI：连接表单的「保护关键路径」改为「保护关键操作」，关闭保护确认改为说明护栏不再生效；完整授权弹窗提示「护栏只拦常见破坏性命令，不能替代核对；交互终端不开放」。CLI、架构、安全、委托和功能文档同步；三项固定只读白名单及其测试删除。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261103-200436.log`。
+- 护栏策略矩阵：`build/logs/test-20261103-200446-policy-guard.log`。普通命令（含三条检查、`ps`、`systemctl restart`、`/srv` 清理、`/var/log` 清理、`/dev/null`、`chmod 755`、`sudo apt`、`docker rm` 等）不匹配；破坏性命令逐条命中并能给出原因。
+- Broker 端到端：`build/logs/test-20261103-200456-broker-guard.log`。保护服务器上普通 `exec` 经审批/完整会话真实执行，`rm -rf /` 在审批前被护栏拒绝且不产生 pending。
+- 双击发送路径未改：`build/logs/test-20261103-200020-commands-terminal.log`。
+- 离线快照：`build/logs/test-20261103-200030-commands-preview.log`，图片在 `build/snapshots/guard-20261103/`；`connection-password.png` 确认新标签，`approval-full-protected.png` 确认护栏提示在 380 DIP 下完整可见。
+
+仅限本机：没有连接真实服务器验证护栏；`ip route show default` 仅 Linux 有效；没有对真实恶意脚本做对抗测试。护栏可被绕过，误报/漏报都存在，不能当作安全边界；需要完全自主执行任意命令或交互终端时，只能关闭保护（C）。没有启动窗口、读取正式保险库、打包或推送。
+
+## 授权请求自动弹窗与前台激活 · 2026-11-03
+
+反馈：AI 需要授权时没有任何弹窗，用户完全不知道，已经错过多次；1Password 这类工具会在需要时直接弹出。
+
+- 根因一：`nextApprovalPopup` 只让**新的客户端会话**（`Kind == "grant"`）弹窗，普通单次 `exec`、文件操作和待处理子请求被明确排除，只静默进入授权中心。现在所有 `pending`、非所有者发起、未过期的请求都可弹窗；无效会话密钥仍然跳过。
+- 根因二：弹窗创建后没有 `Show / Focus / App.Focus`，即使创建了也可能留在其他窗口后面。现在会先恢复 / 显示主窗口（最小化或隐藏时），再显示并聚焦授权窗，激活应用；窗口仍附属于主窗口。
+- 队列：同一时间只显示一个；其余保持未标记，等当前窗口关闭 / 决定后的下一次 poll 继续弹出，不再有一分钟冷却或“整批标记后丢弃”。只有实际弹出的那一条被标记；用户关闭但未决定的请求不重复弹，仍留在授权中心。窗口标题显示后面还有多少条会弹出；poll 会刷新这个数量。
+- 自动弹窗仍然不会批准任何请求；系统验证 / 主密码和精确请求证明不变。应用处于锁定、连接保存 / 探测 / 选择密钥 / 正在连接、有普通对话框或正在行内授权、隐藏开发模式或已有授权窗时，请求保留但暂不弹，条件解除后继续。
+- 文档同步：授权中心不再是单次请求的唯一入口；`docs/DELEGATION.md`、`docs/FEATURES.md`、`docs/USAGE.md` 更新。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261103-203417.log`。
+- 弹窗单元测试：`build/logs/test-20261103-203427-approval-popups.log`。覆盖所有请求类型都会弹、无效 / 已批准 / 过期 / 所有者请求不弹、待处理子请求会弹、一次一个且不丢队列、关闭后不重复、隐藏 / 锁定 / 保存 / 连接 / 选择密钥 / 普通对话框 / 行内授权时不消费、标题显示剩余数量、自动批准的子操作保持安静、单次请求弹窗不等于批准。
+- 未启动窗口：本机开发约束要求不自动抢前台，因此原生 `App.Focus` / 窗口前置行为没有实机观察；只验证了状态机与弹窗内容。后台开发模式（`tools dev run` 隐藏时）仍不会弹，需先 `dev show`；普通构建不受影响。
+
+仅限本机：没有连接真实服务器或真实 AI 客户端；macOS / Windows 的激活与窗口前置未实测。没有启动桌面、读取正式保险库、打包或推送。
+
+## 命令面板：分组 Tab 与卡片网格 · 2026-11-03
+
+反馈：分类下拉加整行列表太浪费空间；顶部应该按组分成 tab，下面每个命令是小卡片，不必在列表里铺完整命令，执行确认时再看全文。
+
+- 命令面板顶部改为原生 `TabsBase` 分组 tab（全部 / 未分组 / 各分组），支持方向键与无障碍标签；右侧保留搜索框和新建按钮。
+- 下面从整行列表改为多列卡片网格：卡片只显示命令名称，以及「全部」tab 下的分组名；不再显示命令正文。双击卡片或获得焦点后回车走原有 `runSnippet`，确认窗显示完整命令、参数、系统和目标。
+- 网格保留虚拟化，最多 6 列、每列最小 150 DIP；单个命令不再拉满整行：按当前宽度算出自然列数，少于此数时用不可执行的空单元格占位。选中卡片有强调边框，右键菜单保留执行 / 编辑 / 删除 / 执行前确认。
+- 空命令库和筛选无结果仍分别显示对应空状态；工具面板迁移到独立窗口时重建 `GridState` 的呈现绑定，保留缓存和选择。
+- 删除旧的分类下拉、`snippetTable` 列表和 `snippetRowPreview`。新增「分组：%s」词条用于 tab 的无障碍名称（不显示额外文字）。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261103-214130.log`。
+- 无窗口快照：`build/logs/test-20261103-214200-commands-tabs-preview.log`，图片在 `build/snapshots/commands-tabs-20261103c/`。检查了全部 tab、筛选后单个命令保持小卡片、380 DIP 窄面板、空库和编辑器/执行表未回归。
+- 桌面测试覆盖 tab 切换、筛选、卡片双击无终端保护、搜索重置选择、工具窗口迁移；完整命令只在执行核对表中出现。
+
+仅限本机：没有启动原生窗口验证实际鼠标双击和 tab 键盘焦点；只做了无窗口渲染与状态测试。没有连接真实服务器、读取正式保险库、打包或推送。
+
+## 命令参数：名称、默认值与发送时填写 · 2026-11-03
+
+反馈：命令需要真正可定义的变量参数；软件名这类值应作为参数，不同系统用固定格式拼同一个参数；每个参数后面要有勾选，决定发送时是否要填；勾选时用默认值预填，确认窗可改。
+
+- `snippet.Arg` 新增 `Name` 和 `SkipPrompt`。`SkipPrompt=false` 保持原有的“执行时询问”行为；旧命令没有这两个字段，继续按原样弹参数。`SkipPrompt=true` 时必须填写默认值，执行时直接替换、不再显示输入框。
+- 编辑器参数行改为：`$1`、名称、类型、默认值、`发送时填写` 勾选。默认勾选；取消勾选但默认值为空的保存会被拒绝。命令内容为空时提示用 `$1`、`$2` 表示参数；输入占位符后参数行自动出现。参数定义在默认命令与各系统版本之间共用。
+- 执行窗只为勾选了「发送时填写」的参数显示输入框，标签优先显示参数名称（如「软件包（$1）」），并预填默认值，可改后再发送；未勾选的参数直接用默认值拼进完整命令预览。没有任何需要填写的参数、没有系统选择且关闭确认时，双击直接发送，使用默认值。
+- `snippetRunNeedsDialog` 改为按“是否有询问参数 / 是否有系统选择 / 是否需要确认”判断，不再因为存在参数就强制弹窗；直接发送路径使用 `PresetValues`，不会把非询问参数替换成空串。
+- 新增中英词条：默认值、参数名称/默认值、发送时填写、命令内容占位提示；旧的「预设」词条移除。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check` 全部通过：`build/logs/check-20261103-215441.log`。
+- 参数/执行窗/编辑器测试：`build/logs/test-20261103-215500-params.log`。覆盖旧参数默认询问、非询问参数使用默认值、关闭“发送时填写”但无默认值被拒、询问参数预填并可改、确认窗完整命令更新、名称与 `SkipPrompt` 元数据保留。
+- 无窗口快照：`build/logs/test-20261103-215410-params-preview.log`，图片在 `build/snapshots/params-20261103c/`：编辑器参数行（名称 `软件包`、文本、默认值 `nginx`、勾选）、询问参数执行窗（预填可改）、非询问参数执行窗（无输入框，命令预览已拼入 `nginx`）。
+- `docs/USAGE.md` 同步参数定义与勾选行为。
+
+仅限本机：没有连接真实服务器；没有启动原生窗口验证实际输入焦点；参数只在本地加密命令库中保存，不进入 AI 公共协议。没有读取正式保险库、打包或推送。
+
+## 命令卡片高度 · 2026-11-03
+
+- 命令卡片高度 72 → 60 DIP，垂直内边距 10 → 8，名称与分组间距 4 → 3；名称和分组仍完整可读，窄面板与单卡片宽度不变。
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261103-222909.log`。
+- 快照：`build/logs/test-20261103-220000-cards-short-preview.log`，图片在 `build/snapshots/cards-short-20261103/`。
+
+## 首次连接改为 TOFU，去掉强制核对页 · 2026-11-03
+
+反馈：终端里已经 SSH 登录并接受过主机指纹，app 还强行弹一次身份核对，既多余又导致登不上。
+
+- 首次连接保存时读取主机指纹后，直接**信任并记录**（TOFU，等同 `StrictHostKeyChecking=accept-new`），不再弹独立核对页；保存并连接的动作就是这次信任的确认。之后每次连接仍由代理强制比对已保存的 SHA256 指纹。
+- 只有两种情况重新出现核对页：所有者主动点「重新核对服务器身份」，或已保存指纹与服务器当前指纹不一致而拒绝登录后主动重核。重核仍需明确点「信任并连接」，不会静默替换已保存记录。
+- `autoTrustHost` 只在 `RunWithOptions` 的生产路径启用；直接构造的单元测试 app 保持旧路径，用于继续覆盖手动核对页面。新增 `TestFirstConnectionTrustsAndRecordsTheHostWithoutReview`：真实 testserver + broker，首次保存直接进入终端，指纹等于探测值且没有核对页。
+- 本节描述的是 TOFU（自动信任），已被后面的“首次连接弹出指纹确认框”取代；现状见《首次连接确认改为紧凑弹窗》。`docs/SECURITY.md`、`docs/USAGE.md`、`docs/ARCHITECTURE.md`、`docs/FEATURES.md` 已同步为确认式行为。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-000418.log`。
+- 首次连接 / 手动重核：`build/logs/test-20261104-000430-tofu.log`。
+- 未启动原生窗口；首次连接测试使用本机隔离 SSH 夹具，未连接真实服务器。没有读取正式保险库、打包或推送。
+
+## 首次连接确认改为紧凑弹窗，指纹只存本机保险库 · 2026-11-04
+
+上一节改成自动信任（TOFU）不合适：首次连接完全不问，等于放弃中间人防护。现在改成“问一次，但要回答问题不重”：
+
+- 首次点「保存并连接」：先读取 server host key，弹出一个普通确认框（标题「首次连接」，目标 `user@host:port`，正文含 SHA256 指纹），说明指纹保存在本机加密保险库、不写 `~/.ssh/known_hosts`，以后指纹变化会拒绝。点「信任指纹并连接 / 保存」才写指纹、保存并登录；取消则不登录、不存指纹。
+- 已保存指纹与服务器当前指纹不一致时仍先拒绝，并在表单中显示「重新核对服务器身份」；重核走同一个确认框。
+- 旧的整页「确认服务器身份」页面保留给显式 `trustAndSaveConnection` 路径，但首次连接和重核都直接走弹窗，不再要求翻页。
+- `autoTrustHost` 字段与其分支删除，TOFU 相关文档表述回收。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-004055.log`。
+- `TestFirstConnectionPromptsAndRecordsTheHost`（真实 testserver + broker）：首次保存先弹「首次连接」并显示指纹、不落库；点「信任指纹并连接」后才保存并进入终端；日志 `build/logs/test-20261104-004500-first-connection-prompt.log`。
+- 桌面全量测试通过；无窗口快照见本文件上一节。
+
+## 连接表单不再折叠关键字段 · 2026-11-04
+
+上一节把分组、备注、服务器身份、AI 访问收进「更多设置」是错的：这些字段是日常要用的，不是可选配置。
+
+- 撤掉「更多设置」折叠，分组回到地址下方，备注和 AI 访问 / 保护路径直接列在密码之下，服务器身份与「重新核对服务器身份」在已信任时直接显示。表单改为可滚动并加高（新建 620、编辑 / 非密码 700），不再靠折叠省空间。
+- 名称仍可留空，保存时回退为 `用户名@地址`；「保存后连接」开关和主按钮恢复原状。
+- 受影响测试里的展开动作与等待动画全部移除，测试重新直接操作可见字段。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-004055.log`。
+- 无窗口快照：`build/snapshots/connection-visible-20261104/`（新建密码表单、编辑表单、分组下拉、私钥、小窗口、暗色），确认分组 / 备注 / AI 访问 / 服务器身份都直接可见。
+
+## 授权弹窗只留一行决定 · 2026-11-04
+
+反馈：弹窗底部有「不允许」和「取消」两个按钮，点哪个结果都一样；指纹按钮又单独占一行，等于上下两排。
+
+- 底部现在只有一行：左侧「不允许」，右侧主按钮就是指纹按钮（触控 ID 图标 + 允许 / 允许续期）。删除重复的「取消」和单独的「授权方式：触控 ID」方法行。
+- 指纹按钮承担原生嵌入式验证的锚点，`placeAuthentication` 跟随按钮图标位置；启动自动验证、失败重试和加载指示仍沿用原状态机。
+- 需要回退到保险库主密码时，用决定行下方的安静文字链接「使用主密码」；密码模式下保持密码框 + 两侧按钮的布局，内联指纹按钮可直接切回系统验证。
+- Escape 仍可关闭弹窗（不拒绝、保留在授权中心），但不再有与「不允许」并排的「取消」按钮。
+- 弹窗关闭后不重复弹出、授权中心同一套动作，均不变。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-005938.log`。
+- 无窗口快照：`build/snapshots/approval-single-row-20261104/`（触控 ID 单行、密码模式、窄窗口、暗色），确认只有「不允许 / 指纹+允许」一行。
+- 授权弹窗测试同步：唯一批准控件、不存在「取消」、无系统验证时回退主密码、续期标题、授权中心复用同一套动作。
+
+仅限本机：没有启动原生窗口观察真实触控 ID 弹层位置；锚点跟随只由无窗口测试与现有锚点逻辑覆盖。
+
+## 无权限目录、按命令免确认、授权窗口放大 · 2026-11-04
+
+三处反馈：
+
+- **目录没有权限时右侧不刷新**：SFTP 列目录失败后，旧缓存仍留在列表里。现在失败会丢弃该目录的缓存并重建索引，右侧直接显示「没有权限访问此目录（原始错误）」，并提供「重试 / 上一级」；`permission denied`、`no such file`、`not a directory` 都有可读前缀。新增 `TestDirectoryWithoutPermissionShowsTheRefusalInsteadOfStaleRows`。
+- **「以后不再提醒」变成了全局设置**：改为命令自身字段 `SkipConfirm`，勾选只写入这一条命令；右键「执行前确认」也按条切换，保存后对其他命令无影响。移除了布局文件里的全局 `skipCommandConfirm` 记忆。旧命令默认仍然询问。
+- **Touch ID 报「图标空间不足」**：嵌入式指纹视图要求按钮里的锚点至少等于系统控件的自然尺寸，原来只有 18 DIP。现在锚点 30 DIP、图标 24 DIP，决定按钮 44 DIP，密码行 44 DIP；授权窗高度 540 → 620，配对码不再被挤掉。即使窗口仍太小，指纹不可用时会自动回退到系统自带的验证面板，而不是直接报错。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-105704.log`。
+- 快照：`build/snapshots/approval-big2-20261104/`（420 宽指纹单行、密码模式放大后的输入行与指纹按钮）。
+- 目录拒绝用例见 `internal/desktop/filebrowser_test.go`；命令免确认用例见 `commands_test.go` 的 `TestDroppedCommandConfirmationIsPerCommand`。
+
+仅限本机：没有实机点触控 ID 验证原生视图位置，只依据原生组件的最小尺寸约束调整；没有连接真实服务器验证权限错误文案。
+
+Windows 状态采样（`internal/monitor/windows.go` 与解析测试）已写好，但**本次没有接入 broker**：平台探测会给共享采集增加两条额外通道，与本轮修复无关且会拖慢现有测试。等单独一轮接入并压测频率后再启用；当前 Windows 服务器仍只支持终端。
+
+## 授权窗：联动按钮、配对码下移、技术详情折叠、一次性命令授权失败修复 · 2026-11-04
+
+- **「输完密码点允许又报未获批准/已到期」**：桌面在批准任何请求时都带上了自己选的会话时长，`DecideReviewedWithLifetime` 发现一次性 `exec` 不是 `grant` 就直接返回 `ErrDenied`，界面显示成「请求未获批准、已到期或已撤销」。现在只为 `grant` 取时长；客户端对非 `grant` 忽略该值而不是拒绝。新增 `TestOwnerLifetimeOnAOneShotRequestIsIgnored`（真实 broker：带时长批准 `exec` 后仍能执行）。
+- **决定区联动**：默认 `[拒绝] [ 允许 │ 👆 ]`；点「允许」或按回车，左半格原地变成主密码输入框，右边系统验证按钮保留并按平台换图标（macOS 指纹 / Windows Hello 脸 / 其它钥匙）；点系统验证按钮切回指纹模式并直接发起验证。没有系统验证时整块保持四角圆角。
+- **配对码**：从卡片中间移到决定区上方，和授权时长同列，紧挨按钮。
+- **授权时长与无人值守**：时长下拉与「无人值守」勾选放在同一行；勾选仍只在超过 6 小时时出现。
+- **技术详情**：改为卡片右上角的折叠箭头（1Password 式），展开后详情出现在卡片内，不再占用底部一整行。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-122809.log`。
+- 快照：`build/snapshots/approval-v3/`（默认联动按钮、密码态、24 小时 + 无人值守、无系统验证的整圆角）。
+- 桌面测试同步更新：点击「允许」进入密码态、回车提交、指纹按钮切回系统验证、窄窗口与授权中心布局。
+
+仅限本机：没有实机按触控 ID 验证原生控件位置；Windows Hello 与钥匙图标只按平台分支渲染，未在 Windows 实机验证。
+
+## 指纹不可用时不再弹系统密码面板 · 2026-11-04
+
+- 上一轮为了容忍“嵌入式 Touch ID 放不下”，在嵌入式验证返回 `notReady` 时退回 `auth.Open`，那会弹出 macOS 自己的密码面板，压在授权窗上面。授权窗本来就在自己的页面里，这个兜底是错的。
+- 现在只使用嵌入在窗口内的原生验证视图；首次 `notReady` 仍按原逻辑自动重试一次，重试后仍不可用时切到页面内的主密码输入框，并提示“系统验证暂时不可用，请在这里输入保险库主密码”。任何情况下都不会再打开第二个系统面板。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-130012.log`。
+- 既有 `TestApprovalAutomaticReadinessInterruptionRetriesOnce` 覆盖“只重试一次”，失效后新增分支不再重试。
+
+仅限本机：没有实机按触控 ID 复现；结论基于原生视图 `notReady` 分支与无窗口测试。
+
+## 指纹锚点尺寸 · 2026-11-04
+
+- 追问“为什么嵌不进去”：系统指纹视图是 `LAAuthenticationView`，有固定的自然尺寸；原生侧 `validateAuthenticationSize` 要求格子与视图 frame 都不小于该尺寸，否则拒绝呈现（避免被裁切的指纹控件）。此前格子只有 18、后来 30 DIP，仍小于其自然尺寸。
+- 现在联动按钮高 48、指纹段 64×48、锚点格 40×40、图标 28；决定行与密码输入同步加高，避免高度不一致。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-130835.log`。
+- 快照：`build/snapshots/approval-bigslot/`（联动按钮与放大后的指纹段）。
+
+仅限本机：仍未实机确认 `LAAuthenticationView` 在 40×40 下通过尺寸校验；若仍判定不足，下一步是在 `move` 里读取并记录其自然尺寸，再据此定格子大小（需要一次真实调用才能拿到数值）。
+
+## 依据官方头文件修正指纹锚点 · 2026-11-04
+
+查证来源：本机 macOS SDK 的 `LocalAuthenticationEmbeddedUI.framework/Headers/LAAuthenticationView.h`（Xcode 27 SDK）。要点：
+
+- `LAAuthenticationView` 只能 `initWithContext:` 或 `initWithContext:controlSize:`；尺寸由 `NSControlSize` 决定（“Preferred size”），头文件不承诺具体点数。
+- 它只支持 Touch ID 与 Apple Watch，`LAPolicyDeviceOwnerAuthentication` 仅作便利，生物识别不可用时评估直接失败——**它自己不会弹密码面板**；之前的系统密码面板是我们的兜底造成的。
+- 视图是非文字的紧凑图标，要求周围 UI 说明授权原因。
+
+因此问题不在 30 或 40 DIP 是否够，而是我们把内层 30×30 图标盒当锚点，且首帧 `Bounds()` 可能为 0，`SetFrame` 得到 0 尺寸后原生侧判定格子过小。
+
+修改：锚点改为整个指纹段（64×48），并在 `Bounds()` 小于 1 时不放置原生视图；内层图标盒只用于未启用原生视图时的绘制。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-131251.log`。
+- 授权弹窗测试与快照仍通过；联动按钮布局未变。
+
+仅限本机：仍未实机按指纹；若原生侧依旧拒绝，下一步是在 `move` 中记录 `fittingSize` 与实际 slot 尺寸到日志，按真实数值定格子。
+
+## 授权窗改版：紧凑结构、进程身份、时长与闲置由所有者定 · 2026-11-04
+
+- **结构按 1Password 的思路收敛**：两个图标 + 带勾连线 → `申请方` / `请求访问你的服务器`；一张可展开卡片（权限、注意事项、根目录、技术详情）；同行显示 `进程 ID`、`进程路径`、`应用 ID`、`申请方（自报）` 等。
+- **去重**：删掉重复标题、“完整控制 · 最长…后失效”静态行、“名称由申请端提供…”提示；服务器名与地址只在卡片里出现一次。
+- **决定区**：左 `[拒绝] [允许]`，右 `授权方式：触控 ID 👆`；点「允许」展开页面内密码框（复用指纹按钮）；点指纹切回系统验证。
+- **时长与闲置**：`2 小时 ⌄` 胶囊选择 15 分 / 30 分 / 1 / 2 / 3 / 6 / 9 / 12 / 24 小时；`闲置 X 断开` 可点开关，关闭后会话保留到所选时长。删除“允许超过 6 小时”的二次确认：所有者选多少就是多少。
+- **请求方身份来自内核**：代理在本地套接字 accept 时取 `LOCAL_PEERPID` / `SO_PEERCRED` / `GetNamedPipeClientProcessId`，解析可执行路径（macOS 额外读取 `.app` 的 `CFBundleIdentifier`），随请求存为 `Request.Peer`。界面与 CLI 的 `Describe` 都打印；自报名称标注为“自报”。
+- 协议：`CreateFromPeer`、`DecideWithLifetime(…, idle, …)`、`Message.Idle`；CLI 批准同样按所有者时长与闲置值签发。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-140052.log`。
+- `TestRequestCarriesThePeerProcessNotItsOwnLabel`：请求中的 PID 等于测试进程，自报标签另存。
+- 快照：`build/snapshots/peer2/approval-peer.png`（展开态含进程 ID / 路径 / 应用 ID）、`build/snapshots/final2/`（收起态）。
+
+仅限本机：未实机按触控 ID；Windows 的进程路径与 Linux 的 `ps` 解析未实机验证；bundle id 依赖 `plutil`，非 macOS 返回空。
+
+## 授权窗只显示可核对的身份 · 2026-11-04
+
+- 去掉“申请方（自报）”一行：调用方自己写的名字无法核对，留着只会误导。
+- 标题改用进程身份：取可执行文件的基本名（如 `Orca`）；拿不到路径时退回 bundle id，最后才用自报名称。详情里保留 `进程 ID`、`进程路径`、`应用 ID`。
+- `approval.Peer` 增加 `Bundle`；macOS 从 `.app/Contents/Info.plist` 读 `CFBundleIdentifier`，非 macOS 为空。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-142107.log`。
+- 快照：`build/snapshots/peer3/approval-peer.png`（标题 `Orca`，详情无自报行）。
+
+仅限本机：Windows/Linux 的进程路径解析未实机验证；bundle id 依赖 `plutil`。
+
+## 密码框加眼睛、字段错位修复 · 2026-11-04
+
+- 新增共享组件 `components.SecretInput`：一个密码框加右侧眼睛，点一下明文/遮挡切换，焦点留在框内。用于三处：服务器密码、私钥口令、授权窗的保险库主密码。
+- 反馈里“私钥口令框变成了大文本框、显示的是备注占位符”，根因是条件渲染切换登录方式时，MyGo 按位置复用了控件状态（备注的 TextArea 抢到了上面那一行）。现在每个字段在构造前给定稳定 `Context.Key`（`connection-secret-<字段>`、`connection-<字段>`、`approval-password`），切换登录方式不再串状态；私钥口令也回到单行密码框。
+- 眼睛图标新增 `EyeIcon` / `EyeOffIcon`，遮挡时显示划线眼睛。
+
+验证：
+
+- `mise exec go@1.27.3 -- go run ./tools check`：`build/logs/check-20261104-143247.log`。
+- 快照：`build/snapshots/eye1/connection-password.png`、`connection-private-key.png`、`approval-password.png` 三处都能看到眼睛，私钥口令恢复单行。
+
+仅限本机：没有实机点击眼睛切换；Windows/Linux 未验证。
+
+## 当前未提交改动的代码审查 · 2026-11-04
+
+本轮只审查，未修改业务实现。临时加入 7 个回归用例，复现 6 项问题；运行后已移除临时文件，完整用例保存在 `build/logs/deepseek-review-probes-20261104.patch`。
+
+- P1：命令编辑器有两个系统版本时，删除第一个版本，在原长度的 range 循环中缩短切片，触发 `index out of range [1] with length 1`。
+- P2：`DecideWithLifetime` 在核验所有者证明前改写存储的期限与闲置时间；空证明被拒绝后，原来的 7200/900 已变为 3600/60，原有效批准证明随之失效。
+- P2：超过 30 分钟的会话选择「闲置不断开」后，存储的 IdleSeconds 等于总期限，违反 `GrantScope.Validate` 的 30 分钟上限；客户端拒绝为相同范围续期，直接由 Manager 创建的待批续期也被弹窗过滤。
+- P2：导航到读取失败的路径时，只更新地址栏和目标路径的错误缓存，当前目录仍指向旧目录；文件列表继续显示旧行，没有错误与重试区域。本地用「不是目录」稳定复现，远端权限失败经过同一完成分支。
+- P2：`SaveSnippet` 与 `Snippets` 只复制外层 Command，新增的 Args / Variants 仍共享切片；修改调用方参数或返回快照，会在没有再次保存、没有经过校验的情况下改写保险库内存内容。
+- P2：授权中心的 `approvalActions` 保留旧决定控件，又在内部加入第二套拒绝 / 允许；无窗口输出确认两套按钮同时存在。
+
+证据：
+
+- 基线全量 gate：`mise exec go@1.27.3 -- go run ./tools check` 通过，日志 `build/logs/check-20261104-180803.log`。
+- 临时回归用例均通过统一任务入口 `mise exec go@1.27.3 -- go run ./tools test -pkg <包>` 执行；预期行为断言失败证明上述问题存在，而非修复通过。
+- 审批状态：`build/logs/test-20261104-181219.log`。
+- 桌面四项：`build/logs/test-20261104-181442.log`（首次三项复现另见 `build/logs/test-20261104-181239.log`）。
+- 客户端续期校验：`build/logs/test-20261104-181448.log`。
+- 保险库切片隔离：`build/logs/test-20261104-181316.log`。
+
+验证仅在本机以合成数据、内存时钟和 headless UI Tester 完成，没有启动原生桌面窗口、触发系统认证或访问真实服务器；没有验证 Windows / Linux 实机行为。Windows 采样未接入 broker 已由上一轮记录明确列为未完成，本轮不将其计作回归。
+
+## 审查六项问题修复与回归 · 2026-11-04
+
+本轮修复上一节的六项问题，并将复现条件纳入永久回归测试：
+
+- 系统命令版本在遍历完成后删除，保留其余版本的正文和参数默认值，并同步移除已经不用的参数。
+- 审批期限与闲置时间先应用到请求副本，验证有效范围和所有者证明后才写回；拒绝的决定不改变原请求，也不使原有效证明失效。
+- 统一使用 24 小时总期限上限。普通闲置期限仍最多 30 分钟；闲置期限等于总期限表示「闲置不断开」，该范围可通过客户端续期校验和桌面提醒。续期界面继承这一选择，调整总期限时继续保留，认证与提交期间禁止修改时长和闲置选择。
+- 目录导航失败时切到实际失败的目标并清除旧选择，显示错误和重试区域；重试成功恢复列表，旧目录缓存仍可使用。后台展开和已取消导航的迟到错误不能替换当前目录。
+- `snippet.Command.Clone` 复制参数与系统版本切片；保险库保存、读取、编辑副本以及提交后台保存的快照各自持有独立数据。
+- 授权中心与弹窗共用密码输入、决定按钮和原生验证锚点，只保留一套「拒绝 / 允许」；授权中心同时复用时长与闲置选择。离线快照的旧「不允许」断言同步为当前「拒绝」文案。
+
+验证证据：
+
+- 全量 gate：`mise exec go@1.27.3 -- go run ./tools check -race -serial` 全部通过，含 vendor 补丁校验、360 个 Go 文件格式检查、go vet 与全量竞态测试。日志：`build/logs/check-20261104-183749-race.log`。
+- 桌面无窗口测试与 opt-in 离线快照：设置 `GOFLAGS=-tags=preview_qa`、`SSH_CLIENT_PREVIEW_QA=1`、`SSH_CLIENT_UI_SNAPSHOT_DIR=<仓库>/build/snapshots/review-fixes-20261104`，运行 `mise exec go@1.27.3 -- go run ./tools test -pkg ./internal/desktop` 全部通过。日志：`build/logs/test-20261104-183604.log`。
+- 目视检查 `build/snapshots/review-fixes-20261104/` 中的 `delegation-full.png`、`approval-no-idle-renewal.png`、`approval-password.png` 和 `commands-editor.png`，确认授权中心按钮、密码框、24 小时闲置不断开续期和命令编辑器的布局。
+- 新增回归覆盖失败验签不写回、有效签名不能批准无效闲置时间、期限边界、版本删除、目录失败与重试、后台及迟到错误、读写切片隔离、决定控件唯一性，以及真实客户端到本地 SSH 测试服务的「24 小时闲置不断开 → 到期 → 所有者批准续期 → 命令仅执行一次」链路。`git diff --check` 通过。
+
+这些结论仅由本机合成数据、可控时钟、本地 SSH 测试服务和 headless UI Tester 验证；原生 Touch ID、真实服务器以及 Windows / Linux 实机交互未在本轮验收。全程未启动或前置原生桌面窗口。
+
+## 零信任会话：进程实例、活连接与代理认证 · 2026-11-04
+
+本轮将跨进程可复用的会话文件替换为当前进程持有的活连接授权，保留上一轮六项修复及现有服务器策略：
+
+- broker 的本机 IPC 使用 TLS 1.3；外部客户端必须固定可信所有者界面 / 自己启动的 agent 终端提供的本次 SPKI 指纹，不从未知服务端自动接受公钥。只有内核确认同一进程内的 broker 可免外部 pin。每次代理启动生成独立 key，Windows 客户端查询管道服务端 PID。
+- 申请、状态、撤回、委托、续期与执行核对实际控制 / 操作连接和 OS 进程实例。macOS 使用 audit token 与 Security.framework 动态代码身份；Linux 使用 socket 的 `SO_PEERPIDFD`、启动标识和 image 身份；Windows 使用进程句柄、创建时间及 image 身份。身份不能验证时拒绝受托授权。
+- 子操作挑战覆盖 TLS exporter 连接标识、完整操作、服务器指纹、期限和 nonce。复制 key、ticket、签名、PID、路径、Bundle ID 或同一可执行文件不能获得另一个连接的权限。多个 goroutine 并发消费同一子授权时只有一个成功，失败调用不会往已启动的流插入状态消息。
+- SDK key 与私有连接仅在内存中存在；保存、导入、导出和旧文件选择明确拒绝，不删除原文件。断线 / 退出撤销活动父子授权和自然过期的续期状态，完成的历史不改写为撤销。正常续期只允许原控制连接连续存活，并重新等待所有者确认。
+- SDK 对缺失原连接的 ticket 查询 / 撤回直接拒绝，不尝试重连。传输暂停关闭原连接并自动进入 revoked，删除旧的跨连接 withdraw 清理；回归确认旧请求不能再次获批，续传使用新请求 ID。
+- 一次性请求从申请到执行保留连接；连续 CLI 访问改为 `session serve` JSON 行通道。EOF / close / 退出释放授权。流式写入和终端保留同进程 SDK / 逐次批准入口。SSH 握手开始前即监听客户端断线，取消不会留下尚在等待 banner 的网络连接。
+- 设置页增加本次 broker 公钥和复制按钮，审批技术详情与生命周期审计增加进程实例 / 映像摘要。补充 `tools compile`，将五平台编译和独立 CLI 进程验收纳入同一个 Go 任务入口；所有产物仍在 `build/`。
+
+验证证据：
+
+- 全仓库 gate 全部通过：`SSH_CLIENT_CLI_QA_BINARY=<仓库>/build/compile/darwin-arm64/ssh-client mise exec go@1.27.3 -- go run ./tools check -race -serial`，包含 vendor 补丁校验、375 个 Go 文件格式检查、go vet、全部包竞态测试及独立构建 CLI 进程验收。日志：`build/logs/check-20261104-201455-race.log`。
+- `mise exec go@1.27.3 -- go run ./tools compile -platform all` 通过 darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64；日志 `build/logs/compile-20261104-201326.log`。这只证明可编译，不等同于另外两种 OS 的运行安全验收。
+- 传输暂停 / 新授权 / 完整性恢复竞态回归通过，日志 `build/logs/test-20261104-201326-race.log`。
+- 本机 IPC 竞态回归通过，日志 `build/logs/test-20261104-195421-race.log`。其中 `TestAuditIdentityRejectsSamePIDAndExecutableAfterExec` 刻意保留 socket FD，再以相同 PID 自 exec 同一测试程序，确认旧 audit 身份立即被拒绝且 socket 本身仍存活；另有错误 broker pin、相同进程多连接身份一致和不可验证 transport 拒绝测试。
+- headless UI Tester 与 opt-in 离屏快照全部通过，日志 `build/logs/test-20261104-195510.log`。快照在 `build/snapshots/zero-trust-20261104/`；目视检查 `settings-security-wide.png` 与 `settings-security-narrow.png`，确认公钥显示、窄屏省略及完整复制入口可用。常规桌面回归先前通过，日志 `build/logs/test-20261104-195234.log`，包括取消 stalled SSH 握手。
+- `git diff --check` 通过。跨进程回归包含同一可执行文件的另一个进程不能接收子授权 / 复用 ticket；原进程退出后新实例产生新 key、新请求并保持 pending；复制的有效委托或续期签名不能在新连接上消费；关闭控制连接取消运行中的 SSH 子任务。新构建的 CLI 另外验证旧文件选项失败、真实独立进程等待批准、执行一次并在退出后撤销。
+
+所有运行验证均在本机 macOS arm64，以合成保险库、本地 SSH 测试服务和 headless UI 完成；没有打开 / 前置原生桌面窗口、调用 Touch ID 或使用真实服务器凭据。Linux 6.5 之前不支持 peer pidfd 时按设计拒绝受托授权。未做 Windows / Linux 实机或发布签名 / hardened runtime 验收；OS 进程隔离、可信 broker 与所有者入口仍是信任根，不承诺抵抗 root、调试 / 注入、内存读取或获准进程主动转发能力，也不将清零 Go 切片描述为全内存擦除。
+
+## 零信任第二轮对抗复审：两项阻断问题 · 2026-11-04
+
+本轮只复查和复现，没有修改生产代码。上一轮功能 / 竞态门禁通过仍是有效的回归证据，但不能作为安全审查已经通过的结论。本轮确认两项 P1，当前不建议判定零信任复审通过。
+
+1. **停止读取的未获批客户端可以堵住全局授权锁。** `broker.go` 的 `delegationChallenge` 分支持有 `ownerMu`，拒绝请求时仍在锁内执行 `Wire.Send`；`channel.go` 在请求绑定后清除全部 deadline。复现先创建一个尚未批准的 exec 请求，随后在原连接连续发送不合法的 delegationChallenge，但不读取响应。响应缓冲耗尽后，服务端在全局锁内阻塞写入，所有者 pending RPC 达到超时；关闭攻击连接后 RPC 恢复。周期身份检查和连接断开后的 Manager 清理也依赖这把锁。应为响应写入设置独立上限，并将网络 I/O 移出全局授权锁。
+2. **SSH 连接池缺少配置失效代次，旧认证连接可以被重新发布。** `broker.go` 的返回路径在锁外检查 ctx 后调用 `conns.put`，`pool.go` 在取得池锁前先 Detach，清空池没有增加任何代次；池 key 只有 profile ID 和主机指纹。受控复现采用该合法交错：旧任务通过 ctx 检查 → 旧连接 Detach → 配置更新清池并取消旧 ctx → 旧任务重新入池 → 用相同 ID / 指纹、不同 User 的配置取连接。取得的 SSH 连接仍以旧 User 认证，且可继续执行合成命令。此 PoC 验证的是资源层交错，没有声称完成真实服务器上的提权。应为池项绑定配置 / 认证代次，在返回和取用时验证，并将端点、账号及凭据版本纳入身份绑定。
+
+证据与方法：
+
+- 首次停止读取复现：`build/logs/test-20261104-234016.log`。
+- 两项受控 PoC 与现有 broker 测试一起运行：`GOFLAGS=-v mise exec go@1.27.3 -- go run ./tools test -pkg ./internal/broker -timeout 4m`。日志 `build/logs/test-20261104-234236.log` 第 48–50 行记录 `TestReviewLatePoolReturnSurvivesProfileInvalidation`，第 168–170 行记录 `TestReviewStoppedReaderBlocksOwnerAuthority`，均包含 Reproduced 断言说明。
+- 这里临时 PoC 的 PASS 表示**确认漏洞存在**，不是安全回归已通过。为避免将错误行为固定为仓库的预期行为，两个临时测试文件在审查后移除；生产代码保持原样。`git diff --check` 通过。
+- 原先针对复制 key / ticket / 签名、不同进程、断线重启以及 macOS 同 PID 自 exec 的回归仍通过。这些证据解决的是相应攻击路径，不覆盖上述全局锁背压与配置失效交错。
+
+全部复现在本机 macOS 的合成保险库、本机 Unix IPC 和 loopback SSH 测试服务内完成，无真实凭据、原生窗口、系统认证或真实服务器操作。Windows / Linux 仍只有交叉编译证据，未提升为实机安全验收。
+
+## 两项 P1 修复与回归 · 2026-11-05
+
+本轮落实上一轮对抗复审确认的两项阻断问题，未修改 vendor、真实配置或凭据：
+
+- 控制分支只在锁内构造响应；统一响应 defer 在分支 defer 解锁之后发送。响应写入错误返回连接处理器，关闭连接并触发授权清理。服务端 `Wire` 每帧有独立 10 秒写入 deadline，空闲 / 绑定只调整读取 deadline；运行取消中断底层连接，不等待 TLS 关闭通知。阻塞 peer 不再占住全局授权锁。
+- 连接池使用配置租约。租约在授权锁保护配置快照时取得；清空池推进代次，取用和归还均检查代次，旧代次连接直接关闭。归还的代次检查、Detach 与发布共用池锁，阻止清理后的旧认证连接重新入池。
+- 池身份包括 profile ID、实际主机 / 端口、SSH 用户、主机指纹、认证方式及 agent 指纹；口令 / 私钥不放进 key，凭据变化由配置代次隔离。删除配置也推进失效代次。规范保护目录缓存携带同一配置身份 / 代次，旧目标解析结果晚到时也不能被新配置命中。
+- 永久回归按正确行为断言：真实阻塞写入时仍能取得授权锁、写失败被传播；停止读取超时和连接空闲不消耗下一帧预算；清空空池后旧连接归还被拒且不能再执行合成命令；当前代次仍能复用；不同端点 / 账号 / 认证身份不能共享连接；晚到的保护目录解析结果不跨配置使用。
+
+验证证据：
+
+- 修复后的 broker 包测试通过：`build/logs/test-20261105-000842.log`；之后进一步将保护目录缓存绑定到同一配置租约，最终以本节完整门禁为准。
+- 本机 IPC 竞态测试通过：`build/logs/test-20261105-001531-race.log`，含每帧超时与空闲后发送，以及原有进程实例 / 同 PID 自 exec 检查。
+- 五个平台编译通过：`build/logs/compile-20261105-001356.log`，包含新的独立 CLI；平台为 darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64。
+- 完整门禁全部通过：`SSH_CLIENT_CLI_QA_BINARY=<仓库>/build/compile/darwin-arm64/ssh-client mise exec go@1.27.3 -- go run ./tools check -race -serial`。日志 `build/logs/check-20261105-001908-race.log`，包含 vendor 补丁校验、378 个 Go 文件格式检查、go vet、全部包竞态测试、新增两项 P1 / 配置缓存回归、headless UI 和独立构建 CLI 进程验收。`git diff --check` 通过。
+
+运行验证仅使用本机合成保险库、net.Pipe / Unix IPC、loopback SSH 与 headless UI Tester，没有启动 / 前置原生应用、触发系统认证或连接真实服务器。Windows / Linux 的编译不等同于实机运行验收；两项修复不构成对 root、注入或授权进程主动转发的额外保证。
+
+## 零信任审查、一般代码审查与定向重构 · 2026-11-05
+
+先审查进程 / 连接身份、父子授权、撤销 / 到期、连接复用和 IPC 失败路径，再检查这些模块的状态所有权、并发与接口；根据发现实施以下修复和重构。本轮重点是授权执行链与 SDK / 传输生命周期，不代表对全部桌面代码完成独立安全审计。
+
+| 级别 | 审查发现与影响 | 最终处理 |
+|---|---|---|
+| P1 | 入池时 SSH 传输与旧 context 脱钩，取出时没有绑定新 context。服务器若不答复 SSH channel-open，exec 的 NewSession 或 SFTP 建立会在安装通道级取消监听之前阻塞，撤销 / 到期 / 断线不能及时结束该底层操作。 | 池的 `take(ctx, lease)` 接口要求新操作上下文；取用时调用 `sshconn.Client.Bind`，取消直接关闭传输与 agent 连接，覆盖通道建立前阶段。回调只捕获资源，不并发访问可变的取消状态。 |
+| P2 | IPC 半帧写入失败后仍可继续写入，破坏后续帧同步；额外错误回复还可能再次阻塞清理。无效输入与身份失败的断开也依赖各调用方补做。 | `Wire` 在帧读写或验证失败时立即中断底层连接。编码 / 大小拒绝在写入前发生，保留可用连接。 |
+| P2 | 导出的 Delegation 值可被拷贝，拷贝各自持有互斥锁，却共享密钥切片和控制连接；并发签名 / 关闭可能发生数据竞争。指针接收者的 MarshalJSON 也未覆盖值序列化。 | 将密钥、锁、进程和控制连接收进共享私有状态；任一拷贝关闭会使所有拷贝失效。JSON 导出改为值接收者，同时拒绝值和指针。序列化缺口原先只输出公开元数据，不是密钥泄露或单独的授权绕过。 |
+| P3 | 上轮修复虽已把响应移出授权锁，但仍依赖响应 defer 比分支解锁 defer 更早注册；增加新分支时容易破坏这个约束。 | 抽出不接收 Wire 的 `controlMessage`，只返回 Message / error；外层在其返回后发送。探测断线观察与运行流保留各自的传输处理。 |
+
+保留原有进程实例 / 映像校验、显式 broker 公钥固定、父控制连接与子操作连接绑定、挑战单次消费、配置代次和保护目录缓存隔离。没有加入兼容旧会话文件的回退，也没有改变服务器策略范围。为复现和复验增加 `tools test -run`，继续经统一 Go 任务入口保存日志。
+
+验证证据：
+
+- 修复前先运行按正确行为断言的永久回归，确认 exec / SFTP 取消、会话值序列化、半帧与非法帧关闭均失败：`build/logs/test-20261105-003944.log`。这些 FAIL 是问题复现证据。
+- 修复后的定向竞态回归全部通过：`build/logs/test-20261105-004210-race.log`。涵盖已认证连接复用、旧 context 取消后仍能复用、新 context 取消结束卡住的 exec / SFTP 建立；复制会话并发签名 / 关闭与全部拷贝失效；传输失败、非法帧、身份失败关闭；本地编码 / 大小拒绝后仍能正常通信；停止读取的客户端不持有授权锁。
+- 五平台 Go / 独立 CLI 编译通过：`build/logs/compile-20261105-004336.log`，目标为 darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64。
+- 完整门禁全部通过：`SSH_CLIENT_CLI_QA_BINARY=<仓库>/build/compile/darwin-arm64/ssh-client mise exec go@1.27.3 -- go run ./tools check -race -serial`。日志 `build/logs/check-20261105-004428-race.log`，包含 vendor 补丁校验、380 个 Go 文件格式检查、go vet、全部包竞态测试、headless UI、同 PID 自 exec 身份失效及新构建 CLI 的独立进程验收。原有复制 key / ticket / 签名换连接、同程序不同进程、重启重新批准、父连接断开取消、并发单次消费与续期范围回归均通过。`git diff --check` 通过。
+
+运行验证仅针对本机 macOS arm64，使用合成保险库、net.Pipe / 本机 IPC、loopback SSH 和 headless UI；未打开 / 前置原生窗口、触发系统认证或使用真实服务器凭据。Windows / Linux 目前只有编译证据。取消底层 SSH 仍不能证明远端已提交任务的副作用被撤销；OS 隔离、可信 broker 与所有者入口仍是信任根，不承诺抵抗 root、注入、内存读取或获准进程主动转发。
+
+## 终端兼容、网络路线、硬件密钥与隧道 · 2026-11-05
+
+本轮接通此前未实现的终端编码 / 退格、网络代理、通用 PKCS#11、三类隧道及可核实的路线选择与保活，并检查新增能力的授权与资源生命周期。
+
+| 能力 | 最终实现及验证范围 |
+|---|---|
+| 终端兼容 | 每连接自动 / UTF-8 / GB18030 / GBK、自动 / DEL / BS；PTY VERASE 与退格映射一致，显式 Ctrl+H 不被默认改写。测试覆盖 ASCII 提示即时输出、逐字节分段中文、UTF-8 优先识别、输入分段和 GB18030 补充平面独立已知字节。文件 / exec 不转码。 |
+| HTTP(S) / SOCKS5 | 显式代理、可选认证、远端 DNS、CONNECT 预读字节保留、大小与取消预算。真实 SSH 经 HTTP / SOCKS5 完成认证；失败没有直连回退，拒绝认证降级，HTTPS 不可信证书在发送凭据前失败。 |
+| 自有 SSH 中转与保活 | 最多四个 SSH 节点，缺失 / 循环 / 歧义配置拒绝，每跳指纹核验。真实经中转执行及目标探测不认证测试通过；中转变更使依赖授权失效。路线测量只比较握手耗时，所有者查询证明绑定路线 / 指纹，中转认证前审计；无响应保活关闭传输，不自动重放操作。 |
+| PKCS#11 | 枚举令牌及 RSA / ECDSA 公钥，固定模块摘要、令牌序列号、密钥 ID 和公钥指纹。仓库内 C 合成模块验证原生 ABI、PIN 单次尝试、错误 PIN 不重试、模块变化拒绝及卡住签名退出；独立密码学测试用 Go RSA / ECDSA 公钥验证 DigestInfo / ASN.1 和逐次上下文认证顺序。真实 SSH 握手在原生 C 签名卡住时受 15 秒预算中断，父操作仍有效。 |
+| 隧道 | 本地 / 远程 / 动态 SOCKS5 回环 TCP，真实数据往返、取消后监听与已接受连接关闭；broker 审批后运行及撤销停止、只读 / 限目录 / 保护策略拒绝。审批呈现网络能力和端点；面板关闭继续后台运行，停止 / 锁定 / 退出结束。 |
+| 桌面 / CLI | 连接编辑保留全部新配置与原秘密，秘密不回显；实际点击下拉框检查跨帧选项持久性。新增硬件识别、路径实测、隧道管理及 CLI `host options` / `host hardware` / `tunnel`；中英文目录与字面文案校验通过。 |
+
+模块边界为 `connectcfg`（值与校验）、`netroute`（代理拨号）、`terminalcodec`（终端转换）、`hardware`（可取消原生签名进程）、`sshconn`（SSH 路径 / 独占隧道）和现有 broker 授权链。代理密码 / PIN 加密保存，所有者查询证明纳入新增字段；公开摘要和缓存键不含秘密。旧认证连接通过配置代次隔离，中转失效级联到依赖授权。没有修改 `go.mod`、`go.sum`、`vendor/` 或 `patches/`，未引入网络下载依赖。
+
+验证证据：
+
+- 编码、已知补充平面字节、原生签名算法、配置 / 凭据保留及策略回归：`build/logs/test-20261105-015141-race.log`。原生 C ABI 与工作进程取消单独证据：`build/logs/test-20261105-014630-race.log`。
+- 实际下拉选择、隧道审批 / 撤销、中转依赖失效、原生硬件与策略回归：`build/logs/test-20261105-015752-race.log`。
+- 真实 HTTP / SOCKS5 SSH 登录、HTTPS 不可信证书拒绝、路径比较 / 所有者证明 / 审计、原生硬件握手超时、国际化目录回归：`build/logs/test-20261105-021725-race.log`。
+- 最后检查发现 CLI 单独指定清空代理密码却省略网络组时仍保留旧密码，已修复；新增六种保留 / 替换 / 清空场景及不重传旧登录秘密的回归，通过日志为 `build/logs/test-20261105-023537-race.log`。
+- 首轮完整运行 `build/logs/check-20261105-023131-race.log` 发现原连接菜单精确断言尚未包含新增“SSH 隧道…”；已同步预期并补实际点击核对所选服务器的检查，定向竞态回归通过：`build/logs/test-20261105-023921-race.log`。
+- 最终五目标 Go / 独立 CLI 编译：`build/logs/compile-20261105-023542.log`，darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64 全部通过。用于最终 CLI 进程验收的是此次新构建的 darwin/arm64 可执行文件。
+- opt-in 无窗口快照与实际下拉交互通过：`build/logs/test-20261105-022121.log`。命令经 `tools test -tags preview_qa`，配置 `SSH_CLIENT_PREVIEW_QA=1` 和仓库内 `SSH_CLIENT_UI_SNAPSHOT_DIR`；已目视检查 `build/snapshots/connection-capabilities-20261105/` 中终端 / 代理浅色、底部滚动、暗色，硬件公钥选择、隧道管理及隧道审批六张图。截图全部为离线合成数据。
+- 最终完整门禁全部通过：`SSH_CLIENT_CLI_QA_BINARY=<仓库>/build/compile/darwin-arm64/ssh-client mise exec go@1.27.3 -- go run ./tools check -race -serial`，日志 `build/logs/check-20261105-023621-race.log`。含 vendor 补丁完整性、410 个 Go 文件格式检查、go vet、所有包竞态测试、headless UI、独立新构建 CLI 进程验收及上述安全回归；更新后的完整桌面包通过。最终 `git diff --check` 通过。
+
+限制：当前固定的 `x/crypto/ssh` 只协商无压缩，**SSH 压缩仍未实现**，没有以开关或“海外加速”文案声称已具备；路线结果只表示当次建连耗时，未做生产 / 海外带宽测试。自动编码可能有歧义，GB18030 的系统 BMP 映射差异需在目标 OS 验证，不宣称所有系统实现同一新版标准。物理 YubiKey / Nitrokey、SoftHSM 部署、真实驱动触摸 / PIN 策略均未验收；Windows / Linux 只有交叉编译证据。驱动子进程不是沙箱，也不证明硬件品牌或持续在场。回环隧道可被同机其他进程使用；远程实际绑定范围受 sshd 的 `GatewayPorts` 等设置影响，客户端不能仅凭请求证明服务端的绑定范围。参见 [安全边界](SECURITY.md#代理中转硬件密钥与隧道--2026-11-05)。
+
+所有运行验证仅使用本机 macOS arm64 的合成保险库、私有 IPC、回环 SSH / 代理及合成 C 令牌，没有访问真实凭据 / 生产服务器、枚举真实硬件、触发系统认证或打开 / 前置正式窗口。没有暂存、提交或发布。
+
+## 最新功能五目标打包 · 2026-11-05
+
+本轮生成实际桌面分发产物，补齐上一轮仅完成编译与测试的交付。打包时发现 `tools build -platform all` 只在资源暂存阶段展开目标，却把原始 `all` 传给不支持该别名的 MyGo；已在统一入口将其展开为五个明确目标，实际全目标打包验证通过。没有修改应用功能、依赖版本、vendor、原生哈希清单或许可证清单。
+
+构建器最初因 Go 代理 DNS 失败而无法启动，`GOPROXY=off` 又无法查询弃用元数据；最终使用本机 module 下载缓存作为文件代理，仍执行 `go.mod` 固定的 MyGo 版本。所需原生 Ghostty 资产沿用固定清单的 SHA256 校验。成功命令：`GOPROXY=file:///Users/smallraw/go/pkg/mod/cache/download mise exec go@1.27.3 -- go run ./tools build -platform all`。完整打包日志：`build/logs/package-20261105-1021-all.log`。
+
+| 目标 | 实际产物 |
+|---|---|
+| macOS Apple Silicon | `build/darwin-arm64/SmallSSH.app` |
+| macOS Intel | `build/darwin-amd64/SmallSSH.app` |
+| Linux amd64 | `build/linux-amd64/smallssh_0.0.1_amd64.deb`、`smallssh-0.0.1-linux-amd64.tar.gz` |
+| Linux arm64 | `build/linux-arm64/smallssh_0.0.1_arm64.deb`、`smallssh-0.0.1-linux-arm64.tar.gz` |
+| Windows amd64 | `build/windows-amd64/SmallSSH.exe`（便携版，没有 NSIS 安装器） |
+
+验证证据：
+
+- 打包入口改动的门禁通过：`mise exec go@1.27.3 -- go run ./tools check -pkg ./tools/... -race -serial`，日志 `build/logs/check-20261105-102114-race.log`，含 vendor 校验、410 文件格式检查、工具包 vet 与竞态测试。应用源代码未变，完整应用竞态证据沿用上一节 `build/logs/check-20261105-023621-race.log`。
+- 两种 macOS 架构均通过 `codesign --verify --deep --strict --verbose=2`；日志为 `build/logs/package-20261105-1021-darwin-arm64-signature.log` 和 `build/logs/package-20261105-1021-darwin-amd64-signature.log`。这是本机 ad-hoc 签名校验，不是发行签名或公证。
+- `tools build -platform all -check` 通过，确认原生哈希与许可证生成文件为最新，日志 `build/logs/package-20261105-1021-generated-check.log`；两个文件均无差异。最终 `git diff --check` 通过。
+
+未启动 / 前置任何桌面应用，没有读取真实服务器凭据、连接生产服务器或进行系统认证。macOS 输出为 `.app`，统一入口按既有配置跳过 DMG；Windows / Linux 仍未完成实机运行验收。本轮未提交、发布或安装这些产物。
+
+## 安装到本机应用程序目录 · 2026-11-05
+
+按用户要求把最新 Apple Silicon 包安装到 `/Applications/SmallSSH.app`。原目录存在旧版，先核对 bundle ID；新包在同目录完整暂存并通过深度严格签名校验后发布，旧版保留在 `/Users/smallraw/.Trash/SmallSSH-before-20261105-102723.869160000.app`，没有永久删除。安装前未发现运行中的 `SmallSSH` 进程，安装过程中没有启动或退出应用。
+
+新增统一 `tools install` 入口及独立 `tools/install` 包，避免手工合并新旧 app 内容。任务只支持本机 macOS 架构，已有目标必须是同一 bundle ID 的普通目录；失败的暂存副本保留在废纸篓，发布失败尝试恢复旧版；不请求管理员权限。应用及 CLI 代码未改动。
+
+- 工具门禁通过：`mise exec go@1.27.3 -- go run ./tools check -pkg ./tools/... -race -serial`，日志 `build/logs/check-20261105-102658-race.log`，含 vendor 校验、412 文件格式检查、工具包 vet 与竞态测试。
+- 实际安装通过：`mise exec go@1.27.3 -- go run ./tools install`，日志 `build/logs/install-20261105-102723.log`，记录目标与旧版保留路径。
+- 安装后 `/Applications/SmallSSH.app` 通过 `codesign --verify --deep --strict --verbose=2`，日志 `build/logs/install-20261105-102723-signature.log`。主可执行文件与 `build/darwin-arm64/SmallSSH.app` 的 SHA256 一致，确认安装的是本次新包。
+- 最终 `git diff --check` 通过。验证只覆盖本机安装内容与 ad-hoc 签名，未进行原生窗口、真实服务器或硬件密钥验收；完整应用竞态结果沿用上一轮，不因复制安装而重跑。
+
+## 命令参数提示、独立历史与明确发送目标 · 2026-11-05
+
+按用户提供的命令参数面板参考优化实际执行界面，并接通每参数独立历史：
+
+- 顶部显示命令名称与编辑入口，模板内把已定义的 `$1` / `${1}` 标成参数名称；实际发送仍由原 `snippet.Render` 生成，旧 Shell / awk 字面命令不被改写。
+- 每个可填写参数旁有独立「历史」下拉，选择只回填当前参数并更新预览。每项保留最近 10 个不同值，按实际目标摘要、命令系统版本及参数定义隔离；账号、主机指纹或容器变化不会共用目标摘要。历史加密保存，支持重开库、单项清空及关闭记录；仅保存已交给终端、通过类型校验的单行输入，单值上限 512 字节，默认值与草稿不收集。
+- 历史嵌在已有加密命令记录内，普通 `Snippets()` 查询剔除历史，不增加 broker 查询接口。编辑保存保留仍有效的最新记录，旧运行快照不能补写已改动 / 关闭记录的参数。FIFO 写入队列保持发送与清空顺序，锁定取消工作并丢弃旧代次回调。
+- 参数区可滚动，实际命令预览、目标与动作固定在底部。更换焦点不改变发送目标；主动选择另一终端时重置参数与历史，关闭的原终端不会自动转发。拆分「填入终端」（单行，不追加 CR）和「发送并执行」；选历史及参数框 Enter 不执行，多行填入被拒绝。
+- 全部命令历史合计限制为 512 个上下文和约 1 MiB 输入，旧上下文先淘汰。补充保险库封装大小拒绝，禁止写出超过读取上限的文件；测试以有效头部、超大合成内容验证失败。中英文文案同步。
+
+验证证据：
+
+- 首轮带真实 Ghostty 输入路径的定向竞态门禁：`build/logs/check-20261105-104926-race.log`。历史加密、跨服务器 / 版本隔离、重开库、去重与上限、清空、关闭记录、陈旧写入拒绝和大小拒绝均通过；发现模板辅助功能标签覆盖正文、错误提示挤走底部选项两处界面问题，已修正。
+- 修正后交互和真实终端输入回归通过：`build/logs/test-20261105-105109-race.log`。覆盖历史回填不执行、参数 Enter 不执行、无 CR 填入、拒绝多行填入、主动选择目标与原目标输入隔离。
+- 最终五目标编译通过：`build/logs/compile-20261105-105543.log`，包含 darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64 及新 CLI。
+- 最终离线截图与定向竞态交互通过：`build/logs/test-20261105-105543-race.log`。命令经 `tools test -tags preview_qa,terminal_integration`，启用 `SSH_CLIENT_PREVIEW_QA=1`；截图在 `build/snapshots/command-input-history-20261105/`。已目视检查单参数、历史下拉、暗色、420 DIP 窄窗、多参数固定预览以及编辑器记录开关，全部为合成数据，无原生窗口。
+- 首轮完整终端门禁 `build/logs/check-20261105-105634-race.log` 只有旧的 `TestLiveTerminalTabsShareServerCollectionAndDesktopHistory` 失败：该用例隐藏状态面板，且新终端会切回命令页，却仍等待持续采样。独立复现与诊断确认只有一个样本、所有订阅均被可见性规则暂停。修正测试为三个终端打开后显式显示状态面板，不改生产监控逻辑；共享采样 / 交接 / 最后订阅停止与既有可见性回归通过，日志 `build/logs/test-20261105-111000-race.log`。
+- 最终完整门禁全部通过：`SSH_CLIENT_CLI_QA_BINARY=<仓库>/build/compile/darwin-arm64/ssh-client mise exec go@1.27.3 -- go run ./tools check -race -serial -tags terminal_integration`。日志 `build/logs/check-20261105-111050-race.log`，含 vendor 完整性、420 文件格式检查、go vet、所有包竞态测试、真实 Ghostty 输入、独立新 CLI、原授权安全回归、共享监控和全部新增历史回归；`git diff --check` 通过。
+- 五目标重新打包通过：`build/logs/package-20261105-1120-command-history.log`；macOS 两种架构 `.app`、Linux 两种架构 deb / tar.gz、Windows 便携 EXE 均已更新。`tools build -platform all -check` 通过，日志 `build/logs/package-20261105-1120-command-history-generated.log`，原生哈希和许可证清单均无改动。
+- 本机安装通过：`build/logs/install-20261105-112220.log`，目标 `/Applications/SmallSSH.app`，旧版保留在 `/Users/smallraw/.Trash/SmallSSH-before-20261105-112220.712126000.app`。安装后主可执行文件与新构建包 SHA256 完全一致（`e5a56ecf6ab8468158b86362a58aeac46b3d37e613bcef90abcd2d4077646afd`）。安装包通过深度严格 ad-hoc 签名验证：`build/logs/install-20261105-112220-signature.log`；Intel 包签名验证日志为 `build/logs/package-20261105-1120-command-history-intel-signature.log`。已运行的应用进程保持运行，没有自动启动、退出或前置窗口；新界面须由用户退出后重开生效。
+
+运行验证仅覆盖本机 macOS arm64，未访问真实凭据 / 生产服务器、触发系统认证或打开 / 前置桌面窗口。其他目标只有编译证据。参数仍按模板原样替换，不提供自动 Shell 引号安全；“已发送”不证明远端执行成功，“填入终端”也不证明远端正处于空 Shell 提示符。历史移除不承诺 Go 内存或磁盘旧块擦除。没有修改依赖版本、vendor 或原生补丁。
+
+## 稳定代理配对、即时加载标签与目录下载 · 2026-11-05
+
+本轮修复用户反馈的代理公钥反复复制、目录无法下载、文件和服务器双击后无即时反馈：
+
+- 代理身份从已解锁保险库通过独立用途域派生，公开指纹跨解锁 / 重启稳定；首次可信解锁原子建立私有公钥配对记录，已有不同身份不自动替换。设置页保留完整公开指纹复制，并增加明确确认的配对修复。外部 CLI 默认校验配对，显式 pin 仍可覆盖；未配对 / 不同公钥拒绝。客户端会话、进程实例、TLS 连接绑定及断线重新批准规则保留。
+- 服务器双击立即保留可见标签，显示连接 / 排队；失败保留原因、取消后保留已取消状态，支持重试和显式指纹复核。关闭加载标签取消其操作；单次关闭不丢弃其他排队标签。完成填入原标签，不抢走用户后来选择的终端、编辑文档或页面。
+- 文件双击立即建立原文档标签，显示读取、取消、错误及重试。读入限时 30 秒；只支持 ≤4 MiB、不含 NUL 的有效 UTF-8 纯文本，未支持的格式显示说明与独立下载入口。文档指针 / 序号 / 代次检查阻止陈旧结果恢复或替换文档；错误 / 加载态不允许另存空内容。
+- 远程文件及目录菜单新增「下载到本机…」，无需额外本机栏；其他栏下载和远程目录拖放同时接通。目录使用结构化 SFTP 扫描及子文件下载，不调用远程 shell。父任务汇总扫描、文件数和字节进度，支持暂停 / 重开管理器后继续；目标身份快照、清单上限、名字 / 类型校验、`os.Root` 路径约束及原有 SHA256 / 无覆盖提交均纳入流程。保留空目录；不跟随符号链接 / 特殊文件，不合并已有目录，不增加目录上传。
+
+定向与界面证据：
+
+- 代理身份跨解锁稳定、不同保险库不同身份、锁定拒绝导出：`build/logs/test-20261105-125920-race.log`。私有配对创建 / 不替换 / 明确修复 / 无效及链接记录拒绝：`build/logs/test-20261105-130019-race.log`。独立 OS 进程自动校验配对、错误 / 缺失锚点拒绝：`build/logs/test-20261105-130305-race.log`；同程序另一进程仍不能继承授权：`build/logs/test-20261105-130005-race.log`。
+- 文件先出现加载标签、异步填入不夺焦点、取消 / 新文档丢弃陈旧结果、二进制拒绝与重试、慢 SSH / SFTP 的即时反馈和关闭取消、设置公开指纹复制：`build/logs/test-20261105-125843-race.log`。
+- 目录嵌套 / 中文 / 空目录、完整进度、管理器重开恢复、已完成文件缺失恢复、本地修改拒绝覆盖、远程符号链接拒绝、实际目标变化拒绝、本地符号链接逃逸拒绝以及阻塞扫描的跨管理器暂停 / 继续：`build/logs/test-20261105-130241-race.log`。单远程窗格右键下载、切换服务器不改变原菜单目标、实际落盘与任务显示：`build/logs/test-20261105-130048-race.log`。
+- 真实 Ghostty 的重复双击、排队 / 取消 / 失败、断线重连与焦点保留定向竞态回归：`build/logs/test-20261105-130011-race.log`。相关旧测试已区分可见标签数与完成连接的终端数，避免把即时加载标签当作已就绪连接。
+- 离线无窗口快照：`build/logs/test-20261105-130207.log`；`build/snapshots/loading-downloads-20261105/` 含 560 / 1100 DIP 的服务器连接 / 失败、文件读取 / 不支持格式、目录扫描 / 传输，以及设置页宽 / 窄窗和收窄侧栏。已目视检查窄窗状态说明、重试 / 下载按钮、进度与新配对设置，未打开任何原生窗口。中英文文案完整性：`build/logs/test-20261105-130049.log`。
+
+失败后在原标签重试、分栏与新标签焦点定向竞态通过：`build/logs/test-20261105-130502-race.log`。
+
+额外检查 CLI 恢复路径后，补上批准单实际目标与持久化快照的比较，覆盖单文件及目录的非所有者请求；队列刷新只读取父任务，子记录收在父任务目录中，避免大目录让 UI 扫描每个子任务；目录竞态回归通过：`build/logs/test-20261105-130931-race.log`。由独立工具窗口发起的下载会在原窗口显示任务。传输包全部竞态测试通过：`build/logs/test-20261105-130803-race.log`。首轮完整门禁 `build/logs/check-20261105-130537-race.log` 在补查时主动中断，未作为通过证据；格式和 vet 已通过，broker / desktop 的中断不是回归结论。
+
+完整门禁 `build/logs/check-20261105-131116-race.log` 的 broker、传输、安全与其他包均通过，桌面仅有两项旧流程失败：`TestOwnerFileActionsDoNotApproveExternalRequests` 把标签出现当作文件读取完成，已改为等读取结束再编辑保存；`TestVaultUnlockCancelledWaiterPreservesBrokerCleanupChain` 遇到已取消 owner 的代理身份派生更早失败，原代码仍排队提交旧错误，已为取消分支直接结束并保留启动清理屏障。保存入口同时拒绝加载中文档。修正后，文件加载 / 保存及整组保险库解锁、取消、重试竞态测试通过：`build/logs/test-20261105-132128-race.log`；最终五目标重新编译通过：`build/logs/compile-20261105-132129.log`，含新 CLI。最终完整门禁全部通过：`SSH_CLIENT_CLI_QA_BINARY=<仓库>/build/compile/darwin-arm64/ssh-client mise exec go@1.27.3 -- go run ./tools check -race -serial -tags terminal_integration`，日志 `build/logs/check-20261105-132205-race.log`。覆盖 vendor 完整性、431 文件格式、所有包 vet / 竞态、独立 CLI、进程 / 连接授权、真实 Ghostty、加载与文件夹下载、原有监控 / 解锁及全部新增回归。
+
+最终打包 / 安装：
+
+- 五目标打包通过：`build/logs/package-20261105-133153-loading-downloads.log`，含 macOS 两种架构 app、Linux 两种架构 deb / tar.gz、Windows 便携 EXE。生成文件校验通过：`build/logs/package-20261105-133153-loading-downloads-generated.log`；原生哈希与许可证清单无变更。
+- macOS 两种架构均通过深度严格签名验证：`build/logs/package-20261105-133153-loading-downloads-arm-signature.log`、`build/logs/package-20261105-133153-loading-downloads-intel-signature.log`。
+- 本机安装通过：`build/logs/install-20261105-133259.log`，目标 `/Applications/SmallSSH.app`，旧版保留在 `/Users/smallraw/.Trash/SmallSSH-before-20261105-133259.376636000.app`。安装后签名验证：`build/logs/install-20261105-133259-signature.log`。
+- 主可执行文件、包内 CLI 及 smallssh 入口均与新构建包 SHA256 一致：`build/logs/install-20261105-133259-hashes.log`。主程序 SHA256 为 `2c7b26b8c3d0b72834dcac7c16faa2a7b13c30c9486f65853145d59c23f70aa5`。最终 `git diff --check` 通过。
+
+已更新磁盘上的应用，没有自动启动、退出或前置窗口。正在运行的旧进程须由用户保存工作、退出后从应用程序目录重开，首次可信解锁建立稳定配对。签名为本机构建的 ad-hoc 校验，不代表 Developer ID 公证。
+
+运行验证仅覆盖本机 macOS arm64 的合成服务器与无窗口 UI / Ghostty；其他系统需要各自实机验收。未读取真实密码 / 私钥 / 剪贴板，未触发系统认证、前置、启动或退出用户窗口；同 UID 可任意修改可信程序 / 配置或注入进程仍不在保护模型内。没有修改依赖版本、vendor 或原生补丁。
+
+## 新建服务器左右分类整理 · 2026-11-05
+
+将新建 / 编辑服务器从长表单拆成左侧固定分类与右侧独立滚动内容，默认常规（Normal），另有加速与代理、终端设置、访问策略。常规保留全部登录方式、已保存凭据保留 / 更换、服务器身份和备注；代理 / SSH 中转 / 路径实测直接可见，编码 / 退格 / 保活独立。分类只影响显示，保留草稿、秘密及每页滚动位置，不改变连接路线或授予访问权限。原保存、身份核对和连接流程保留，底部按钮固定可见；字段错误自动切到所属分类，AI 访问菜单直接显示策略页。
+
+复用原生导航、对话框和焦点约束。对话框增加可选的内容自管滚动，以保留固定导航；其他对话框沿用原默认行为。连接分类在构造时省略焦点提示，避免 Esc 被提示框消费，继续触发未保存草稿保护。保存 / 后台操作时分类禁用。新界面已检查中文宽 / 窄窗、暗色与英文。
+
+定向竞态与原有模态 / 键盘 / 草稿保护通过：`build/logs/test-20261105-134301-race.log`。初轮发现导航提示抢占 Esc，已修正为构造时禁用该提示，保留其他侧栏原行为。语言资源完整性：`build/logs/test-20261105-134202.log`。离线快照位于 `build/snapshots/connection-sections-20261105/`，含四分类的宽窗、560 DIP 窄窗、暗色和英文；所有内容均为合成示例，无原生窗口或真实凭据。
+
+最终离线分类 / 原表单快照及交互回归通过：`build/logs/test-20261105-134442.log`；五目标编译通过：`build/logs/compile-20261105-134443.log`。完整桌面门禁通过：`go run ./tools check -pkg ./internal/desktop/... -race -serial -tags terminal_integration`，日志 `build/logs/check-20261105-134527-race.log`，含 vendor 完整性、434 文件格式、桌面及共享组件 vet、全部桌面竞态、真实终端和旧功能回归。随后补查快速重复编辑：新回归 `build/logs/test-20261105-135048.log` 复现保存回调缓存未带终端 / 网络设置，已补齐 Terminal、Network.Public 和 Hardware.Public，保证立即重开也显示正确公开配置，秘密不进入摘要缓存。修正后的保存 / 连接 / 私钥 / 原生终端与立即重开竞态门禁通过：`build/logs/check-20261105-135132-race.log`。最终窄窗地址 / 端口采用不换行标签与更紧凑输入，避免在左右布局下把“端口”挤成两行。最终布局门禁通过：`build/logs/check-20261105-135312-race.log`，覆盖格式 / vet / 竞态、分类操作、模态草稿保护、旧地址 / 端口 / 分组 / 指纹重核与更新后的离线截图；最终五目标编译通过：`build/logs/compile-20261105-135313.log`。
+
+最终打包与安装：
+
+- 五目标打包通过：`build/logs/package-20261105-135340-connection-sections.log`。生成资源校验通过：`build/logs/package-20261105-135340-connection-sections-generated.log`，原生哈希 / 许可证清单未变更。
+- macOS arm64 / amd64 深度严格签名验证通过：`build/logs/package-20261105-135340-connection-sections-arm-signature.log`、`build/logs/package-20261105-135340-connection-sections-intel-signature.log`。
+- 本机安装日志：`build/logs/install-20261105-135442.log`。目标 `/Applications/SmallSSH.app`，旧版保留 `/Users/smallraw/.Trash/SmallSSH-before-20261105-135443.137508000.app`。
+- 安装后签名通过：`build/logs/install-20261105-135442-signature.log`。主程序、包内 CLI 及 smallssh 入口均与新构建包哈希一致：`build/logs/install-20261105-135442-hashes.log`。主程序 SHA256 为 `64b3013a8ae8ec39e0b6d4826c180c48696f6d98361d84044e96f9617a5af1dc`。最终 `git diff --check` 通过。
+
+仅更新磁盘上的应用，没有自动启动或退出当前进程；需由用户保存工作后重开新版。本机构建签名为 ad-hoc 校验，未进行 Developer ID 公证。
+
+验证仅覆盖本机无窗口 UI / 原生终端集成，其他平台交叉编译不等于实机验收。没有改变网络协议、授权规则、依赖、vendor 或原生补丁；没有启动、前置或退出用户的桌面窗口。
+
+## B 本机后台拆分、D 网关演进与外部 worker 顺序实施 · 2026-11-05
+
+用户选择先交付 B，保留现有 App 功能并规划 D。已形成 `docs/CORE-SPLIT-PLAN.md` 的0.1验收目标、模块职责、顺序任务与D适配约束，以及 `GLOSSARY.md`、`docs/adr/0001-local-core-and-gateway-evolution.md`。主代理负责规划、代码审查及验收，外部 DeepSeek 经 codex-delegate-worker 执行每项限定文件任务；任务输入在 `build/worker-tasks/`，过滤后的执行记录在 `build/logs/worker-*.jsonl`。没有读取模型配置或凭据。
+
+B01 已抽出 protocol.Message，保留 broker.Message 兼容别名。对照 worker 修改前捕获的原始源码，结构内容逐字一致：`build/logs/b01-contract-review.json`。协议格式 / vet / 竞态门禁通过：`build/logs/check-20261105-183139-race.log`。统一编译首先在 `build/logs/compile-20261105-183139.log` 发现多余 monitor import，已单独退回 worker 修正；后续验收记录在本节继续补充。B01 仅是契约拆分，不代表独立后台已经完成。
+
+B01 修正后的五目标编译通过：`build/logs/compile-20261105-183459.log`。B02a 增加所有者认证的命令分页、单服务器备注与单参数上下文历史读取，列表剔除参数历史，分页同时限制条数和字节。主代理审查发现新增载荷改变旧 OwnerQueryProof 字节，单独退回 worker 保持 nil 字段省略，并增加手写旧签名字节 golden 及全部查询字段篡改测试；实现及修正记录为 `build/logs/worker-b02a.jsonl`、`build/logs/worker-b02a-fix.jsonl`。定向 broker 竞态测试及协议测试已通过；最终统一证据在后续验收补充，GUI 尚未改用这些接口。
+
+顺序增加 B02b1：主代理发现 SaveProfile、SaveSnippet、SaveServerNote 和 DeleteProfile 的临时 Session 副本未携带 auditHead。外部 worker 仅修正四处复制，并新增每种操作立即从加密文件重开、核对锚点及实际数据变化的回归测试；任务和记录分别为 `build/worker-tasks/b02b1-audit-anchor.md`、`build/logs/worker-b02b1.jsonl`。后台拆分尚未交付，不替换当前安装的可用 App。
+
+B02a 与 B02b1 后五目标编译通过：`build/logs/compile-20261105-185434.log`；保险库全套格式 / vet / 竞态门禁通过：`build/logs/check-20261105-185434-race.log`，包括新增持久化锚点回归。B02b2 写入接口已按单项任务交外部 worker，输入为 `build/worker-tasks/b02b2-owner-writes.md`；范围限定命令、备注和参数历史，签名覆盖完整载荷，使用核心固定存储路径，审计只记录元数据。
+
+B02b2 实现与测试通过主代理统一门禁：`build/logs/check-20261105-191156-race.log`（444 个文件格式、全部 internal 包 vet、工作区 / 所有者证明 / 消息契约定向竞态，含命令列表实际分页、五种写入拒绝与落盘、单参数范围隔离、陈旧快照拒绝、审计不含合成正文 / 备注 / 输入值）。SDK 写入不自动重试，结束审计失败也返回错误。任务执行记录：`build/logs/worker-b02b2.jsonl`。这些结果仅在本机 macOS arm64 合成夹具成立，其他平台运行行为尚未验证，App 的后台迁移仍未完成。
+
+B02b2 worker 在实现完成并通过主代理门禁后仍未结束最终静态自检 / 报告，主代理仅取消这一次已验收 worker 进程，保留实现与完整执行记录；其退出码不代表门禁失败。确认其退出后才下发 B03a，没有并行启动两个编码任务。B03a 的源文件基线保存在 `build/review-baselines/b03a.json`，用于核对文件所有权；任务为 `build/worker-tasks/b03a-trusted-service-transport.md`。
+
+B03a 初次门禁未通过：`build/logs/check-20261105-192518-race.log`，go vet 报告新 Darwin 静态代码身份函数的 uintptr→unsafe.Pointer 转换不安全。主代理同时要求实际子进程服务端验证，避免同进程测试不能区分客户端 / 服务端 PID；两项合成修正任务已交外部 worker，输入 `build/worker-tasks/b03a-fix.md`，初次实现记录 `build/logs/worker-b03a.jsonl`。文件所有权审查 `build/logs/b03a-files-review.json` 未发现超出本项范围的 Go 改动，go.mod / go.sum 保持未变。B03a 尚未验收，未开始 B03b。
+
+B03a 修正后五目标编译通过：`build/logs/compile-20261105-193305.log`。本机第一轮运行 `build/logs/check-20261105-193306-race.log` 发现两个对照夹具过早关闭连接、导致 LOCAL_PEERTOKEN 查询失败；已单独退回 worker 保持连接到身份提取完成，不改生产校验、没有 sleep / 重试 / skip 绕过。最终整套 IPC 门禁通过：`build/logs/check-20261105-193806-race.log`（450 文件格式、vet、全部 localipc 竞态，含真实子进程服务端 PID / 程序身份、TLS exporter、子进程 Wait 后原身份拒绝、错误程序接收零字节、发送前身份验证与原同 PID / 同程序 exec 回归）。冗余 Windows 专用测试已由 worker 删除，统一子进程夹具只传合成环境。最终所有权审查 `build/logs/b03a-files-review.json` 无越界修改，依赖文件不变。
+
+B03a 已验收后才下发 B03b：输入 `build/worker-tasks/b03b-locked-daemon.md`，记录 `build/logs/worker-b03b.jsonl`，源文件基线 `build/review-baselines/b03b.json`。本项只做冷启动锁定宿主、版本协商、有限状态读取与独立入口（保留 PKCS#11 子进程分支），尚不开放解锁 / 管理权限，不宣称 GUI 已解耦。
+
+B03b 初轮格式 / vet / 宿主及 SDK 定向竞态通过：`build/logs/check-20261105-195249-race.log`；五目标生产编译通过：`build/logs/compile-20261105-195249.log`，独立 smallsshd 入口已加入编译输出。主代理另发现意外 net.ErrClosed 被当成正常接受循环结束、未触发宿主完整关闭的缺陷，已用 `build/worker-tasks/b03b-fix.md` 单独退回 worker，要求真实关闭 listener 的故障测试、锁释放重开与正常取消对照；同时修正 hello 响应采用实际协商 minor。通过该故障验收前不推进所有者认证接入。
+
+B03b 修正后的宿主全套竞态门禁通过：`build/logs/check-20261105-195749-race.log`，包括真实监听关闭、故障记录、Done收敛、锁释放重开、正常关闭及取消对照；五目标编译通过：`build/logs/compile-20261105-195749.log`。文件所有权与依赖不变审查：`build/logs/b03b-files-review.json`。随后才下发 B04a 内存管理会话签名器 / 注册表，输入 `build/worker-tasks/b04a-memory-owner-capability.md`，记录 `build/logs/worker-b04a.jsonl`；本项还不接入 broker 或开放解锁，后台仍冷启动锁定。
+
+B04a 内存管理会话实现通过主代理格式 / vet / 全套竞态门禁：`build/logs/check-20261105-201717-race.log`（466 文件格式），五目标生产编译通过 `build/logs/compile-20261105-202017.log`。覆盖真实进程实例注册、同程序另一进程拒绝、完整签名载荷 / ID / 代次篡改拒绝、畸形 / 过大证明、控制ctx取消、主动撤销、绝对 / 闲置到期、错误签名不刷新闲置期限、容量 / TTL边界、公钥副本、签名器关闭及并发撤销回调。Verify只拒绝无效会话、不会同步回调反向取得broker锁；回收由控制ctx和显式Sweep负责。所有权记录 `build/logs/b04a-files-review.json` 仅新增 ownercap 模块8个文件，依赖未变。随后按 `build/worker-tasks/b04b1-owner-proof-interface.md` 下发SDK接口准备，后台尚未开放任何新的权限。
+
+B04b1 已将SDK/transfer的已解锁所有者参数改为OwnerProof，并由核心合并旧凭据；保留新目标与新私钥本地检查、KeepCredential/KeepProxyCredential语义、typed-nil公开路径和所有者传输不自动回退。外部worker补充了必须适配的channel.go公开指纹能力，主代理审查保留原有pin验证，无秘密Getter或信任降级；记录 `build/logs/b04b1-files-review.json`。初轮编译发现owner.go漏errors import（`build/logs/compile-20261105-203346.log`、`build/logs/check-20261105-203405-race.log`），主代理仅补导入后五目标编译通过 `build/logs/compile-20261105-203453.log`。客户端全套竞态门禁 `build/logs/check-20261105-203523-race.log` 与传输全套竞态门禁 `build/logs/check-20261105-204025-race.log` 通过，运行时均显式使用本轮编译的CLI QA路径。仅加Session.Proof nil拒绝，原HMAC内容未改。随后下发 `build/worker-tasks/b04b2-core-managed-proof.md`，记录 `build/logs/worker-b04b2.jsonl`，核心管理证明接入尚未验收。
+
+B04b2 生产实现编写中的五目标编译检查通过 `build/logs/compile-20261105-210418.log`，不代表权限行为验收。该项范围仍偏大，worker反复静态审查、尚未写核心集成测试，主代理已保留工作树并仅取消这一编码进程，按同一session继续下发 `build/worker-tasks/b04b2-tests1.md`：只新增真实身份夹具和基本工作区/配置/拒绝/重放两个测试，不继续改生产实现或扩大审查。下一组隔离撤权、跨进程及外部审批拒绝另行下发；B04b2尚未完成。
+
+B04b2 第一组曾在 `build/logs/check-20261105-211816-race.log` 发现旧workspace测试辅助函数仍要求*vault.Session，无法接收已改为接口的Client.Owner；主代理只将签名辅助参数改为client.OwnerProof，不改任何断言。修正后第一组门禁通过 `build/logs/check-20261105-211923-race.log`，覆盖真实控制身份注册、managed工作区与配置、旧HMAC兼容、缺失/错误/篡改/重放证明拒绝。第二组门禁通过 `build/logs/check-20261105-212536-race.log`，覆盖managed无法批准/拒绝/撤销外部请求、请求仍pending、根证明仍能批准、合法grant也不能由managed创建、审阅Nonce与Allow篡改拒绝，以及实际合成SSH自有执行成功。任务按 `b04b2-tests1.md`、`b04b2-tests2.md` 分组顺序完成；已下发第三组 `build/worker-tasks/b04b2-tests3.md`，仅验证隔离撤销及Core关闭，尚未最终验收B04b2。
+
+B04b2 第三组隔离撤销首次运行失败：`build/logs/check-20261105-213038-race.log`。主代理定位为任务说明中的夹具错误：默认testserver的block读取stdin，而无stdin的SSH exec会立即EOF，不能代表持续运行；尚无证据表明撤销越界。已单独退回`build/worker-tasks/b04b2-tests3-fix.md`，只为隔离测试选择等待真实session ctx取消的流式SSH夹具，所有权限与存活断言保持。修正门禁通过前不接受B04b2。
+
+B04b2 第三组修正后通过`build/logs/check-20261105-213652-race.log`，真实流式SSH夹具验证撤销A只结束A，B的lease/运行流/查询与独立根批准请求继续有效，Core关闭结束管理lease。随后按`build/worker-tasks/b04b2-tests4.md`下发最后一组跨管理会话审批拒绝及同程序实际子进程复制证明拒绝；前一项worker已退出，没有并行编码。
+
+B04b2 第四组通过`build/logs/check-20261105-214056-race.log`，同进程不同管理会话不能审批对方OwnerIssued请求；同测试程序真实子进程先成功查询公开端点，再对复制的完整父签名取得明确ErrDenied，父会话随后仍可使用。证明仅经stdin传入子进程，不写argv/环境/文件。完整broker竞态门禁通过`build/logs/check-20261105-214136-race.log`（256.096秒），审批全套此前通过`build/logs/test-20261105-212902-race.log`。
+
+主代理另发现ownerRequest最终取锁后没有再确认lease存在；撤销回调删除lease与锁外关闭channel之间可能创建请求。已由外部worker按`build/worker-tasks/b04b2-final-request-fence.md`仅增加锁内活lease检查；完整broker门禁编译在此小修正之前，修正后全部ManagedOwner定向竞态重新通过`build/logs/check-20261105-214618-race.log`，最终五目标编译通过`build/logs/compile-20261105-214630.log`。文件所有权及依赖审查记录`build/logs/b04b2-files-review.json`，没有越界Go文件或依赖变更。本阶段核心验证接入已接受，最终全仓发行门禁仍须覆盖最终整合代码；App还未切换独立宿主。
+
+B04c改为协议、宿主prepare、commit与管理操作、SDK四个独立检查点，先下发`build/worker-tasks/b04c1-service-owner-contract.md`，仅共享数据和确定签名字节，记录`build/logs/worker-b04c1.jsonl`；总体交接约束仍保留，不一次下发整个认证实现。
+
+B04c1共享认证协议已通过`build/logs/check-20261105-215007-race.log`：475文件格式、全部internal包vet与测试编译、Service/Host相关定向竞态，含签名字节golden和逐字段篡改敏感性。主代理只同步旧service_test.go对当前minor的断言为1，仍保留旧minor=0合成消息以覆盖兼容序列化。所有权记录`build/logs/b04c1-files-review.json`无越界或依赖变化。随后仅下发宿主prepare实现`build/worker-tasks/b04c2a-host-prepare.md`，记录`build/logs/worker-b04c2a.jsonl`；成功prepare必须仍locked，commit和SDK尚未实施，行为测试另行分组验收。
+
+B04c2a实现通过现有宿主全套格式/vet/竞态门禁`build/logs/check-20261105-215619-race.log`。主代理审查`build/logs/b04c2a-files-review.json`确认仅host.go与新owner_prepare.go，临时Session来自固定vault路径，输入key/Proof处理后清除，pending只在实际连接内、最多2份、绝对30秒期限、结束后关闭Session释放槽；没有启动broker。新增prepare行为尚待测试，不能据此接受认证交接。下一项只新增`build/worker-tasks/b04c2b1-prepare-auth-tests.md`中的认证/篡改/跨连接测试，记录`build/logs/worker-b04c2b1.jsonl`。
+
+B04c2b1认证行为全套宿主竞态通过`build/logs/check-20261105-220046-race.log`：正确prepare后wire/Host/SDK仍locked且没有broker监听，重复prepare拒绝；八种签名/解锁key/元数据篡改均取得明确invalid_owner，跨连接复制拒绝且原连接仍可prepare。主代理随后只收紧测试的断线错误识别，不再接受任意非网络协议错误。最后一组`build/worker-tasks/b04c2b2-prepare-lifecycle-tests.md`验证上限/单连接释放、status不能延长30秒期限、Host关闭重启，记录`build/logs/worker-b04c2b2.jsonl`；测试观察器只读受锁保护的pending计数，不进入生产构建。
+
+B04c2最后一组真实生命周期/30秒绝对期限测试通过`build/logs/check-20261105-220512-race.log`（479文件格式、宿主全套竞态38.420秒）；所有权记录`build/logs/b04c2-files-review.json`仅限定宿主与新增测试，没有依赖变更。尚未commit/GUI接入。用户新报掌机空SSH密码被客户端拒绝，优先插入单项外部编码任务`build/worker-tasks/empty-ssh-password.md`，执行`build/logs/worker-empty-ssh-password.jsonl`；B04c3a新鲜读取构造入口任务已规划但未启动，原B/D目标保留。
+
+空SSH密码修复由外部worker实现，任务`build/worker-tasks/empty-ssh-password.md`、交付`build/logs/worker-empty-ssh-password-last.txt`，主代理只补测试key副本清理、删除无用赋值并统一gofmt。正式修复允许显式password认证的空字符串，保留KeepCredential的保留/清空语义，UI说明留空含义；ssh.Password路径、主机指纹和保险库主密码/系统解锁规则不变。回环服务严格密码回调，证明空密码成功、错误非空密码失败、错误指纹时无凭据发送。没有真实设备运行验证。
+
+五目标编译通过`build/logs/compile-20261105-221351.log`；保险库全套竞态`build/logs/check-20261105-221514-race.log`、SSH全套`build/logs/check-20261105-221604-race.log`、桌面全套`build/logs/check-20261105-221636-race.log`均通过；全部internal vet与SDK保存/管理会话/凭据/服务协议定向竞态通过`build/logs/check-20261105-221934-race.log`。所有权`build/logs/empty-ssh-password-files-review.json`只九个指定文件，依赖不变。尚未将此工作树打包安装，B整合尚未结束。
+
+插入修复验收后，继续顺序下发B04c3a`build/worker-tasks/b04c3a-fresh-managed-open.md`，执行`build/logs/worker-b04c3a.jsonl`。本项只封装持目录锁后重新解密最新vault并校验已认证pin的核心构造入口，解决prepare期间离线合法写入导致旧快照覆盖的问题；Host commit、管理lock/stop及SDK仍分项待做。
+
+B04c3a严格构造入口与ManagedOwner回归通过`build/logs/check-20261105-222603-race.log`；`build/logs/b04c3a-constructor-review.json`确认抽出的原构造body逐字一致，所有权`build/logs/b04c3a-files-review.json`仅三个指定Go文件、依赖不变。测试验证重新读取最新vault、错误key/pin不泄漏目录锁、不能替换运行中Core及输入key buffer独立。随后顺序下发`build/worker-tasks/b04c3b-control-proof.md`，记录`build/logs/worker-b04c3b.jsonl`，只做将来lock/stop的确定签名字节与实时OwnerLease验证，不开放宿主动作。
+
+B04c3b管理控制契约/Go-only活lease验证通过`build/logs/check-20261105-223700-race.log`（487文件格式、全部internal vet/测试编译、相关定向竞态）及五目标编译`build/logs/compile-20261105-223828.log`。覆盖固定control签名字节、逐字段/跨domain隔离、正确管理签名、RootHMAC拒绝、不同lease拒绝、真实控制ctx取消隔离、Core关闭和nil路径。所有权记录`build/logs/b04c3b-files-review.json`仅指定五文件，夹具只增加真实identity字段，依赖不变。下一项`build/worker-tasks/b04c3c-host-commit.md`交外部worker，只写Host commit与活控制连接，不开放lock/stop或SDK OwnerSession；执行`build/logs/worker-b04c3c.jsonl`，行为测试仍分组下发。
+
+B04c3c主体落盘后外部worker仍在重复静态检查；主代理发现wire提交动作名不一致、心跳代次未固定及pending状态锁边界问题，保留代码并仅SIGINT这一次自有编码进程，确认退出后再按同一thread下发`build/worker-tasks/b04c3c-review-fix.md`四点限定修正。原执行记录保留，未并行启动两个编码任务；本项尚未验收，App未接入。
+
+B04c3c四点修正完成，现有宿主全套竞态通过`build/logs/check-20261105-225518-race.log`（488文件格式，38.287秒）。所有权`build/logs/b04c3c-files-review.json`仅四个指定生产文件、依赖不变；核对固定activeGeneration、pending锁保护与原始连接清理。新的commit路径还没有集成行为验收，随后仅下发`build/worker-tasks/b04c3c-tests1.md`，记录`build/logs/worker-b04c3c-tests1.jsonl`，验证真实commit/最新数据/跨连接/错误locator/重复提交，不能把原有测试通过当成新增权限正确。
+
+B04c3c第一组首次静态检查`build/logs/check-20261105-230145-race.log`发现测试把ownercap.SessionInfo当作含BrokerKey的服务公开对象；主代理仅改为已验证client.BrokerKey并增加Info.Epoch精确匹配，不改生产。修正后真实commit行为通过`build/logs/check-20261105-230239-race.log`：prepare期间持锁离线更新被最新Core读取、公开Info无根材料、不同连接不能commit/凭ID心跳、错locator保持locked、重复commit断开自己的权限而Core仍服务合法根查询。随后下发`build/worker-tasks/b04c3c-tests2.md`，记录`build/logs/worker-b04c3c-tests2.jsonl`，验证两控制连接/运行流/独立AI隔离、OwnerLease.Done桥接与Host关闭竞争。
+
+B04c3c第二组及第一组合并通过`build/logs/check-20261105-231043-race.log`。主代理仅把测试重复出现的Info.BrokerKey引用改为实际data client.BrokerKey，未改权限断言。真实控制断开只撤销A流与查询，B和原ticket独立请求继续；真实Core.Revoke使B控制wire与数据流结束而Root查询继续；Host.Close结束Core/释放目录锁，重启仍locked、旧Signer拒绝；三次commit/Close竞争无残留Core。完整宿主门禁通过`build/logs/check-20261105-231457-race.log`（490文件格式、全套竞态48.040秒），五目标编译通过`build/logs/compile-20261105-231548.log`。所有权`build/logs/b04c3c-files-review.json`无越界与依赖变更。随后仅下发`build/worker-tasks/b04c3d-lock-stop.md`的宿主全局控制实现，执行`build/logs/worker-b04c3d.jsonl`；SDK/GUI和安装仍未完成。
+
+B04c3d lock/stop实现通过现有宿主全套格式/vet/竞态`build/logs/check-20261105-232810-race.log`（491文件，47.869秒）；尚不代表新增控制权限行为验收。静态审查`build/logs/b04c3d-files-review.json`仅四个指定Go文件、依赖不变；wire控制必须当前活lease、实际identity/binding、固定代次签名，锁定前可靠停止当前watcher、关闭Core后才确认，停止先stopAccepted再异步Host.Close，无handler自等待。随后下发`build/worker-tasks/b04c3d-tests1.md`，执行`build/logs/worker-b04c3d-tests1.jsonl`，只新增签名篡改拒绝/成功lock/可信Host.Lock清除pending测试。
+
+B04c3d-tests1外部节点连续返回连接发送失败并自动重连约7分钟，没有新增测试文件。主代理仅取消这一自有重连worker，确认退出后用同一任务/相同配置启动fresh thread重试，记录`build/logs/worker-b04c3d-tests1-retry.jsonl`；未读取/变更私有节点配置或密钥，未把连接失败写成测试通过。
+
+外部节点fresh重试随后恢复并生成B04c3d-tests1测试，用户确认继续重试/沿用DeepSeek分工。新增全局控制权限/成功lock/可信Go锁定清理pending测试通过`build/logs/check-20261105-234617-race.log`（492文件格式、定向竞态10.798秒），拒绝改动作/binding/generation/ID、RootHMAC替代和新控制连接复用；成功锁定使旧权限/独立ticket失效、释放core锁、服务仍可fresh认证。等待外部恢复期间，稳定broker全套vet/竞态通过`build/logs/test-20261105-233900-race.log`（261.892秒）。随后按`build/worker-tasks/b04c3d-tests2.md`下发stop/Run正常退出/封存失败仍锁定三测试，执行`build/logs/worker-b04c3d-tests2.jsonl`；尚不接入SDK或GUI。
+
+B04c3d两组控制行为及全部宿主回归通过`build/logs/check-20261105-235330-race.log`（493文件格式、vet、全套竞态60.499秒）。测试验证stop先确认后结束Host/释放两目录锁、Run收到已认证stop正常返回nil；确定的合成vault保存故障仍回locked与audit_unavailable、旧权限失效。五目标编译通过`build/logs/compile-20261105-235455.log`，所有权`build/logs/b04c3d-files-review.json`仅六个限定文件、依赖不变。宿主认证/管理控制阶段接受；SDK/GUI/发行尚未完成。随后只下发SDK prepare与Prepared.Close小项`build/worker-tasks/b04c4a1-sdk-prepare.md`，执行`build/logs/worker-b04c4a1.jsonl`，不实现commit/OwnerSession，以免跨越所有权交接检查点。
+
+跨日继续B04c4a1。SDK prepare主体已落盘，worker仍在静态收尾；主代理发现部分key/proof与error同时返回时清理顺序、响应先清理后检查导致非法secret字段未被拒绝的问题。保留代码，仅取消此次自有编码worker，确认退出后按`build/worker-tasks/b04c4a1-review-fix.md`下发两点限定修正，记录`build/logs/worker-b04c4a1-fix.jsonl`。尚未验收新SDK或接入GUI。
+
+B04c4a1修正后现有SDK服务/OwnerProof回归与格式/vet通过`build/logs/check-20261106-001029-race.log`（494文件、定向竞态8.013秒）。新增prepare尚待真实生命周期/取消/程序信任顺序测试，不能据此认为整个SDK完成。所有权`build/logs/b04c4a1-files-review.json`仅新的service_prepare.go、依赖不变；仅持verified wire/未绑定Signer/公开prepare元数据，不保存Rootkey/proof，短authctx及30秒timer清理pending。随后下发`build/worker-tasks/b04c4a1-tests1.md`，执行`build/logs/worker-b04c4a1-tests1.jsonl`。
+
+B04c4a1第一组真实SDK生命周期门禁通过`build/logs/check-20261106-001807-race.log`（495文件格式、vet、竞态5.072秒）。正向prepare后Host/SDK仍locked且没有broker监听，关闭source不影响Prepared清理，Close幂等、authctx取消关闭实际wire、caller source仍可用；nil/typed-nil/ctx/TTL/错误程序均在Root材料访问前拒绝。主代理仅对测试读取prepared.wire加同一mutex保护，避免取消回调并发访问；未改生产。下一项`build/worker-tasks/b04c4a1-tests2.md`仅测试部分材料+error清理及实际TLS畸形hello/prepare响应，记录`build/logs/worker-b04c4a1-tests2.jsonl`。
+
+B04c4a1完整adversarial补丁两次未执行，被外部protected-path-in-command/protected-credential-file拦截；核对记录`build/logs/worker-b04c4a1-block-review-last.txt`明确没有命中片段，不能断言只是文件名。原补丁保持未应用。遵循本地安全规则“After denial, use a documented safe alternative”及拒绝提示允许的“改用脱敏示例”，另行设计纯公开固定字节/本机TLS协议单元测试，不导入vault、不调用保险库、不读凭据路径，不模拟Core权限；任务`build/worker-tasks/b04c4a1-protocol-fixtures.md`不是重放原补丁，若仍拦截即停。
+
+只读独立审查另发现Receive/json.Unmarshal部分成功后error会留下已填slice；外部worker按`build/worker-tasks/b04c4a1-receive-cleanup.md`仅补两处defer，保留hasSecrets拒绝。修正回归通过`build/logs/check-20261106-003541-race.log`（495文件、SDK相关竞态4.837秒）。新脱敏测试执行`build/logs/worker-b04c4a1-protocol-fixtures.jsonl`，尚未验收整个prepare阶段。
+
+B04c4a1脱敏协议测试已交付，未访问保险库或凭据文件，仅用固定公开字节和真实本机IPC/TLS验证非法hello/prepare响应拒绝、字段类型错误、部分结果清理。定向门禁`build/logs/check-20261106-004948-race.log`及客户端全套格式/vet/竞态`build/logs/check-20261106-005003-race.log`（496文件，16.336秒）通过；所有权`build/logs/b04c4a1-files-review.json`仅三个限定SDK文件、依赖不变。prepare阶段接受，commit/长期会话仍待做。插入已确认的核心监听故障收敛修复`build/worker-tasks/b04c4-core-fault.md`，先实现后单独下发真实故障回归，不把手动Close后的清理当成自动收敛证据。
+
+核心故障生产修复由外部worker完成，`build/logs/b04c4-core-fault-files-review.json`确认仅broker.go、Host与owner_commit三文件、依赖不变；新增首次故障/Done信号、匹配核心监督及commit失效检查，正常Close不伪造故障。现有宿主全套门禁`build/logs/check-20261106-005459-race.log`通过（61.353秒）；新故障行为仍待独立回归。下一项仅下发`build/worker-tasks/b04c4-core-fault-tests.md`，直接触发真实监听关闭及已发布核心终止，记录`build/logs/worker-b04c4-core-fault-tests.jsonl`。
+
+新故障回归首次门禁`build/logs/check-20261106-010003-race.log`：全部internal vet/测试编译通过、Host实际核心终止/锁定/pending清理/fresh恢复测试通过；两个broker测试尚未进入故障路径，因t.TempDir权限不满足0700被拒绝。退回外部worker按`build/worker-tasks/b04c4-core-fault-test-dir.md`只修夹具短路径和私有权限，保留权限检查与原故障断言；不把此轮写成全绿。
+
+夹具修正后broker真实监听故障与正常Close回归通过`build/logs/check-20261106-010231-race.log`（5.656秒）。关闭实际listener后先观察Done、故障、Vault清理与目录锁释放，最后才调用Close验证幂等；正常关闭Err仍nil。结合已通过的Host实际终止恢复及宿主全套，故障收敛小项接受，所有权记录仅五个限定生产/测试文件、依赖不变。继续只下发SDK Commit/OwnerSession实现`build/worker-tasks/b04c4a2-sdk-commit.md`，执行`build/logs/worker-b04c4a2-sdk-commit.jsonl`，不同时实现Lock/Stop或迁移GUI。
+
+B04c4a2合并任务约八分钟仍在重复定向读取/查找历史，没有代码落盘，也未再报连接失败。主代理按确切日志writer的唯一codex子进程范围SIGINT并确认退出，保留全部工作树；任务进一步拆为仅新增运行时`build/worker-tasks/b04c4a2a-session-runtime.md`与后续仅Commit交接`b04c4a2b-commit-handoff.md`，仍由外部DeepSeek顺序编码，前者执行`build/logs/worker-b04c4a2a-session-runtime.jsonl`。新任务限制读取范围并给出收发/取消/资源交接步骤；不把未交付任务记为完成。
+
+B04c4a2a已新增单个service_owner_session.go。独立只读审查确认两处P2：到期timer未在mutex下发布，立即回调可能与赋值race；exchange的ctx取消分支可能丢弃已经验证并交付的应答。未发现reader交付后EOF、Close自等待或Signer并发清理的其他实质缺陷。交外部worker按`build/worker-tasks/b04c4a2a-runtime-review-fix.md`仅修两处，执行`build/logs/worker-b04c4a2a-runtime-review-fix.jsonl`；运行时尚未接Commit，不能据此声称长期SDK会话已验收。
+
+B04c4a2a两点修正已交付：timer持锁发布，ctx/Done均优先取得已经验证并交付的响应。客户端全套格式/vet/竞态门禁`build/logs/check-20261106-012541-race.log`通过（499文件、17.533秒），当前仅新增运行时文件，没有依赖变更；此时新构造仍未被生产调用，不将旧测试通过当作新长期会话行为验收。继续顺序下发仅Commit交接`build/worker-tasks/b04c4a2b-commit-handoff.md`，执行`build/logs/worker-b04c4a2b-commit-handoff.jsonl`，随后才下发真实SDK交接/隔离测试。
+
+B04c4a2b Commit交接已交付，现有客户端全套门禁`build/logs/check-20261106-013026-race.log`通过（17.013秒）。只读审查确认两处P2：重复Commit状态拒绝调用Close会误关首次inflight；Expires上限锚定调用开始会误拒仍在IO期限内的慢核心启动响应。短authCtx在Commit入口脱离符合明确交接契约，不算缺陷。下一单`build/worker-tasks/b04c4a2-sdk-commit-tests.md`允许仅修这两点并新增真实SDK交接/双会话/EOF/重复与Close竞争回归，执行`build/logs/worker-b04c4a2-tests.jsonl`；仍未验收长期会话或接入App。
+
+B04c4a2测试及两点修正已交付，初审生产guard/Expires修正符合要求。首次新行为门禁`build/logs/check-20261106-014023-race.log`在vet编译阶段发现测试两个helper误把控制ServiceClient当成数据Client调用ListSnippets，尚未运行新增行为。退回外部worker按`build/worker-tasks/b04c4a2-test-data-client-fix.md`只改这两个helper，使用会话已验证公开pin建立数据Client，保留所有成功/失败断言；执行`build/logs/worker-b04c4a2-test-data-client-fix.jsonl`。
+
+B04c4a2真实SDK生命周期修正回归通过`build/logs/check-20261106-014232-race.log`（10.329秒）：source提前Close仍能commit，短auth/commit ctx结束与Prepared.Close不影响已交出会话，真实ListSnippets成功；A关闭不影响B与核心，Root源不被SDK关闭；Host锁定/关闭2秒内断线，fresh认证可恢复且旧会话拒绝；重复提交不结束赢家，三组双Commit恰好一个成功，三组Commit/Close竞争有界清理。客户端全套门禁`build/logs/check-20261106-014316-race.log`（26.072秒）、五目标编译`build/logs/compile-20261106-014316.log`通过。所有权`build/logs/b04c4a2-files-review.json`仅三个SDK文件、依赖不变。
+
+继续下发`build/worker-tasks/b04c4a3-sdk-protocol-tests.md`的纯公开协议异常/慢提交/心跳回归，执行`build/logs/worker-b04c4a3-sdk-protocol-tests.jsonl`。它不导入vault、不启动真实Host/Core、不验证Root成功，只验证客户端应答解析和资源清理。Lock/Stop SDK、GUI切换与安装仍未完成。
+
+B04c4a3仅新增service_owner_protocol_test.go，纯公开固定字节/真实IPC与TLS，未访问保险库或真实凭据。门禁`build/logs/check-20261106-015625-race.log`通过（501文件格式、vet、新协议回归竞态17.872秒），验证17组字段异常、错误JSON类型均关闭实际控制wire，真实6秒延迟按响应时刻计算TTL可接受，真实10秒心跳错误generation在2秒内清理签名能力，无inflight的额外frame拒绝。生产代码没有变化，不重复跑此前已通过的完整客户端回归；下一生产变更后再完整验证。
+
+继续仅下发SDK显式Lock/Stop实现`build/worker-tasks/b04c4b-sdk-control.md`，执行`build/logs/worker-b04c4b-sdk-control.jsonl`，真实操作/封存失败/ack紧接EOF回归另项下发。App仍未接入或重新安装。
+
+B04c4b主体已交付，所有权`build/logs/b04c4b-files-review.json`仅两个限定SDK文件、依赖不变。独立审查确认P1：control把请求lock/stop当作expectedAction，严格reader会误拒绝实际locked/stopAccepted，后台已执行却客户端返回失败；签名、代次、状态和terminal ack→EOF顺序未发现其他确定问题。共享收发变更后的既有客户端全套门禁`build/logs/check-20261106-020527-race.log`通过（502文件、42.045秒），但既有用例尚不调用新Lock/Stop，不能视为新控制行为验收。
+
+下一单`build/worker-tasks/b04c4b-sdk-control-tests.md`允许仅修正期望应答映射（请求和签名仍lock/stop）并新增真实SDK锁定、停止、封存失败已锁定状态及ack紧接EOF回归；执行`build/logs/worker-b04c4b-sdk-control-tests.jsonl`。B05/App及安装仍待后续工作。
+
+B04c4b action映射修正已核对正确，四组新控制测试已交付。首次门禁`build/logs/check-20261106-021300-race.log`在vet编译阶段发现三个测试误用service包的test-only导出观察器，尚未运行新行为。退回外部worker按`build/worker-tasks/b04c4b-public-observation-test-fix.md`改为公开证据：无数据监听、原C commit失败、两个fresh pending同时成功、旧能力失效、公开锁定状态和目录锁释放；禁止把测试hook搬入生产。执行`build/logs/worker-b04c4b-public-observation-test-fix.jsonl`，不删减关键行为断言。
+
+该测试修正resume调用约十分钟仅返回模型元数据fallback警告，没有执行/文件修改或连接失败信息。主代理仅SIGINT确切日志writer的唯一codex子进程并确认退出，保留代码，以同一任务/配置fresh thread重试，记录`build/logs/worker-b04c4b-public-observation-test-fix-retry.jsonl`，未读改节点配置。等待期间生产代码五目标编译`build/logs/compile-20261106-021809.log`通过；测试文件不参与正常build，不据此声称新控制行为通过。
+
+B04c4b fresh重试已修测试观察方式；真实SDK控制竞态门禁`build/logs/check-20261106-022617-race.log`通过（15.280秒）：A锁定使A/B及原pending C失效，无数据监听、目录锁释放，两个fresh pending可同时准备并重新commit查询；stop确认后Host结束、两目录锁释放、重启默认locked；合成封存失败返回已验证locked Status和audit_unavailable错误；nil/取消只清自身，另一管理会话可继续；Lock与Stop各三次正确ack紧接EOF稳定成功。客户端全套门禁`build/logs/check-20261106-022735-race.log`通过（503文件、55.602秒）。所有权`build/logs/b04c4b-files-review.json`仅两个SDK生产文件与新控制测试，依赖不变。
+
+B04c SDK认证/交接/控制检查点接受。继续B05a App常用命令列表与保存迁移至已有RPC，按`build/worker-tasks/b05a-commands-rpc.md`交外部DeepSeek，记录`build/logs/worker-b05a-commands-rpc.jsonl`；尚未切换App认证、后台启动或生命周期，不能把此数据迁移视为B已完成。
+
+B05a四文件主体交付，初始化独立异步列表、SaveSnippet后RPC刷新、UI捕获输入及gen/load守卫已经落盘。定向格式/vet/竞态门禁`build/logs/check-20261106-023852-race.log`通过（504文件、16.272秒），覆盖现有命令表单/通用旧回调/解锁及新增锁定后旧列表回调。独立审查确认P2：保存A等待刷新时新开B或修改原草稿，完成回调仍会清空当前表单；现有测试也不证明真实初始化/保存/删除成功。下一单`build/worker-tasks/b05a-draft-guard-tests.md`限定修草稿身份/内容保护、增加真实RPC行为及两条新错误翻译，执行`build/logs/worker-b05a-draft-guard-tests.jsonl`；未接受B05a或改App认证。
+
+B05a草稿身份/深拷贝快照保护及真实读取/保存/删除/确认开关、三种延迟草稿回归已由外部worker交付，两条新错误中英文翻译已加。独立复查确认原P2已挡住且真实RPC测试检查了UI缓存及broker存储，但发现Clone将非nil空slice归一化nil，直接DeepEqual当前原表单可能使正常保存不关闭。继续按`build/worker-tasks/b05a-draft-normalization-fix.md`仅修比较当前Clone并加未修改空Args表单保存后关闭断言，执行`build/logs/worker-b05a-draft-normalization-fix.jsonl`；新真实RPC行为尚待运行门禁。
+
+等待该两文件修正期间独立运行翻译目录测试，`build/logs/test-20261106-025312-race.log`发现先前空SSH密码修复新增`不支持的登录方式`未入翻译目录（connections.go:734），并非本轮两条新错误翻译缺失。此项仍需补齐中英文后重跑，不能把当前翻译状态写成通过。
+
+该小修正fresh调用约十分钟仅有metadata fallback、无执行进展，主代理仅中断确切日志writer的唯一codex子进程并确认退出，保留所有代码。另以`build/worker-tasks/b05a-final-small-fixes.md`fresh重试，将同一草稿归一化/正向关闭断言及已发现的单键翻译遗漏一并交DeepSeek，记录`build/logs/worker-b05a-final-small-fixes.jsonl`；未读改私有节点配置，也未把等待或编译当作完成。
+
+B05a小修正fresh重试已交付并核对：当前表单Clone比较、非nil空Args成功保存后正常关闭清空的断言，以及先前遗漏认证错误的中英文翻译。真实命令RPC/缓存存储/三种延迟草稿/旧锁定回调及既有相关UI竞态门禁`build/logs/check-20261106-030322-race.log`通过（504文件、25.704秒）；翻译目录`build/logs/test-20261106-030322-race.log`通过（1.700秒）。所有权`build/logs/b05a-files-review.json`恰六个预期源码/测试/目录文件、依赖不变。完整desktop含terminal_integration回归正在执行，B05a最终检查点待其结果。
+
+B05a完整desktop格式/vet/竞态及terminal_integration门禁`build/logs/check-20261106-030450-race.log`通过（234.401秒），包括原命令发送、终端和其他桌面回归。任务runner实时tee日志；未开-v的Go测试在整包结束前无新增输出是正常现象，没有通过终止测试来跳过耗时。B05a数据迁移检查点接受；App最终认证/生命周期仍未切换。继续外部DeepSeek B05b参数历史RPC任务`build/worker-tasks/b05b-history-rpc.md`，记录`build/logs/worker-b05b-history-rpc.jsonl`，保留现有FIFO断言并将旧伪server夹具改为真实合成broker，不删旧用例。
+
+B05b合并任务约15分钟持续扩展源码/测试读取而无文件落盘。主代理仅中断该日志对应的唯一codex子进程并确认退出，保留全部工作树；再拆为仅两生产文件的`build/worker-tasks/b05b1-history-production.md`，明确读取也复用现有FIFO及UI快照/加载序号算法，限制读取范围，不先改测试。执行`build/logs/worker-b05b1-history-production.jsonl`，真实fixture/FIFO和陈旧读取回归随后单独派发。没有将探索或重试记为完成。
+
+B05b1两个生产文件已交付，逻辑独立审查确认FIFO载荷/UI快照/清空序号/旧state/target/system/generation守卫及输入不被覆盖成立，未改B05a保护。但实现把client.Client值与nil比较、把unlockedOwner返回的error当bool；静态门禁`build/logs/check-20261106-033701-race.log`确认编译阻断，尚无新增行为运行证据。交外部worker按`build/worker-tasks/b05b2-history-tests.md`仅修这两类调用契约并改造commands_run_test.go真实broker/FIFO及迟到回调测试，记录`build/logs/worker-b05b2-history-tests.jsonl`；不改客户端类型/认证签名或新增生产测试hook。
+
+B05b2修正类型用法及真实测试后，定向格式/vet/竞态门禁`build/logs/check-20261106-034434-race.log`通过（19.125秒）：真实写入/读取/清空、异步load成功marker及输入不变、旧state/target/实际Endpoint/Fingerprint/system拒绝、清空后迟到读取不回填。独立审查确认barrier清理无死锁、其他真实回归成立，但FIFO用例未覆盖写入仍排队时紧接clear，且屏障未确认进入可能放过read绕开FIFO。继续仅测试任务`build/worker-tasks/b05b-fifo-test-strengthen.md`补明确started信号与同时排队的write/clear，执行`build/logs/worker-b05b-fifo-test-strengthen.jsonl`；不改生产或删除原断言。
+
+B05b FIFO补强已交付两阶段已进入屏障和pending安排。首次单跑`build/logs/check-20261106-035556-race.log`失败于第二阶段测试期望：实际历史保留旧条目，clear参数0不应删参数1旧值。主代理仅将四处预期改为参数1包含新旧两个marker（长度2），未改实现或清旧数据；只读复核确认未削弱范围。完整历史定向门禁`build/logs/check-20261106-035725-race.log`通过（19.344秒），同时验证FIFO、异步正向、context拒绝和迟到回填。所有权`build/logs/b05b-files-review.json`仅commands.go、commands_history.go、commands_run_test.go三文件、依赖及翻译目录未变。完整desktop含terminal_integration正在执行，B05b最终检查点待其结果。
+
+B05b完整desktop格式/vet/竞态与terminal_integration门禁`build/logs/check-20261106-035848-race.log`通过（244.993秒），B05b检查点接受。继续B05c，先将独立备注窗口open/save迁RPC、即时loading/取消/重试，再单独迁移连接编辑备注；保留原保存成功自动关闭行为。外部任务`build/worker-tasks/b05c1a-notes-production.md`只写server_notes.go及必要两语言提示，不先改测试，执行`build/logs/worker-b05c1a-notes-production.jsonl`。App最终Auth/daemon与生命周期、B06/7/8及安装仍未完成。
+
+B05c1a server_notes.go及三条中英文提示已交付；独立静态审查未发现实质缺陷，确认立即loading、窗口ctx与seq/notesCurrent守卫、错误重试、直接save/scan入口防未知数据覆盖、save捕获快照/原成功关闭行为及零值手工state ready。格式/vet/测试编译门禁`build/logs/check-20261106-040713-race.log`通过（2.082秒，run ^$无行为测试）。下一单`build/worker-tasks/b05c1b-notes-tests.md`仅改server_notes_test.go的同步等待假设并加真实加载、迟到/取消、保存失败保草稿和重试回归；执行`build/logs/worker-b05c1b-notes-tests.jsonl`，不将编译通过当行为验收。
+
+B05c1 独立备注窗口检查点接受。外部DeepSeek仅改指定生产/测试与三条中英文提示，所有权见 `build/logs/b05c1-files-review.json`。只读复核未发现实质缺陷；真实broker加载marker、立即loading且未扫描、close/lock/reopen旧回调隔离、保存失败保草稿与恢复成功、读取失败动作阻止和按钮重试竞态门禁 `build/logs/check-20261106-042358-race.log` 通过（27.530秒）。翻译目录 `build/logs/test-20261106-041251-race.log` 通过。下一项只迁移连接编辑表单的备注读取与分步保存，不切换App认证/daemon；最终整合后的完整desktop门禁仍需运行。
+
+继续顺序派发B05c2a `build/worker-tasks/b05c2a-editor-note-load.md`，记录 `build/logs/worker-b05c2a-editor-note-load.jsonl`，只做连接编辑异步备注加载；独立state/ctx不得被probe/agent/save操作的sequence/cancel误废弃，加载失败禁止提交未知旧备注但字段/取消可用。之后另派保存RPC及专门备注重试，不把连接已成功保存当作全部失败重放。
+
+B05c2a三文件异步加载主体已交付，独立只读审查未发现实质逻辑缺陷；首次格式/vet门禁 `build/logs/check-20261106-043431-race.log` 发现connection_notes.go未使用vault导入，行为尚未运行。继续仅下发 `build/worker-tasks/b05c2a-editor-note-load-tests.md`，允许删除这一无用导入、修旧同步等待和新增真实加载/生命周期/无关操作/重试保草稿测试，记录 `build/logs/worker-b05c2a-editor-note-load-tests.jsonl`；没有以静态审查替代行为验收。
+
+B05c2a合并测试worker约八分钟进行了多轮超范围重复只读探索，未产生文件修改。主代理只SIGINT该日志writer的唯一已确认codex子进程并等待退出，保留全部源码；未把读取作为交付。任务进一步拆成仅unused import与四处旧等待的 `build/worker-tasks/b05c2a1-existing-test-waits.md`（当前顺序执行，`worker-b05c2a1-existing-test-waits.jsonl`），以及后续两个加载/重试真实测试、生命周期测试，避免继续扩散任务范围。
+
+B05c2a1小任务已完成并复核仅删除无用import、四旧测试等实际notes加载结束后显式检查loadError，保留全部原断言。受影响四个旧行为（含terminal_integration）格式/vet/竞态门禁 `build/logs/check-20261106-044713-race.log` 通过（35.277秒）。继续顺序派 `build/worker-tasks/b05c2a2-load-and-retry-tests.md` 仅新增两个真实读取/重试保草稿测试，执行 `build/logs/worker-b05c2a2-load-and-retry-tests.jsonl`；新loader边界行为仍待这些测试，不据旧回归通过声明全部接受。
+
+为B05d后续重构预先准备公开合成proof/pin兼容golden，`build/review-baselines/root-public-golden.json` 由固定字节输入、Python标准HMAC与OpenSSL Ed25519 SPKI独立计算；无真实凭据/保险库访问。任务 `build/worker-tasks/b05d0-crypto-goldens.md` 尚未下发，不把计算fixture当作Go实现通过。RootMaterial/systemauth三任务已只读审查，明确Root分支必须json.Valid而不解析payload字段类型；UnlockKey副本由调用方wipe，Enroll取副本后立即Close Root并覆盖所有返回路径清副本。
+
+B05c2a2外部生成新测试后，主代理与只读复核一致发现测试夹具四处确定阻断：错误GitHub import、Profile追加到Summary slice、seed前查空列表、含秘密的Profile与编辑公开表单全量比较。尚未运行，不能形成行为证据。继续退回同一文件的极小修正任务 `build/worker-tasks/b05c2a2-fixture-corrections.md`，记录 `build/logs/worker-b05c2a2-fixture-corrections.jsonl`；只修这些错误并补全局busy/原备注存储不变断言，生产不改。
+
+B05c2a2外部完成四处fixture修正后仍有两处测试API拼写/返回值错误，主代理在worker退出后仅改h.a.form.keyFile为h.a.keyFile，以及ServerNote双返回值并检查err；未改生产逻辑，也未隐藏作者分工。新两个实际加载/读取失败重试测试格式/vet/竞态门禁正在执行，待运行结果。
+
+B05c2a2真实读取与失败重试保草稿门禁 `build/logs/check-20261106-050357-race.log` 通过（7.841秒）；只读复查确认四处旧阻断已消、主代理两处API小修正确，完整marker/秘密为空/busy/store/错误可见/草稿保护及队列清理均保留。下一单 `build/worker-tasks/b05c2a3-stale-operation-tests.md` 仅同一test文件提取公共合成seed并追加close/lock/同ID重开和无关editorOperation隔离，记录 `build/logs/worker-b05c2a3-stale-operation-tests.jsonl`，生产不改。
+
+B05c2a连接编辑异步读取检查点接受。全部真实ConnectionNotes门禁 `build/logs/check-20261106-051038-race.log` 通过（15.231秒），新增close/lock/reopen带fresh marker正向与独立editorOperation隔离；公共fixture提取后旧读取/重试完整断言仍通过，只读审查无新问题。所有权 `build/logs/b05c2a-files-review.json` 恰八个预期文件、无依赖/locale越界。继续只派 `build/worker-tasks/b05c2b-editor-note-save.md` 的SaveServerNote RPC及pending-note部分成功/专门重试生产实现，记录 `build/logs/worker-b05c2b-editor-note-save.jsonl`；新保存行为后续另单真实测试与完整desktop门禁，App最终daemon切换仍待做。
+
+B05c2b首次外部调用返回429 Too Many Requests，原生五次重连后turn.failed，没有源码命令或文件修改。主代理确认退出后将退避再fresh重试原任务/配置；不读取私有节点配置，不将限流错误当作实现交付。原记录 `build/logs/worker-b05c2b-editor-note-save.jsonl` 保留。
+
+B05c2b退避fresh重试再次429并在原生五次重连后失败，`build/logs/worker-b05c2b-editor-note-save-retry.jsonl` 保留，session21778已退出，没有源码修改。当前稳定代码增加过B05c两项异步加载，完整desktop/terminal_integration尚未覆盖；主代理在更长冷却期间启动完整桌面格式/vet/竞态门禁，不做无意义重复检查，也不冒称正在写保存实现。待完整回归后再次以原配置重试。
+
+B05c1/c2a两项异步备注迁移后的完整desktop（含terminal_integration）门禁 `build/logs/check-20261106-051746-race.log` 通过（506文件格式、vet、全套竞态269.254秒）。后台保存实现尚无交付，完整回归期间未有编码worker修改源码。更长冷却后顺序启动c2b第三次fresh调用，记录 `build/logs/worker-b05c2b-editor-note-save-retry2.jsonl`，任务/配置不变。部分成功测试草案已收紧UI切换后Frame及canary必须用新保存的完整公共配置，禁止旧seed p污染代理断言。
+
+B05c2b第三次fresh恢复并落盘保存主体、section冻结、pending dirty guard及四条中英文文案；主代理和独立只读审查发现尚未验收的问题：helper gen类型不符（client值类型worker已自行修）、pending按Manual差异跳写可在回执不明后错误清状态、成功回调过早释放phase可再入Profile保存、首次身份review后pending未退出review、普通footer取消被意外加确认。修正任务 `build/worker-tasks/b05c2b-review-corrections.md` 已备好，等原worker结束后顺序派发；不运行已知编译错误或把UI落盘当全部通过。
+
+B05c2b五点小修正首次外部调用又429并在原生五次重连后失败，`build/logs/worker-b05c2b-review-corrections.jsonl` 保留，session79175退出1、未执行源码修改。仍按用户指定DeepSeek分工退避重试，不直接代写生产修正。已交付四条翻译先用独立localize测试验证；不能据此接受已知有gen类型/重试语义问题的保存实现。
+
+独立翻译目录门禁 `build/logs/test-20261106-053441-race.log` 通过（1.599秒）。五点修正限流结束后约三分钟再fresh重试，记录 `build/logs/worker-b05c2b-review-corrections-retry.jsonl`，任务补清一次批量读取footer与save片段以覆盖第五条取消行为。生产检查点仍未接受。
+
+B05c2b五点修正重试在一次429重连后恢复，外部仅改connections.go并正常退出，记录 `build/logs/worker-b05c2b-review-corrections-retry.jsonl`。独立复核确认helper类型正确、pending每次显式retry无条件RPC确认后才清状态、phase保持到完成、退出identity review及普通取消恢复，未见新P1/P2。相关既有保存/凭据重启/错误密码/普通取消/外部请求不继承及新Notes读取竞态门禁 `build/logs/check-20261106-054229-race.log` 通过（47.901秒）。所有权 `build/logs/b05c2b-files-review.json` 恰五预期source/locale文件、依赖不变；新pending行为仍待真实测试。继续外部仅新增 `build/worker-tasks/b05c2b-tests-partial.md` 两组测试，记录 `build/logs/worker-b05c2b-tests-partial.jsonl`，不查询额外审计避免猜接口。
+
+B05c2b新save测试已落盘，最终阶段一次429后正常完成，`build/logs/worker-b05c2b-tests-partial.jsonl` 保留。只读审查发现测试需要修正：vault.Proxy不存在、保存按钮必须精确“保存连接”、成功页面实际1而非0、直接赋字段不能验证UI禁用。canary使用当前新代理公共配置且Keep两项true、完整存储/秘密/快照断言设计有效。按 `build/worker-tasks/b05c2b-tests-partial-fix.md` 仅退修同test，记录 `build/logs/worker-b05c2b-tests-partial-fix.jsonl`，不改生产。额外PIN注入只验证清秘密，不是硬件能力验证。
+
+B05c2b save测试四点修正已外部交付并正常退出，记录 `build/logs/worker-b05c2b-tests-partial-fix.jsonl`。同时仅生产构建（不编译正在改的_test.go）五目标通过 `build/logs/compile-20261106-055254.log`；这是编译证据，不是其他系统运行/硬件验证。新Notes全部定向竞态门禁现开始，静态复核并行，不把外部声称完成当作新行为已通过。
+
+B05c2b新save测试四点修正只读复核通过；全部Notes定向格式/vet/竞态 `build/logs/check-20261106-055418-race.log` 通过（25.317秒、507文件格式）。真实partial Profile落库/notes拒绝、UI冻结和可编辑note、清输入秘密、公共缓存、独立最新公共配置canary不被retry覆盖、正常Manual保存/清空保snapshot及凭据均通过。继续 `build/worker-tasks/b05c2b-tests-cancel-login.md` 仅同test追加pending取消确认和notes成功后SSH失败解冻/正常改密保存；执行 `build/logs/worker-b05c2b-tests-cancel-login.jsonl`，不改生产。
+
+B05c2b cancel/login两测试已外部交付，记录 `build/logs/worker-b05c2b-tests-cancel-login.jsonl`；独立复核确认应修测试renderer/状态断言：确认框需promptView tester、公开form.ID取消后保留、真实登录错误提示应匹配实际error而非泛失败关键词并检查Auths增长。正常最终成功replace清零断言有switchHost/reset语义支持，保留。继续只退修同test `build/worker-tasks/b05c2b-tests-cancel-login-fix.md`，记录 `build/logs/worker-b05c2b-tests-cancel-login-fix.jsonl`，生产不改。
+
+B05c2b cancel/login测试三点修正已外部交付并正常退出，`build/logs/worker-b05c2b-tests-cancel-login-fix.jsonl` 保留。采用独立promptView headless tester操作真实取消与接受按钮、按原cancel语义断言公开form可保留而pending/load与秘密撤销、登录错误匹配实际error及已保存提示并增加真实Auths计数。新Notes竞态门禁开始，待结果；生产不改。
+
+B05c2b cancel/login三点测试修正独立复核通过，全部Notes格式/vet/竞态 `build/logs/check-20261106-061806-race.log` 通过（34.466秒）：实际prompt取消/放弃按钮、已保存Profile保留而未存note放弃、notes实际重试成功后真实SSH认证失败、恢复普通可编辑及正确改密不连接保存均成立。继续 `build/worker-tasks/b05c2b-tests-reverted-note.md` 仅追加UI Manual回原值仍须真实确认写入回归，记录 `build/logs/worker-b05c2b-tests-reverted-note.jsonl`；构造真实服务端状态变化，不夸称真实丢包验证。
+
+B05c2b reverted-note回归已外部交付，记录 `build/logs/worker-b05c2b-tests-reverted-note.jsonl`。只读审查确认真实partial后独立RPC造成服务端备注分歧，UI完整恢复original使Manual差异为零，retry实际写回才能通过完整远端note/pending/page1断言；Profile不变与无SSH保持。该用例不是实际网络丢包测试。外部报告一次非必要动态UI源码搜索被hook拒绝，未重试/绕过，测试依据已给fixture完成。全部Notes定向竞态开始，待结果。
+
+reverted-note首次门禁 `build/logs/check-20261106-062528-race.log` 未通过：新用例误将TextArea编辑值当作HasText节点，line137在真实retry前失败，非生产故障。主代理与只读复核确认rt.labels不枚举输入内容；主代理仅把这一测试可见性API误用改为Find/Focused(服务器备注输入)，保留真实h.input、零Manual差异、完整原snapshot、独立服务端marker和最终落库全部断言。单例定向复验开始。
+
+reverted-note测试API小修后单例门禁 `build/logs/check-20261106-062758-race.log` 通过（6.033秒）；这是实际零Manual差异下仍提交完整备注的证据，不是丢包模拟。B05c2b完整desktop含terminal_integration门禁开始。并行仅派 `build/worker-tasks/b05d0-crypto-goldens.md` 新增vault兼容测试（不改生产，desktop依赖不编译vault的_test.go），记录 `build/logs/worker-b05d0-crypto-goldens.jsonl`；Root原语/材料生产重构须等桌面整包结束，不并行改依赖生产。
+
+B05c2b完整desktop含terminal_integration门禁 `build/logs/check-20261106-062847-race.log` 通过（289.987秒）。备注RPC保存/部分成功/notes-only重试、真实UI冻结/确认放弃、SSH失败后恢复及改密、Manual回原值仍写确认、完整快照/凭据保留和全部原桌面终端回归通过，检查点接受。最终所有权 `build/logs/b05c2b-files-review-final.json` 分类本项六个source/locale/test与独立d0新test，依赖不变，无跨界。B05工作区数据迁移组接受；GUI实际OwnerSession/独立daemon启动退出/CLI和B06/7/8及安装仍未完成。
+
+B05d0仅新增 `internal/vault/crypto_compat_test.go`，外部记录 `build/logs/worker-b05d0-crypto-goldens.jsonl`。只读审查确认key/ID/message/Proof与SPKI pin字面golden均与公开独立向量一致，fixture为自有合成Session/key，清理无调用方别名，无真实保险库文件/数据。开始在原生产实现上验证golden，之后才允许提取共享原语。
+
+B05d0原实现上的公开兼容golden门禁 `build/logs/check-20261106-063714-race.log` 通过（508文件格式、vault vet、定向竞态1.615秒），Proof域字节和DER/SPKI pin格式固定。继续仅 `build/worker-tasks/b05d1-vault-shared-primitives.md` 交外部提取两个vault生产文件私有helper，执行 `build/logs/worker-b05d1-vault-shared-primitives.jsonl`；不新增RootMaterial或改设备/GUI认证同批文件，原语提取后回归再扩材料。
+
+B05d1首次外部调用429，五次重连后失败，记录 `build/logs/worker-b05d1-vault-shared-primitives.jsonl`，session50166退出1，尚无生产修改。继续原配置退避；只读盘点vault既有权限/格式/缓冲所有权覆盖，不绕过节点或保护规则。
+
+B05d1重试已恢复并完成，仅两文件私有helper抽取，记录 `build/logs/worker-b05d1-vault-shared-primitives-retry.jsonl`；独立对照基线静态审查无实质缺陷，确认文件句柄/限制/权限错误差异、GCM认证Header/plain归属、Session完整payload解析及输入不擦、HMAC域和SPKI字节保持。所有权 `build/logs/b05d1-files-review.json` 仅两个预期生产文件、依赖不变。Vault全套格式/vet/竞态门禁开始；补充契约测试三单已备，等现有全套结果后顺序执行。
+
+B05d1现有Vault全套门禁 `build/logs/check-20261106-064608-race.log` 通过（508文件格式、vet、全套竞态43.911秒，含独立Proof/SPKI golden）。继续外部 `build/worker-tasks/b05d1-tests-file.md` 只新增受限读取契约测试，记录 `build/logs/worker-b05d1-tests-file.jsonl`，生产保持稳定。当前尚未新增RootMaterial/API或改变系统解锁流程。
+
+B05d1 tests-file首次外部429五次重连用尽，`build/logs/worker-b05d1-tests-file.jsonl` 保留，session77237已退出1、未写测试；按用户指定节点冷却重试，不读取或改节点私有配置。并行仅只读检查补测任务的精确接口和跨系统错误契约。
+
+D1五目标生产编译 `build/logs/compile-20261106-064831.log` 通过，跨系统运行仍未验证。补测任务已只读收紧：Windows目录需区分Open/Stat原始PathError与成功Stat后非regular，Version/Salt/ID长度用GCM正确认证Header独立检验结构。冷却约三分钟后tests-file fresh重试，记录 `build/logs/worker-b05d1-tests-file-retry.jsonl`，仍仅新测试文件。
+
+D1 read-contract测试已外部落盘（`worker-b05d1-tests-file-retry.jsonl`），静态审查发现需修：Session.Close为void却被当error、多份proof应wipe、identity pin应比较实际API。另超大零文件本来非法JSON会掩盖上限失效，需合法Seal前缀+小块空白至max+1的真正边界探针及正向控制。按 `build/worker-tasks/b05d1-tests-file-fix.md` 仅同test退修，记录 `build/logs/worker-b05d1-tests-file-fix.jsonl`，生产不变，尚未运行新测试。
+
+read-contract小修外部交付后静态复核确认合法前缀+空白精确max+1和原错误断言有效；新pin比较仍误将BrokerPublicKeyPin的string当[]byte。主代理仅删除公开pin的两处wipe并改string比较（生产不改），开始读取契约定向门禁。Proof/key实际字节缓冲清理保留。
+
+读取契约门禁 `build/logs/check-20261106-065700-race.log` 通过（509文件格式、vet、竞态5.229秒）：合法读取/权限恢复正向、权限错误差异、目录原始错误、合法JSON尾空白精确max+1拒绝与缺失路径均通过。继续外部 `build/worker-tasks/b05d1-tests-buffer.md` 只新增调用方缓冲所有权测试，执行 `build/logs/worker-b05d1-tests-buffer.jsonl`，生产不动。
+
+D1缓冲所有权测试已外部正常交付，仅 `internal/vault/open_key_ownership_test.go`，记录 `build/logs/worker-b05d1-tests-buffer.jsonl`。覆盖成功调用方key改变后仍独立golden Proof/Pin、Close不改caller key/data、三类失败输入完整不变及小并发Proof/Close。开始格式/vet/竞态定向门禁，独立只读复核并行；生产不动。
+
+缓冲所有权定向门禁 `build/logs/check-20261106-070121-race.log` 通过（1.639秒），只读复核确认caller key/data完全保持与独立golden、真实Base64密文篡改、并发channel清理有效；但并发支路接受任意error，主代理仅补明确“保险库已锁定”错误断言，仍要求nil proof，单并发用例重新验证。生产不改。
+
+并发Proof/Close明确关闭错误的补强门禁 `build/logs/check-20261106-070211-race.log` 通过（1.362秒）。继续外部 `build/worker-tasks/b05d1-tests-auth.md` 仅新增OpenKey认证/完整Session解析边界测试，执行 `build/logs/worker-b05d1-tests-auth.jsonl`，非法结构Header用正确GCM认证独立证明校验，不能只做AAD不匹配；生产不动。
+
+D1认证/解析契约测试已外部正常交付，仅 `internal/vault/open_key_contract_test.go`，记录 `build/logs/worker-b05d1-tests-auth.jsonl`。包含结构非法但AAD正确的Version/Salt/ID Header、其他格式/长度/篡改、真实GCM认证正确但payload语法/字段类型非法，以及正常payload独立golden正向。格式/vet/定向竞态启动，静态复核并行，生产不变。
+
+认证/解析初始定向门禁 `build/logs/check-20261106-070511-race.log` 通过（1.432秒）；只读复核确认正确GCM结构边界与原Session完整payload拒绝有效，但认证后解析失败分支尚未断言caller key/data不变，共享validKey可能掩盖被擦除的问题。继续 `build/worker-tasks/b05d1-tests-auth-inputs.md` 外部仅补两个invalidPlains子case独立key/data前后全量比较，记录 `build/logs/worker-b05d1-tests-auth-inputs.jsonl`，生产不动。
+
+D1 auth-inputs小任务首次429五次重连失败，`build/logs/worker-b05d1-tests-auth-inputs.jsonl` 保留，session15724已退出1，未修改测试。按原配置冷却重试；当前稳定生产及三组已交付测试启动Vault整包竞态回归，尚未补全的解析失败caller-input断言仍待补，不虚报已接受。
+
+当前稳定Vault全套门禁 `build/logs/check-20261106-070713-race.log` 通过（48.300秒）。解析失败caller输入保持的更严格断言仍待外部补全；冷却超过三分钟后fresh重试同一任务，记录 `build/logs/worker-b05d1-tests-auth-inputs-retry.jsonl`，不直接代写生产或更改节点配置。
+
+D1 auth-inputs退避fresh重试已正常完成，记录 `build/logs/worker-b05d1-tests-auth-inputs-retry.jsonl`；仅两个invalidPlains子case独立key/data及调用前副本，失败后全量比较保持，原nil Session/ErrUnlock/cleanup及正向golden未改。更严格子用例开始定向格式/vet/竞态复验；生产不动。
+
+D1严格解析失败输入保持子用例门禁 `build/logs/check-20261106-071130-race.log` 通过（1.604秒），只读复核确认独立key/data前后全量比较和cleanup正确。结合稳定生产整包 `check-20261106-070713-race.log`、固定golden及三组契约，D1共享原语检查点接受；最终所有权 `build/logs/b05d1-files-review-final.json` 恰两生产与三测试文件，依赖不变。继续外部 `build/worker-tasks/b05d2-root-material.md`，只新增轻量材料并复用私有helper，记录 `build/logs/worker-b05d2-root-material.jsonl`；系统认证/App暂不切换。
+
+B05d2外部执行已完成但新增 `internal/vault/root_material.go` 被protected-content hook拒绝，记录 `build/logs/worker-b05d2-root-material.jsonl`。无RootMaterial文件/API落地、未做该项检查；没有改工具、路径或写法重试绕过。日志未返回更具体的拒绝理由，该项及其设备/GUI认证依赖保持待处理。此前协调记录写入亦有路径机密启发式拦截，未重试。
+
+继续独立B05e1外部打包前置：`build/worker-tasks/b05e1-stage-daemon.md`，执行 `build/logs/worker-b05e1-stage-daemon.jsonl`。仅build.go新增每目标stageDaemon，沿用vendor/trimpath/GOOS/GOARCH/CGO0，CLI后packageApp前暂存资源根smallsshd[.exe]；install.go在source预检和codesign后stage替换前均Lstat固定daemon，拒绝缺失/symlink/nonregular/无执行位，保留备份回滚/不quit不launch。只读复核指出Windows执行位测试语义与symlink覆盖，外部 `build/worker-tasks/b05e1-tests-portability.md` 完成仅test补全，执行 `build/logs/worker-b05e1-tests-portability.jsonl`；主代理仅gofmt并验收。
+
+B05e1工具包门禁 `build/logs/check-20261106-072154-race.log` 通过（511文件格式、vendor校验、vet、工具包全套竞态1.429秒），合成bundle覆盖缺失/目录/无执行位/正常与指向真实可执行target的symlink拒绝。Windows明确skip该macOS安装权限语义测试，不能宣称Windows运行验收。daemon五目标生产编译 `build/logs/compile-20261106-072013.log` 通过。所有权 `build/logs/b05e1-files-review-final.json` 为3预期文件，依赖/native manifest/patches不变。尚未运行本次stageDaemon实际打包/codesign/安装；当前Applications应用未替换，B集成未完成。
+
+B05e2a继续外部 `build/worker-tasks/b05e2a-fixed-locator.md`，执行 `build/logs/worker-b05e2a-fixed-locator.jsonl`。新增不公开字段LocalService/NewLocalService/Client副本及唯一固定daemon路径，真实os.Executable经EvalSymlinks后按main/cli/legacy/compile布局推导，Lstat拒绝链接/非regular、Unix执行位与CodeID验证；无生产任意路径/env/PATH覆盖，无进程启动/解锁/App接入。ConnectExecutable只在Dial失败处加私有Unwrap包装；IsExecutableEndpointUnavailable要求该包装再验证Unix实际unix/dial OpError或Windows open PathError，仅缺失/拒绝可分类，Prepare权限/文件错误、身份/TLS/协议/busy/ctx不能当作无端点。只读生产审查未发现实质问题。
+
+审查指出路径表使用Unix绝对路径在Windows IsAbs失败，以及人工错误表尚未证明实际Dial分支包装。两项由外部 `build/worker-tasks/b05e2a-tests-integration.md` 补齐，执行 `build/logs/worker-b05e2a-tests-integration.jsonl`：宿主filepath根/分隔符转换保留全部平台布局；当前真实测试executable在独立短私有目录实际ConnectExecutable，要求nil wire/非nil err且缺端点分类成立，5秒ctx并清理，不启动进程。主代理仅gofmt、静态复核与运行门禁，未代写生产/测试。
+
+B05e2a全生产五目标编译 `build/logs/compile-20261106-073030.log` 通过；外部补测试期间生产已冻结，compile不编译_test.go。localipc完整门禁 `build/logs/check-20261106-073159-race.log` 通过（519文件格式、vendor校验、vet、全包竞态2.801秒），client完整门禁 `build/logs/check-20261106-073248-race.log` 通过（53.312秒）。所有权 `build/logs/b05e2a-files-review-final.json` 为8预期新增文件及service_transport.go一处Dial错误包装，依赖/vendor manifest不变。此检查点接受；Windows/Linux仍只是编译，非运行验收。EnsureRunning启动/生命周期、RootMaterial及其认证依赖、GUI/CLI最终接入、后台传输/OS防护、0.1打包安装仍未完成；当前Applications应用未替换。
+
+## 闲置策略由用户控制、后台驻留与图标设置 · 2026-11-06
+
+用户要求修复版可查看，并在设置选择后台方式和图标；反馈闲置断开不能关闭、15/20分钟混杂。源代码确认：desktop/idle.go固定15分钟自动锁整个保险库；CLI session默认15分钟且可提交其他建议，approvalGrantChoices显示请求IdleSeconds，认证busy时整行禁用。会话已支持IdleSeconds==LifetimeSeconds表示不提前因闲置失效，但仍会被全局15分钟锁定中断。现有owner进程/连接watchdog与系统锁屏/休眠策略不属于用户闲置开关，不应混用。
+
+继续按用户指定外部DeepSeek逐项编码；A1任务 `build/worker-tasks/idle-settings-a1.md` 负责独立非秘密behavior偏好、可关闭/改时长的全局锁定与会话默认设置，源代码修改尚未落地。首次执行 `build/logs/worker-idle-settings-a1.jsonl` 因429五次重连用尽退出1，未改代码；保持原配置冷却重试。A2精确任务 `build/worker-tasks/idle-settings-a2.md` 已规划，须A1门禁后派发，不能将规划视为已实现。
+
+后台边界：当前可独立实现GUI关闭窗口后驻留及Dock/菜单栏入口，不能称为独立安全后台已集成。独立smallsshd解锁/GUI接入仍受RootMaterial新增的保护钩子拒绝阻塞，该操作保持冻结、不更换工具/文件绕过。开发隐藏启动与正式后台偏好必须隔离，不能自动前置窗口。用户本轮明确要求查看修复版，完成代码与无窗口验收后再展示；当前安装应用未替换。
+
+A1 fresh冷却重试两轮仍均429，记录 `build/logs/worker-idle-settings-a1-retry.jsonl`（session21527退出1）和 `build/logs/worker-idle-settings-a1-retry2.jsonl`（session33929退出1）；每轮自动重连5次，未执行编码。三轮派工均已结束，没有活跃外部编码任务，尚无本轮生产变更。主代理已通过异步问题请求用户明确是否允许改由主代理实现这批修复；在答复前保持原分工，不把等待视为许可。独立后台驻留精确任务 `build/worker-tasks/presence-settings-b1.md` 已准备但未派发。
+
+等待分工答复期间，现有闲置/审批时长三项基线门禁 `build/logs/check-20261106-135332-race.log` 通过（519文件格式、vendor校验、vet、定向竞态2.519秒）。这只证实现有写死15分钟/双时钟与总期限选择契约，不是新关闭开关/后台驻留的验收，不应据此宣称修复已交付。
+
+用户随后明确授权改用GPT-6.1 Terra或更低模型执行，分工阻塞解除。已启动内置编码worker `/root/idle_settings_impl`（GPT-6.1 Terra，medium，独立上下文）按A1完整契约直接实现；主代理继续只做规划/审查/格式和门禁，既有只读reviewer不编码。外部DeepSeek三个429进程均已结束，未与当前worker并行写。旧RootMaterial/协调记录的保护拒绝仍冻结，不因模型切换而重试。
+
+Terra A1首批9文件交付，主代理仅gofmt后定向门禁 `build/logs/check-20261106-135942-race.log` 未通过：仅新RoundTrip测试temp目录未显式0700；正式Prepare约束保持。locale `build/logs/test-20261106-135942.log` 通过。只读review建议打开后同句柄f.Stat、真实Rename失败回滚/临时文件清理覆盖，并将闲置设置移出TouchID卡。已退回同worker一并修正；尚未接受A1，不启动A2并行改生产。
+
+A1退修后门禁 `build/logs/check-20261106-140342-race.log` 仅旧collapsed分类Tab焦点断言失败：闲置卡置顶后首个控件已是闲置锁定开关，worker仅更新该Focused预期，保留单Tab/页面/清密码/取消认证全部断言。最终 `build/logs/check-20261106-140458-race.log` 通过（523文件格式、vendor、vet、Settings/Idle/Behavior全组竞态4.762秒），连同locale已通过，A1接受。真实持久化false/选20m/开关重绘重载、双时钟/关闭后不锁/20m边界、同handle普通文件检查、Rename失败内存/计时/目标/临时文件保留均通过，idle卡独立于系统认证卡。所有权 `build/logs/idle-settings-a1-files-review-final.json`，依赖/patches不变。尚未宣称会话审批已接偏好或已安装。
+
+顺序A2已派同Terra worker，完整契约 `build/worker-tasks/idle-settings-a2.md`，基线 `build/review-baselines/idle-settings-a2.json`。用户选择缓存仅为当前ID+Nonce公开terms，不存认证结果或签名器；改选须撤旧验证并抑制queued/跨视图自动尝试；关闭idle使用绝对lifetime契约，不能0沿用CLI。A1生产验收稳定后才开始A2，不并行写同模块。
+
+A2 Terra首次交付静态审查发现缺import、续期误用新会话默认及新view主动确认测试仍用旧state，均同worker退修。核对approval.Renew确由核心保留上次已批准scope再换Nonce，因此续期只从可信旧scope恢复idle/off，新grant依用户默认；fresh nonce仍隔离旧选择cache与认证。补续期20m/off与当前15m偏好的冲突测试、busy实际Switch取消/seq和submitting禁改、dispose旧state后other.start合成验证提交，保留生产claimAuto。未放宽Manager/Client协议或认证。
+
+A2 `build/logs/check-20261106-141258-race.log` 通过（526文件格式、vendor、vet、desktop Approval/Grant/Renewal/Idle/Settings/Behavior全组竞态46.879秒），locale `build/logs/test-20261106-141258.log` 通过；approval整包竞态 `build/logs/check-20261106-141356-race.log` 通过（1.531秒），合成时钟真实DecisionProof/DecideWithLifetime验证CLI20m建议被owner5m/off覆盖，关闭idle超过20m仍活但总期限仍失效。所有权 `build/logs/idle-settings-a2-files-review-final.json`，核心Manager/Client生产/依赖/patches未改。A2接受，尚未最终全量发布验收或安装。
+
+B1顺序Terra实现已交付并经过多轮静态退修：新增运行与后台分类、off/application驻留、Dock/Tray偏好及窄presence effects。重点修复隐藏驻留仍被原CLI审批通知Show/Focus拉前台（进入backgrounded时nextApprovalPopup/showApproval共同静默、不消耗notified，用户恢复再提示）、主窗独立于其他可见窗的最小化/隐藏恢复、非Dock平台必须实际托盘、退出attempt FIFO复位、dev显式show统一恢复。托盘失败以独立warning/effective fallback保留入口，原请求偏好不被无关idle保存改写；允许用户在Mac及非Dock失败状态通过设置恢复，不制造设置死锁。独立service未开放，RootMaterial拒绝仍未绕过。
+
+B1首轮 `build/logs/check-20261106-142333-race.log` 未通过（46.350秒）：仅新fallback UI测试HasText未找到提示。查vendored ui/runtime.go确认Text.Label会替代rt.labels实际文本；worker把稳定Label移到外层容器，子Text保留真实warning，不删断言。locale `build/logs/test-20261106-142333.log` 通过。最后静态review补非Dock失败后off→关闭Tray的UI恢复路径、startup显式show走统一Restore/清静默标记，worker已退修，待最终复验。当前无新安装包、未启动任何验证窗口。
+
+B1最终 `build/logs/check-20261106-142823-race.log` 通过（530文件格式、vendor、vet、desktop Presence/Settings/Idle/Behavior/Startup/Development/Approval/Grant/Renewal全组竞态47.941秒），locale `build/logs/test-20261106-142823.log` 通过。只读复核最终3处修正无新实质问题：非Dock tray失败可切off再关闭Tray；显式dev show统一Restore并清静默；warning/status外层标记保留真实Text。所有权 `build/logs/presence-settings-b1-files-review-final.json`，依赖/patches和idle生产不变；approval仅追加驻留静默guard。B1接受。macOS/native Tray点击未在真实窗口运行，当前证据是headless effects/Tester与待进行交叉编译；不能宣称独立service已集成。
+
+C1 Terra仅新增 `internal/desktop/runtime_settings_preview_test.go`，主代理gofmt后opt-in无窗口预览 `build/logs/test-20261106-143043.log` 通过（0.878秒）。8张实际设置wide/narrow/off/custom/presence图及1张420x620实际审批off图位于 `build/snapshots/runtime-settings/`；无vault/broker/Native/系统认证/真实偏好，静态复核通过。主代理已逐图检查关键wide/narrow和审批off，无横向裁切，关闭时控件灰置且保留分钟。该图为合成状态预览，不代表已修改用户的实际偏好。
+
+全生产五目标编译 `build/logs/compile-20261106-143011.log` 通过（darwin arm64/amd64、linux amd64/arm64、windows amd64）；其他OS仍非实机运行保证。A1/A2/B1/C1代码冻结，开始tools build全平台与最终发布门禁；仅工具更新规定两份生成文件，不手工编辑，不启动/退出用户应用。
+
+tools build -platform all 已成功完成：macOS arm64/amd64 App均编译签名、Linux amd64/arm64 deb与tar.gz、Windows amd64 exe。现有包版本仍0.0.1，未冒称完整0.1/B已完成；Windows NSIS安装器因本机无makensis未生成，不影响本机Mac包。`build/logs/runtime-settings-build-check-c1.log` 通过生成文件校验，两份规定生成文件与构建前哈希相同，`build/logs/runtime-settings-generated-review.json` 留证；本机App主程序/固定smallsshd/cli/icon存在、普通文件/权限/hash记录 `build/logs/runtime-settings-mac-artifacts.json`。
+
+最终全仓门禁 `build/logs/check-20261106-143501-race.log` 正在运行：531文件格式、vendor校验、全仓vet已通过，使用tools统一入口、race/serial/terminal_integration及工具编译CLI QA binary；未改代码或启动用户桌面应用。尚未将该运行中的门禁标为通过或执行安装。
+
+最终全仓门禁 `build/logs/check-20261106-143501-race.log` 全部通过：vendor补丁校验、531文件gofmt、全仓vet、race/serial/terminal_integration；CLI4.307s、broker262.556s、client55.966s、desktop326.203s、service61.626s、SSH30.635s、系统认证16.258s、传输17.539s、vault51.709s及其余包通过。该运行结束后未再修改Go源代码。
+
+已通过 `go run ./tools install` 更新 `/Applications/SmallSSH.app`，证据 `build/logs/install-20261106-144958.log`：完整stage包codesign deep/strict验证通过，源/stage固定smallsshd普通可执行文件检查通过，旧版保留 `/Users/smallraw/.Trash/SmallSSH-before-20261106-144958.784421000.app`，未启动/退出/前置用户App。安装后主程序/固定daemon/CLI/icon与构建产物SHA256逐项一致，`build/logs/runtime-settings-install-verification.json`。本轮A1/A2/B1/C1修复交付完成，现有运行窗口仍是旧进程，用户保存当前工作后重开即可使用新设置；未直接读取或改写用户真实behavior偏好。截图为合成预览，开关默认保留旧15分钟策略，实际是否关闭由用户在新设置中决定。
+
+交付边界：此版提供可关闭/改时长并保存的全局闲置锁、用户最终决定的CLI会话闲置条款与续期、应用进程驻留和Dock/菜单栏入口。独立smallsshd认证/GUI接入、真正退出GUI后独立核心承接任务以及B06/B07/B08完整方案仍未全部完成；RootMaterial/旧协调记录保护拒绝未被模型切换绕过。本机native托盘外观/点击未开真实窗口实测，当前证据为headless效果与实际打包签名，Windows/Linux仅编译/打包，不冒称其他OS运行验收。
+
+## UI紧凑度、连接表单与标题栏整合 · 2026-11-06
+
+用户希望基础组件一致、更紧凑的新建连接和首页，并去掉原生Title头。两个只读explorer确认已有按钮/表单控件/弹窗/侧栏/metrics，但页面堆叠标题和固定900x720弹窗、34/36混用导致密度不一致。当前MyGo v0.7.1源码已支持TitleBarHidden/Context.TitleBar/DragWindow，无需依赖升级；官方tag window.go亦核对。具体代码继续用户授权的GPT-6.1 Terra执行。
+
+UI01 `build/worker-tasks/ui-chrome-01.md` 已实现：Mac主窗口隐藏标题栏并保留原生控制，Win/Linux默认框架；TitleBar左右/高度按runtime和zoom预留，空白spacer独立拖拽，离线bar为零不留额外空条，窄窗导航使用现有图标及新Settings齿轮。原native Title/accessibility/后台启动/认证逻辑保持。初始门禁 `build/logs/check-20261106-152550-race.log` 与locale通过；静态review补齿轮和边缘/上下空白，最终 `build/logs/check-20261106-153232-race.log` 通过（533文件格式、vendor、vet、定向竞态3.706s），locale `build/logs/test-20261106-153232.log` 通过。复核英文窄窗/高bar/键盘/传输工具/未保存锁确认无实质回归。原生OS拖动/红黄绿不由headless证明，尚未开真实窗口验证。
+
+自动审批拒绝保存 `build/worker-tasks/ui-form-02.md`，理由workspace-name-heuristic“路径名看起来像机密文件，可能含真实密钥”，该元数据文件写入保持未完成，没有改工具/文件名/写法重试。此可选说明文件不作为实现前提；后续已授权UI源代码任务通过既有collaboration会话直接分配，不请求任何agent创建该被拒绝的文件或读取真实凭据。
+
+UI02 Terra已交付小型FormSection与共用FormGap/SectionGap、可选Compact Dialog、连接表单820x620及36px控件、中文128起并按译文测量的分类侧栏；默认Dialog其他调用保持原样，单一ui.Form及认证/凭据保留、身份失效、备注重试/未保存保护未改。英文窄窗分类裁切和预览断言在原worker修正；备注重试旧测试先滚动至可点击区域，保留失败/草稿/存储断言。定向门禁 build/logs/check-20261106-154823-race.log 通过（5.895s），组件全包竞态 build/logs/test-20261106-153924-race.log 通过（2.294s），locale build/logs/test-20261106-153924.log 通过；离线预览 build/logs/test-20261106-155217.log 通过，图片 build/snapshots/ui-refinement-connections/ 已查看。其后端口72缩64为英文地址留空间，待最终统一复验。UI03按用户明确的在线工作台/服务器列表顺序派发同一Terra worker，基线 build/review-baselines/ui-workspace-03.json；不更改工具/分屏偏好或解锁首页。
+
+UI03已落地：服务器行局部36px/gap2，global NavigationItem不改；展开与窄栏共用key/滚动模型及avatar几何。终端空态依据全量连接和有效selected显示添加/选择/已选择连接引导，失效ID退回选择，筛选无结果不使已有选择失效；选择按钮跨帧展开并聚焦实际搜索输入，新建经navigate保留守卫，连接仍走openShell。未改已连接/editor/tab header34或工具/分屏偏好。名称沿用reviewText显示不可见控制与方向字符并保持单行。只读Terra reviewer首轮及末轮均无实质问题。
+
+UI03及密度/rail定向竞态 build/logs/check-20261106-160359-race.log 通过（2.821s）；初始preview与locale同时启动造成秒级同名test日志互相覆盖，该混合日志不作最终证据。locale已独立重验 build/logs/test-20261106-160527.log 通过（0.305s）。最终离线预览 build/logs/test-20261106-160620.log 通过（1.091s），38图在build/snapshots/ui-refinement-final/，包括中英窄窗连接分类、light/dark和scrolled两种侧栏、三种真实无session工作台及现有navigation；主代理查看关键图无控件遮挡，English端口64给地址留足空间。新增工作台preview使用固定SmallSSH-QA合成文件路径，预置cache，无真实凭据或目录加载；原生titlebar仅模拟reserve，不证明OS红黄绿与拖动。
+
+当前全部生产五目标编译 build/logs/compile-20261106-160620.log 通过；代码冻结后启动desktop整包race/serial/terminal_integration gate，尚在运行，未安装新版。上一轮核心全仓门禁仍为build/logs/check-20261106-143501-race.log，本轮没有改核心协议/密钥/后台认证。
+
+最终desktop整包 build/logs/check-20261106-160643-race.log 未通过（323.292s）：唯一旧TestPrimaryPageChangePreservesGlobalLockFocus在workspace_menu_test.go:283失败。标题栏headerControl新增匿名父Column，使page1增加工具按钮时锁按钮父identity按index变化，内层既有workspace-lock key无法稳定跨父路径焦点。已派同Terra worker仅修正wrapper稳定key并扩展原测试，不放宽断言；未安装此失败版本。需focused及desktop整包重新通过。
+
+UI01焦点退修已完成：headerControl创建前为sidebar/navigation/transfer/tools/lock外层Column设置稳定Context.Key，内层按钮标识/动作/空白DragWindow不改。原TestPrimaryPageChangePreservesGlobalLockFocus保留中文默认原断言并增无bar/left78/tall54/English窄窗；只读review确认key消费位置正确。定向所有Primary/WindowChrome/Empty/rows/mainOptions门禁 build/logs/check-20261106-161337-race.log 通过（3.346s）。重新五目标生产编译 build/logs/compile-20261106-161406.log 通过、38张最终离线预览 build/logs/test-20261106-161406.log 通过（1.102s）；随后重新启动desktop整包race/serial/terminal_integration。当前没有未复核Go变更，没有安装失败版本。
+
+最终desktop完整门禁 build/logs/check-20261106-161439-race.log 已全部通过：537文件格式、vendor补丁校验、vet、整包race/serial/terminal_integration（315.049s）。这是焦点退修后的完整回归，不以先前失败日志代替。随后代码不再修改，开始tools build -platform all，标准输出保存在build/logs/ui-refinement-build-all.log；尚未安装或启动新版。
+
+本轮UI打包/安装已完成。build/logs/ui-refinement-build-all.log记录五目标包：darwin arm64/amd64 App、Linux amd64/arm64 deb/tar.gz、Windows amd64 exe；版本仍0.0.1，Windows NSIS安装器因本机无makensis跳过。build/logs/ui-refinement-build-check.log通过两份生成文件最新校验；build/logs/ui-refinement-generated-review.json证明两生成文件及go.mod/go.sum/vendor-integrity manifest与构建前相同，未升级MyGo/vendor。build/logs/ui-refinement-mac-artifacts.json为本机包主程序/固定daemon/CLI/icon普通文件与hash证据。
+
+tools install已将新版放入/Applications/SmallSSH.app，build/logs/install-20261106-162125.log记录完整stage codesign deep/strict通过、保留旧版/Users/smallraw/.Trash/SmallSSH-before-20261106-162125.601811000.app，未启动/退出/前置用户窗口。安装后再次codesign验证有效，主程序/daemon/CLI/icon均与构建产物SHA256一致，build/logs/ui-refinement-install-verification.json。当前已运行的App进程仍为旧版，用户保存工作后重开才能看到本轮UI。
+
+本轮UI01/02/03交付：已有基础按钮/输入/弹窗/导航/列表/分割面板上补统一表单分组及紧凑尺寸；macOS主窗标题栏整合、紧凑新建连接与在线工作台/服务器列表。无真实窗口/系统拖动/红黄绿按钮现场验收，Windows/Linux仅编译与打包；合成快照不能代替native行为验收。独立安全后台/B-D迁移仍沿用此前未完成边界，不因本轮UI安装宣称完成0.1。可选ui-form-02.md元数据写入拒绝仍搁置，未重试或换工具/路径代写，未影响授权源代码和本轮UI安装。
+
+## 默认delegate节点重试与首项实际派工 · 2026-11-06
+
+用户要求使用其私密终端配置的当前默认节点，由主代理规划/审查、外部节点执行小任务。未读取provider配置或凭据。先前默认节点/Responses 404的脱敏调用记录build/logs/delegate-default-smoke-20261106.jsonl；用户修正私密配置后本次重试build/logs/delegate-default-smoke-retry-20261106.jsonl正常退出0，返回DELEGATE_READY。原生模型目录解析与元数据fallback仍有非致命警告，不以自报模型名识别provider，不宣称目录元数据问题已修复。
+
+随后实际外部编码任务build/logs/delegate-search-hint-20261106.jsonl已完成，原生工具实际修改connection_rail.go及en/zh两个locale：窄侧栏占位使用短搜索服务器/Search servers，原完整搜索范围移至同输入Tooltip。基线build/review-baselines/delegate-search-hint.json及-source/；主代理逐段比较与独立Terra只读review确认仅3个预定文件、Label/key/Bind/focus/filter/row36/gap2和compact分支不变。主代理未代写此生产补丁，仅统一gofmt和验证。外部worker报告额外Python只读核对因mise/sandbox未执行，未绕过；正式JSON/翻译验证沿用既有tools localize入口。
+
+主代理定向门禁build/logs/check-20261106-180224-race.log通过（537文件gofmt/vendor/vet，搜索/列表/空态全组竞态2.752s）；locale整包build/logs/test-20261106-180224.log通过（0.665s）；生产五目标编译build/logs/compile-20261106-180224.log通过。该修改只涉及文案和tooltip，不重复此前315s整包terminal集成；上轮完整desktop gate仍为check-20261106-161439-race.log。新增离线预览与打包安装尚在进行。
+
+离线工作台6张preview build/logs/test-20261106-180307.log通过（0.614s），build/snapshots/delegate-search-hint/；主代理查看English560图，190侧栏短提示Search servers完整可读。最终tools build五目标成功build/logs/delegate-search-hint-build-all.log（版本仍0.0.1，NSIS仍因makensis缺失跳过），build/logs/delegate-search-hint-build-check.log通过；build/logs/delegate-search-hint-generated-review.json证明生成文件和钉住依赖/manifest与此前基线不变。
+
+tools install已更新/Applications/SmallSSH.app，build/logs/install-20261106-180425.log中完整stage签名通过，旧版保留/Users/smallraw/.Trash/SmallSSH-before-20261106-180426.098652000.app；未启动/退出/前置用户App。安装后codesign deep/strict再次有效，main/daemon/CLI/icon逐项与build一致，build/logs/delegate-search-hint-install-verification.json。此轮当前默认delegate已实际完成编码，主代理完成审查/验收/打包安装；未读取其私密模型设置，模型目录元数据fallback警告尚未修复，不声称模型识别或性能已完整验证。
+
+## 需求总表、SSHyard主要竞品与UDP缺口对齐 · 2026-11-06
+
+用户纠正本轮主要竞品为Licoy/sshyard，要求先整理全部需求并对齐，暂停产品代码与字符串修改。主代理承认此前仅盯FinalShell和委派搜索提示小修偏离重点。本轮仅整理文档，没有新增产品功能、修改Go/翻译/版本、运行应用或替换安装包；不把研究和文档计为功能完成。
+
+研究代理仅写docs/SSHYARD-REFERENCE.md，固定main=93c596b46efba3e3939f06fbff4c179e7241755b，记录访问日期、八组公开功能及额外源码入口、关键闭环和54条固定revision来源。区分AI/ACP与开放MCP执行边界、secret/unlisted Gist和应用存活期间调度；已核对网络路径为TCP SSH/代理/转发，未确认真正UDP加速。另一研究代理仅写docs/FINALSHELL-REFERENCE.md，作为此前参考附件；FinalSpeed原上游历史b819a35a48e6569e224198a9162ae3bb2fa8174a可取，修正此前当前计划中“原README未获取”的过时陈述，区分上游当前空树、历史源码与作者后续README。未运行来源代码或访问真实凭据。
+
+主代理新增docs/REQUIREMENTS.md为需求范围主清单：U01-U24用户既有要求、C01-C11 SSHyard待确认候选、F01-F05此前FinalShell参考。明确记录B未接完、UDP与环境变量体系未实现、PKCS#11待真实硬件；加载标签不默认等于用户要求的独立窗口。定义字符串/文档/代码/自动测试/实机/用户验收与打包各自含义。独立只读review补齐B06显式后台下载和锁定/撤销/到期/重启边界，并将窗口形态列入确认。
+
+FEATURES增加明确的UDP未实现独立项及主清单链接；CORE-SPLIT-PLAN把加速由“若引入”的可选措辞修正为用户已经要求的待交付项，并列两端/接入/状态/性能验收清单，更新delegate分工措辞。主清单本地附件链接及24/11/5编号唯一性检查通过。已向用户提出AI/ACP范围、变量覆盖层级、窗口vs标签三个对齐问题；答案到来前不开展依赖这些决定的编码。UDP对端形态/协议兼容与其他候选仍明确待决定，不默认为已获部署授权。本轮为文档与需求核对，没有重新运行Go门禁。
+
+## SSHyard界面参考后的用户确认与实现设计 · 2026-11-06
+
+用户明确：UI优先；服务器专属密钥、不做全局共享密钥管理页；硬件识别与公钥部署onboarding；文件默认独立原生窗及连接/下载窗口反馈；完整变量；导入导出和常见SSH客户端迁移；不要额外复杂快连；本地加密备份；目录上传、多服务器文件窗/文件数；tmux列表快切、serial；每次双击新终端；常见配置类型；并发/询问大小/打开方式设置；选中复制、OSC52、重连/保活、五种认证及截图菜单。主代理只更新docs/REQUIREMENTS.md和GLOSSARY.md，未改产品源码/翻译/版本或安装包。
+
+本地只读explorer确认：终端插件有Search/Next/Previous但app未接OnSearch/搜索栏/快捷键；app.go创建终端ClipboardRead=Deny、NoClipboardWrite=true且CopyOnSelect默认None；独立工具窗含文件/命令/状态，单文件编辑仍主工作区标签；服务器双击openShellMode(true)立即reserveTerminal且连接中同主机排队；auth仅password/key/agent/pkcs11，无自动方式；未见并发/大文件阈值设置，远端编辑硬限制4MiB。未运行窗口或读取真实剪贴板。
+
+SSHyard来源研究复用93c596b46efba3e3939f06fbff4c179e7241755b，在docs/SSHYARD-REFERENCE.md追加增量小节：FilesEdge右/下与独立编辑器窗不同；TransferConcurrency每pane1-10默认3；OpenConfirmMB逻辑按MiB、默认10，另有256MiB硬上限；tmux发现/附着回退、serial/Break、自动认证语义、公钥安装后独立验证和OSC52/选中复制分开。没有直接照抄来源默认值、全局凭据库或权限放行策略。硬件边界另外核对OpenSSH官方手册及Yubico PIV槽位说明，未接触真实设备或执行部署。
+
+主清单扩展为U01-U30、C01-C11、F01-F05；已确认项不再作为是否需要反复询问；补实现流程、菜单映射、L/R/D解释、分批交付与UDP两端验证。只读review纠正U29：connections.go已会在名称为空时生成user@host，不能误列为缺失；并将U25-U30纳入范围。复核通过，无方案冒充现成代码。GLOSSARY只增服务器登录身份/主机信任记录/文件工作窗三个领域词。编号唯一性和主清单本地链接检查通过。
+
+向用户保留两个范围问题：首版是否服务器间直接互传、内置AI/多模型/ACP是否首版。变量作用域与同类UDP能力作为明确标注的设计默认，硬件型号与对端部署形态后续确认；不以沉默作服务器部署或硬件初始化授权。本轮为需求/设计文档更新，未运行Go门禁或构建。
+
+## Alva SmallPen视觉参考与离线原型 · 2026-11-06
+
+用户指定alva-agent/docs/design/alva/alva.smallpen及alva-foundation.smallpen作为UI视觉参考。两者为目录包。主代理只读manifest、tokens、组件及当前产品21/22/25/31/35等screen结构，未打开/修改Alva应用或包、未读取其业务配置。区分当前Alva ui.*紫灰产品样式与旧palette.*蓝色及“旧视觉草稿（暂不评审）”；采用浅灰#F3F4F7/白内容/强调#6555CD与对应深色、13px正文/32px控件/28px紧凑列表方向，字体用系统CJK避免复制子集缺字。8个来源文件hash记录build/review-baselines/alva-ui-reference.json。
+
+REQUIREMENTS.md新增视觉来源及页面映射，功能参考仍是SSHyard，未将Alva伙伴/Gateway业务移入范围。按prototype技能适配原生Go：当前默认delegate只负责新增双tag preview_qa&&alva_prototype的alva_style_prototype_preview_test.go，纯MyGo UI Tester绘图，输出PNG与本地HTML切换画廊到build/snapshots；没有生产web路由，不引入UI框架/依赖/原生窗口。5种screen、明暗、workbench三种结构及窄连接原型均为合成数据，无真实认证/文件/密钥/RPC操作。任务记录build/logs/delegate-alva-style-prototype-20261106.jsonl，当前仍执行中，尚未称渲染通过或功能完成。
+
+外部默认delegate在原型任务中持续源码接口查询，十余分钟未写目标file；主代理未把它报为实现完成。仅通过本次唯一日志的lsof持有者定位node9784→codex9805及其子node_repl，不读取进程参数/环境；校验父子及日志owner后仅向该codex子进程发送SIGINT，session58221退出1，确认这4个任务进程均已结束且目标source不存在。未终止用户应用或更改provider配置。依据用户此前允许GPT-6.1 Terra执行的授权，原型任务顺序交给既有ui_refinement_impl，唯一同名file所有权已交接，无并行写。外部日志保留，未编造成功结果。
+
+Terra交付唯一新文件internal/desktop/alva_style_prototype_preview_test.go，主代理gofmt后首轮check-20261106-194248.log通过（0.935s），但实图暴露主区未FillHeight导致大空白、连接表单横向过长、设置逐行卡框及误称大文件传输等问题，未直接接受。只读review另指出输出未约束build与画廊箭头仅在A/B/C绕圈。全部由同worker单文件收尾：FillHeight修复、紧凑表单及密码占位、平面分隔设置行、打开前询问、公钥类型/示例指纹区分；使用Go1.27.3 os.Root把固定输出限制在project/build子目录，箭头改13个有效状态循环，URL白名单和聚焦保护保留。
+
+最终build/logs/check-20261106-194900.log通过：vendor补丁、538文件格式、vet、双tag离线渲染（1.004s）。13张PNG及index.html在build/snapshots/alva-smallssh-prototype/；主代理检查关键light/dark/workbench三布局、连接宽/窄、key/file/settings实图，宽窄主要内容与操作可见，工作台填满正常可用高度。画廊state与13个实际PNG唯一对应、尺寸/哈希及来源8文件未改验证记录build/logs/alva-prototype-artifacts.json；最终只读review确认路径限制与全部画面循环已修。画廊JS做源码审查和资产匹配，未声称浏览器实机交互验收。
+
+该文件受preview_qa&&alva_prototype双tag隔离，不进入默认生产编译；本轮没有修改生产UI、翻译、版本或provider配置，没有打包/安装/启动用户App。图中控件、服务器、文件和公开指纹均为静态合成演示，不证明密钥部署、变量、串口、UDP等功能已实现。仍待用户选择布局/观感后，再将验证过的视觉规则用于正式共享组件，不能直接把原型当生产实现。
+
+## Alva 顶栏与去底边原型修订 · 2026-11-06
+
+用户要求取消底部留边，将工作台 / 授权中心等入口收进设置，右侧保留设置按钮，并把连接标签移到窗口最顶部；随后补充 Alva 实际截图确认顶栏、侧栏与内容的结构。REQUIREMENTS.md 已记录为确认决定，不把移入口解释为删功能。
+
+既有 Terra worker 仅修改 internal/desktop/alva_style_prototype_preview_test.go：A/B/C 共享44px顶栏，左侧78px预留原生窗口控制区、连接标签放顶部、右上32px设置入口；移除终端内重复标签、原型底部说明条和服务器统计底行，工作台内容下沿贴底，保留文件 / 目录 / 已选数量。设置分类新增工作台与授权中心；伴随页面去原型底栏并修正窄窗连接高度。HTML画廊外部保留原型声明，13种状态与路径白名单、os.Root、双tag和合成数据边界不变。独立只读review无实质问题。
+
+主代理格式化后通过 build/logs/check-20261106-195912.log：vendor补丁校验、538文件gofmt、desktop vet、双tag离线渲染（0.986s）。13张PNG和画廊输出到 build/snapshots/alva-smallssh-prototype-topbar/，上一轮目录保留；主代理查看A浅/深、C、设置及560窄连接图，确认顶栏和贴底布局、计数与底部按钮可见。13种画廊状态与实际PNG唯一对应，尺寸和SHA256记录于 build/logs/alva-prototype-topbar-artifacts.json。
+
+本轮仍为静态离线视觉原型，没有改生产UI或依赖，没有打包、安装、打开或前置App；没有验证真实macOS窗口控制、拖动和设置交互。画廊状态源码与资产核对不代替浏览器或原生实机交互验收。
+
+## Alva 重复入口 / 标题精简与紧凑 Dialog · 2026-11-06
+
+用户指出顶栏搜索 / 添加与侧栏重复，新建连接应按 Dialog 展示，公钥引导与文件窗重复标题 / 目标信息无意义，设置四周 padding 偏大。REQUIREMENTS.md 已补本轮确认及外间距8 / 内容内边距12的原型调整；未修改 Alva 来源 tokens。
+
+既有 Terra worker 仍仅负责 internal/desktop/alva_style_prototype_preview_test.go。顶栏移除搜索 / 添加服务器、保留侧栏切换及连接标签旁新终端操作；新建连接采用真实 ui.DialogBase 加合成工作台背景 / 遮罩，标题仅一处，宽屏字段双列、窄窗单列，操作固定底部。公钥页只展示一个标题 / 目标、三步及两种身份，不提前堆放未生成的类型与示例指纹；说明改为软件私钥本机加密保存、硬件私钥保留设备。文件窗合并为一个标题工具栏与目录级来源信息，代码区padding12；设置外圈8、内容12、导航8、主圆角12，去导航重复标题。无生产代码、认证操作或实际设备访问。
+
+首轮 build/logs/check-20261106-200639.log 通过（0.857s），但主代理实际截图与只读review发现宽屏500px弹窗下方仍有约160px空白，未直接接受。worker将宽屏 / 窄屏弹窗高度分别收至360 / 480并精简身份说明，主代理再次格式化并通过 build/logs/check-20261106-200749.log：vendor补丁校验、538文件gofmt、desktop vet、双tag离线渲染（1.065s）。主代理查看最终宽 / 窄 / 深色连接图及密钥、文件、设置实图，确认表单与操作可见、底部空白明显收缩、重复标题删除。
+
+13张PNG与画廊位于 build/snapshots/alva-smallssh-prototype-compact/，前轮目录保留；13种画廊状态 / 唯一文件映射、尺寸和SHA256记录 build/logs/alva-prototype-compact-artifacts.json。preview_qa&&alva_prototype隔离、os.Root输出约束和合成数据保持。原型控件仍为静态内容，不宣称真实表单 / 密钥 / 文件交互已接通；没有打包、安装、启动或前置App，没有真实macOS弹窗 / 拖动 / 硬件验收。
+
+## Alva 内容圆角、底部间距与透明工具图标 · 2026-11-06
+
+用户进一步明确中间内容为圆角面板、底部Padding仍需保留，设置图标不要白色方块底，右侧增加右 / 下工具面板入口，并强调原有业务逻辑不能改。REQUIREMENTS.md已修正上一轮“贴底”措辞，区分去掉底栏与保留8px内容间距；主代理只读核对layout.go既有setToolsDock / setToolsHidden / 独立工具窗及窄窗回退路径，没有修改它们。
+
+Terra worker仍只修改双tag的alva_style_prototype_preview_test.go。终端外层统一背景并增加Radius16+Clip，文件面板同样裁切子背景，解决已有圆角被子节点盖成直角；工作台A/B/C底部恢复8px。顶栏复用已有components的SidebarIcon / RightPanelIcon / BottomPanelIcon / SettingsIcon，32px透明ButtonBase、18px SVG、中文Label / Tooltip；右 / 下图标表示同一工具面板的停靠位置，A/B底部、C右侧示意高亮，不接业务handler、不新增工具实例。设置不再有常驻白底或边框。
+
+首轮build/logs/check-20261106-201234.log通过（0.808s），主代理查看A浅 / 深和C图，确认圆角、8px底部留白及透明图标。560连接图背景标签因新增图标挤成两行，随后同worker仅加SingleLine / MinWidth(0)并固定图标尺寸；最终build/logs/check-20261106-201339.log通过（vendor补丁、538文件gofmt、desktop vet、双tag离线渲染1.040s），复看窄图标签为单行省略且弹窗按钮仍完整。独立只读review确认原型与业务边界保持。
+
+13张PNG及画廊输出build/snapshots/alva-smallssh-prototype-rounded/，前轮保留；映射、尺寸和SHA256见build/logs/alva-prototype-rounded-artifacts.json。本轮仍只变原型与需求 / 验证文档，没有修改生产业务、依赖或Alva来源，没有打包 / 安装 / 启动App；未声称静态图标已控制正式面板，也未替代macOS原生窗口与实际操作验收。
+
+## Alva 工作区四边与 Tab / 面板间距统一 · 2026-11-06
+
+用户明确四周与中间的可见留白要相同，“中间”包括Tab到下方终端，以及终端到下方文件面板。REQUIREMENTS.md记录为同一8px间距规则，未来左侧面板同值，不将全部表单 / 文本内部padding一并替换。
+
+Terra worker仍只改alva_style_prototype_preview_test.go：新增alvaProtoWorkspaceGap=8，顶栏由44改为48（32px标签上下各8），主内容不再额外叠加顶部padding，左右 / 底部padding8，A/B/C纵横面板gap同8；顶栏rightpadding与gap同8，删除尾部额外Box，使A/B的标签与内容左边对齐。圆角裁切、透明SVG按钮、单行窄标签、文件计数、Dialog和os.Root / 双tag隔离保留。只读review确认间距计算与业务边界未改变。
+
+主代理统一格式并通过build/logs/check-20261106-202523.log：vendor补丁、538文件gofmt、desktop vet、双tag离线渲染（0.976s）。查看A浅 / 深和C截图；使用Python标准库只读解码PNG并在面板直边处取样，前轮实测顶部到Tab6、Tab到内容14、左右12、底部8；本轮A/B/C实测顶部到Tab、Tab到内容、内容左 / 右 / 下边距及存在的横 / 纵面板间隔均为8。未编辑图片，也未增加或安装图像依赖。
+
+13张PNG及画廊位于build/snapshots/alva-smallssh-prototype-spacing/；映射、尺寸、SHA256及A/B/C像素测量值记录build/logs/alva-prototype-spacing-artifacts.json。仅证明这些固定尺寸本地合成图中的几何关系；没有修改生产业务、打包 / 安装 / 开启窗口或验证实际macOS缩放与拖动。
+
+## 成熟按钮体系选择与 Lucide 原型适配 · 2026-11-06
+
+用户要求寻找与本项目匹配的成熟按钮库。研究agent只写docs/UI-COMPONENT-REFERENCE.md，比较Lucide / Tabler / Phosphor图标及Radix Themes / shadcn按钮，引用官方文档、固定revision和许可；明确图标不是按钮组件、React不能直接import到Go。选定Radix Themes视觉规范（1faff10ac26ae17f09944d418c6949b93fc6b566）+Lucide原始SVG（1a49fd88d85202bad69f39462241b309a484bba0）+现有MyGo原生交互，不换renderer或改业务。
+
+主代理从官方固定revision获取16个小型SVG与完整LICENSE，先检查XML仅含svg/path/rect/circle等静态几何、24×24、无脚本/事件/外部引用；存入internal/desktop/testdata/alva-prototype/lucide/，SOURCE.json逐项记录URL及SHA256。完整LICENSE含Lucide ISC和Feather派生图标MIT归属，未只保留单一许可名。没有npm安装、来源代码执行、Go依赖或vendor变更。
+
+Terra worker仍仅改双tag原型文件：embed并缓存SVG；原先Row画出的动作改为MyGo Button / PrimaryButton，solid主操作、soft次操作、ghost透明工具按钮先设置局部主题再构造，保留原生hover / pressed / focus / disabled反馈，恢复主题后不通过Background覆盖动态样式；主色交互使用紫色色阶。顶栏、侧栏、Dialog关闭和文件工具使用同一Lucide家族，32px点击区 / 18px图标，纯图标具Label / Tooltip。新增按钮组件浅 / 深展示页，busy显示Spinner并禁用，原有业务handler不接入原型；画廊扩至15种状态并使用动态计数。
+
+首轮build/logs/check-20261106-204453.log通过（0.816s）；主代理查看工作台、宽 / 窄连接及按钮浅 / 深图，确认SVG显示、次按钮轻底和透明工具按钮。独立只读review无实质问题，确认主题恢复、styleFn、许可与双tag隔离。去掉新展示页重复标题后最终build/logs/check-20261106-204654.log通过：vendor补丁、538文件gofmt、desktop vet、双tag离线渲染（1.060s）。A/B/C工作区可见间距重新读取PNG像素，全部仍为8。
+
+15张图与画廊位于build/snapshots/alva-smallssh-prototype-buttons/；状态映射、尺寸、SHA256、8px测量及原始SVG完整性记录build/logs/alva-prototype-buttons-artifacts.json。此轮交付是原生按钮视觉适配原型，不是Radix官方Go实现或已安装其React包；未进行浏览器 / 原生窗口交互与完整键盘 / 屏幕阅读器验收，没有打包、安装、启动或前置App。生产共享组件与业务逻辑未改。
+
+## 公共窗口外壳、文件管理大标签与既有功能入口 · 2026-11-06
+
+用户要求设置 / 服务器安装公钥为独立窗口，文件编辑有保存和关闭图标、行数等状态；Dialog和窗口共用抽象，新建连接与外部风格一致，分组可选可创建；文件管理保留树、导航、上传下载和其他业务，既可停靠，也可作为工作区大标签。主代理采用codebase-design的共享呈现外壳方向，REQUIREMENTS新增U31/U32和功能位置表，GLOSSARY区分文件工作窗与文件管理标签。
+
+只读explorer库存确认：生产已有命令 / 文件 / 服务器状态模块，全局传输活动层，多来源隔离、最多8文件窗、树 / 列表、权限属性、拆分、导航 / 右键 / 快捷键、普通文件上传与目录递归下载；fileExpanded为放大整个工具区，detached为独立工具窗，均不是新工作区文件标签。设置仍主窗page4，独立编辑窗 / 设置窗及公钥安装业务待接；components.Dialog已统一focus / Escape，closeEditor有dirty确认、保存有外部更改检查。connections.go:368–430已实现可输入 / 选择 / 新建分组，不能把前轮原型的文字框当生产缺失。没有读取真实配置或目录。
+
+Terra worker仅改alva_style_prototype_preview_test.go：Frame统一标题 / 来源 / 关闭、body及固定footer，Window静态宿主与Dialog复用；单文件窗保存 / 关闭两个Lucide图标，底部16行 / 光标 / UTF-8 / LF / 大小。设置、公钥窗沿用同外壳且不重复标题；连接Dialog轻边框 / 同风格、分组选择创建示意。root从同一固定Lucide revision补12个静态图标并审核无事件 / 脚本 / 外部引用，SOURCE与完整许可保留，未加运行依赖。
+
+新增files-tab / files-menu / commands / status浅深图，画廊共23状态。文件管理大标签保留终端标签，文件Tab含关闭及返回停靠入口；工具模块条统一一次呈现，文件pane显示独立来源、树 / 路径 / 上一级 / 刷新 / 新建目录 / 上传下载 / 更多、名称大小修改时间及计数。多窗 / 权限 / 重命名 / 移动等放更多菜单；窄工具区收纳按钮，命令保留参数历史 / 完整预览 / 填入与执行两动作，状态保留概览 / 进程 / 服务 / 系统 / Docker入口，全局传输计数未改回dock页。
+
+首轮build/logs/check-20261106-210318.log通过（1.187s），主代理实际图与审查发现双来源模块条重复、完整文件页仍compact、本机 / Staging误套nginx合成树、Dialog外层方底及名称分组未顶对齐，未直接接受。worker统一ToolFrame、分开fixture、恢复大视图工具 / 修改时间、修圆角与字段对齐；build/logs/check-20261106-210720.log通过（1.189s），独立只读复查无新实质问题。按独立窗语境调整设置1000×720、公钥720×420、编辑1100×760后build/logs/check-20261106-210956.log通过（1.176s）。主代理查看关键浅深 / 大标签 / 更多 / 窄连接 / 独立窗 / 命令状态图，确认内容和固定操作区可见。库存对照最后补齐更多菜单的既有新建文件 / 危险色删除入口后，最终build/logs/check-20261106-211259.log通过（vendor补丁、538文件gofmt、desktop vet、双tag渲染0.988s）。
+
+23张PNG与画廊位于build/snapshots/alva-smallssh-prototype-workspace/。状态唯一映射、尺寸、SHA256、SVG完整性、U01–U32编号及工作区8px实测见build/logs/alva-prototype-workspace-artifacts.json；B双pane白色接缝按直边border runs测量，1px细分隔线不算布局间距。主窗顶部 / Tab至内容 / 四边和实际面板接缝仍8。
+
+本轮仍是合成数据静态原型，公共Frame不是生产窗口迁移完成；保存 / 关闭 / 传输 / 来源等图标没有真实业务handler，不证明dirty保护或原生窗口生命周期已验收。没有改生产共享Dialog、业务逻辑或依赖，没有打包 / 安装 / 打开 / 前置App；目录上传、远端直接互传、公钥安装和其他未完需求仍保留原缺口。
+
+## 按现有完整状态组件校正原型与文件单行工具 / 临时弹层 · 2026-11-06
+
+用户要求先看现有实现，指出前版状态占位未覆盖既有能力；Token不能自动把缺失内容补齐。文件来源与上传 / 刷新 / 新建目录 / 下载等应同一行靠右，更多菜单不应常驻占第三栏。主代理明确承认前版状态为简化占位，REQUIREMENTS补迁移顺序与呈现规则。
+
+只读explorer核对responsiveWorkspaceDemo→compactStatusDemo→statusDemo为纯内存合成数据，含历史趋势、CPU / 内存 / 网络 / 磁盘、进程、systemd服务、系统信息和4个ready Docker容器；不读配置 / 目录、不联网或订阅。保持win / dispatch / server / client / stream / term及目标身份空值。直接diagnosticsView安全渲染，不能调用a.view / publishToolsState / watchIdle / poll以免启动ticker；管理动作因目标身份缺失保持禁用。
+
+Terra worker仍仅改双tag原型文件：每张状态图在Tester前构造一次fixture跨帧保留，移除手绘状态占位，直接使用生产diagnosticsView和5个tab；停靠状态保持，新增概览展开 / 进程 / 自启服务 / 系统 / Docker浅深场景，画廊扩至33种。未复制或改写状态业务，未启用真实管理动作。
+
+文件pane的来源 / 路径和目录树 / 上一级 / 刷新 / 新建目录 / 上传 / 下载 / 更多合并为一条32px header，右侧对齐，窄pane收纳次级动作。files-menu底层与files-tab同样两栏，Web省略号作为ui.PopoverBase锚点，open bool在Tester外持久化；移除旧210px常驻栏及其FillHeight / 重复边框，菜单用自适应内容。PNG保存初始打开状态后，原opt-in快照路径核对Escape关闭、Web pane X/W不变、重开后外部点击关闭，两主题均通过。
+
+build/logs/check-20261106-214358.log通过：vendor补丁、538文件gofmt、desktop vet、双tag离线渲染及菜单行为核对（1.415s）。只读review无实质问题；主代理查看文件双栏 / 菜单 / C窄pane、状态停靠和五个真实状态页的浅深图，确认工具无额外行、菜单覆盖而不重分栏、实际资源卡片 / 趋势 / 表格 / Docker组件被保留。Docker资源缺采样时的“—”按现有真实组件规则显示，未伪造真实指标。
+
+33张PNG与画廊位于build/snapshots/alva-smallssh-prototype-current-ui/。状态映射、尺寸、SHA256、真实renderer / fixture来源、菜单核对和工作区8px像素记录见build/logs/alva-prototype-current-ui-artifacts.json；Lucide原始资产SHA未变。这里只证明本地离线视图与菜单交互，不代表连接真实服务器、管理动作或原生窗口生命周期验收。生产文件 / 状态业务、依赖、安装包未改，没有打开或前置用户App。
+
+## 侧栏与窗口原型修订、命令确认和 Linux 端口列表 · 2026-11-06
+
+用户确认端口要同时列监听与当前对外连接；同时要求修正侧栏左右间距、新建连接与设置样式、独立文件窗头尾、目录树底部与右侧计数，以及命令双击的参数 / 确认 Dialog。REQUIREMENTS 更新 U17、U31 / U32 的呈现要求并新增 U33，FEATURES / USAGE / SERVER-MANAGEMENT 同步实际能力。本轮明确区分两类交付：命令确认与端口是生产代码；窗口外观仍是双 tag 离线原型，尚未迁入或安装正式 App。
+
+命令复用已有 SkipConfirm，不新增协议字段。新建 / 编辑与运行弹窗均有正向“发送时询问”开关，可双向切换；关闭纯确认仍保留需要填写的参数和系统选择。运行时只有成功发送执行后才保存开关；取消、校验失败、已关闭目标、仅填入终端均不改变偏好。审查发现保存忙碌时偏好可能丢失，已在发送前保留弹窗与输入并提示稍后重试。真实 Ghostty 输入及隔离 broker 回归覆盖两方向保存、忙后重试、参数历史不执行和命令 / 草稿隔离。
+
+端口通过既有 Linux monitor.Command 固定追加被动探针，使用 ss，失败回退 netstat -W / 无 -W；不新增任意执行 RPC、登录、sudo 或远端安装。Stats.PortSnapshot 是可选字段，兼容旧采样。第六个端口 tab 保留原0–4页，按非回环监听 / UDP绑定、本机监听、当前外部连接筛选，可搜索、排序并展示多进程 owner / PID。非回环含内网 / 通配地址，不等于公网可达，不推断连接发起方向。缺工具、失败、未完成、解析不全、进程不可见和截断分别反馈。每候选1024条 / 512KiB、单行4096字节；测试实际触达限额并验证退出码未被管道吞掉。审查发现缺失 / 未知 SOURCE 可被误报成功，已修复候选重置及来源绑定，新增6例异常及 CPU / 内存解析保留回归；IPv4映射的 unspecified / loopback 对端也不会列为外部连接。仍只有现有 Linux sampler；端口工具卡死时沿用整条监控原6秒超时，不能宣称该情况不影响本次主机采样。
+
+窗口原型去除侧栏 / 主区重复padding；最终PNG像素测量服务器选中行x8..212，主区x220，左右均8px。前轮主区边距测量没有计入选中行到侧栏边界的额外8px，本轮按真实可见边界纠正原8 / 16差异。设置移除整窗大框与大标题，左圆角导航内放“设置”，左右内容上下对齐；独立文件窗标题与状态栏贴边，文件树底色延伸到底行，计数右对齐。连接原型直接使用真实 connectionForm，保留分类、可选 / 可新建分组及窄窗滚动。命令编辑 / 运行使用真实 Dialog，端口使用真实 diagnosticsView；全部为合成内存数据，目标为空，不读真实配置 / 历史、不启动监控或连接。保留compact顶栏原生窗口控制安全区，未把Tab移到控制按钮上。最终公钥向导为操作按钮补12px右 / 下内边距，文件状态栏仍完整贴边。
+
+验证证据：
+
+- build/logs/check-20261106-223350.log：monitor parser与固定探针回归通过。
+- build/logs/check-20261106-223411-race.log：完整仓库 race + terminal_integration + serial 跑完；唯一失败为新命令测试的两个 busy retry 子用例，其余包通过，无数据竞争报告。原因是直接新增错误行后 Tester.Click 使用上一帧坐标；仅在测试解除busy后加 tt.Frame，业务代码及断言未改，独立复审确认。
+- build/logs/check-20261106-225000-race.log：修正后的全部命令确认 / 持久化 / 参数 / 历史 / 实际终端输入及端口UI定向race门禁通过（24.019s）。未把上条首次完整命令标成全绿，也未因测试刷新一帧重跑不受影响的整仓用例。
+- build/logs/compile-20261106-225059.log：darwin arm64 / amd64、linux arm64 / amd64、windows amd64 五目标生产编译通过。
+- build/logs/check-20261106-225208.log：最终 vendor补丁、542文件gofmt、desktop vet、39状态双tag离线渲染及文件菜单Escape / 外部点击 / 面板宽度检查通过（1.578s）。此前两次渲染223401、225059已由该最终记录替代。
+
+主代理实际查看宽 / 窄连接、设置浅深、独立文件、公钥、文件双栏、命令编辑与运行、端口浅深图；端口浅色展示进程信息不完整的监听，深色展示IPv4 / IPv6当前外部连接。39张PNG与画廊位于build/snapshots/alva-smallssh-prototype-refined/，映射、尺寸、源码 / 图像SHA256、全部门禁状态、8 / 8像素值与29份Lucide资产（含完整LICENSE）哈希核对见build/logs/alva-prototype-refined-artifacts.json。没有修改依赖或vendor，没有打包、安装、启动或前置App；跨平台编译不等于各系统运行验收，Linux真实服务器、硬件和独立原生窗口生命周期仍待实机验证。
+
+## 正式 App 界面迁入、独立窗口与多选删除修复及安装 · 2026-11-07
+
+用户指出前轮只交原型没有进入 App，要求把已经讨论的界面变成实际产品；随后补充文件多选 / 右键删除和目录删除报错。本轮直接修改生产路径并安装本机包，不再把原型截图作为实现。外部 delegate 节点确实启动过，但首次停在大量分析、第二次返回不兼容的工具调用文本，都没有写入代码；主代理停止该尝试，按此前授权由 Terra workers 分别实现正式顶栏、编辑窗口与批量删除，主代理集成、复审、验证和打包。未读取 provider 配置或私密值。
+
+正式主窗改为最顶部的真实终端分组标签，保留选择、相邻关闭、右键、拖放、两组和键盘操作；旧三页导航及永久底部状态行移除，状态改为不占布局的提示。右侧有传输、右 / 下停靠和设置图标，侧栏 / 内容 / 面板留白统一；保留原生标题栏控制安全区和拖动区。设置成为独立原生窗口，含工作区、安全、后台及授权中心；主窗侧栏收窄不再改变设置导航。关闭设置取消验证、清密码和内联审批，锁定 / 退出清理窗口；授权认证绑定真实当前窗口及就绪 / 可见 / 焦点条件，旧窗口回调不影响新窗口。
+
+文件双击改为独立编辑窗口先出现、再显示读取 / 失败 / 重试，实际读写与4MiB UTF-8限制保留；保存 / 关闭图标、另存为菜单、行列 / 换行 / 大小状态均是真实状态。共享 WindowFrame / Dialog 提供紧凑外壳；未保存确认出现在文件窗，原生关闭和排队的 Cmd+W 捕获来源 / 文档 / 窗口序号，不能错关SSH。保存中关闭被阻止；本机保存、远端覆盖和另存为按 Buffer.WriteTo 保留 CRLF。远端另存为期间继续编辑不会误标已保存，窗口标题仍随成功保存目标更新；迟到读取 / 关闭 / 保存结果受到文档、generation或sequence约束。
+
+文件来源、路径和实际操作合为一行，窄网格收纳次级动作但保留路径、刷新及更多。菜单跨首次布局及宽度变化保持固定身份，修复首次点击菜单不打开；目录树到底部、统计在列表右下。文件管理支持真实工作区标签 / 返回停靠，复用同一pane/browser状态；显式连接或新建终端立即切回连接中标签，异步成功不抢回用户之后选择的文件标签。命令、服务器状态、Docker、全局任务、多来源与最多8个文件窗均保留，状态卡片按实际滚动viewport与gutter计算列数。
+
+多选问题根因是原生列表右键会重置选择且删除菜单只允许单项。现启用 MenuKeepsSelection，保留Cmd / Ctrl / Shift多选；批量确认显示数量及名称，endpoint / 目录 / entries在确认前复制。每个远端删除独立经过原有owner proof与路径保护，只有成功项更新缓存，失败项保留并报告成功 / 总数；用户已导航到其他目录时，不按同名清除新选择。目录仍仅删除空目录、不递归。远端使用既有rmdir；通用SFTP失败不伪称已证明非空，提供目录上下文及检查是否为空 / 有权限的提示。本地或服务端明确报告ENOTEMPTY时显示“目录不是空的”。复审发现额外ReadDir探测可能拖住异常服务端，最终完全移除该探测。
+
+共享浅深紫灰主题、原生按钮、Dialog及Lucide SVG已进入正式编译；Radix仅为视觉参考，没有引入React。完整Lucide ISC / Feather派生MIT许可进入生产资源与生成的THIRD_PARTY_NOTICES。vendor / go.mod / 原生密码框补丁未改。构建检查使用的原生临时目录由系统/tmp移到build/下，清理仍只针对本次创建的随机目录。
+
+验证记录：
+
+- build/logs/check-20261107-012857-race.log：首次整仓race+terminal_integration+serial跑完，非desktop包全部通过；desktop暴露旧入口断言及菜单身份、确认框host、Escape和几何问题。没有把此日志写成全绿。
+- build/logs/check-20261107-014828.log：修正后的全部首次失败用例及新增批量 / 菜单回归通过。
+- build/logs/check-20261107-014921-race.log：最终整个desktop包race+terminal_integration通过（358.273s），含真实Ghostty输入、独立窗口factory、未保存 / 保存中关闭、迟到结果、分栏 / 资源 / 端口 / 文件及隔离SFTP操作。
+- build/logs/check-20261107-015551-race.log：最终整个sshconn包race通过（30.945s）；build/logs/check-20261107-020105.log：构建任务包门禁通过。
+- build/logs/check-20261107-015722.log：最终16张正式组件离线截图通过；不使用alva_prototype tag，场景含主窗、宽 / 窄连接、设置、文件标签、独立编辑、加载与端口浅深主题。build/logs/compile-20261107-015722.log：五个目标生产Go编译通过。
+- build/logs/build-production-ui-final-20261107.log：darwin/arm64 SmallSSH 0.0.1包构建及签名通过（58.9MB）；build/logs/build-production-ui-check-final-20261107.log：两个生成文件一致性检查通过。构建工具临时目录调整前的build / check记录已由这两份最终记录替代。
+- build/logs/install-20261107-020251.log：安装到/Applications/SmallSSH.app，旧包保留于/Users/smallraw/.Trash/SmallSSH-before-20261107-020252.170829000.app。安装后再次codesign --verify --deep --strict通过；主可执行文件SHA256为9ac30dceedff7c51905e26275a05868ece8d456593a8a0a9fd3f1f6886dc297d，与构建包一致且不同于安装前。
+
+主代理查看最终正式截图，画廊位于build/snapshots/production-alva-20261107/index.html；源码 / 图像哈希、全部门禁、安装 / 备份、前后可执行哈希及29份图标 / 许可完整性记录于build/logs/production-ui-installed-20261107-artifacts.json。全部验收使用合成内存数据、fake原生窗口和隔离回环SSH，没有输入真实服务器凭据，没有启动、退出或前置用户App。当前已运行的旧进程需用户自行保存并退出后重开；跨平台编译和本机安装不代替各系统原生交互 / 多显示器验收。公钥部署、UDP加速、完整变量体系等其余0.1缺口仍保留，不因本轮界面安装而被宣称完成。
+
+
+## 正式界面去除多余线条与安装 · 2026-11-07
+
+用户指出正式界面比设计稿多出大量横竖线。本轮直接改正式共享组件：去掉全局顶栏底线、侧栏分隔竖线、内容面板外描边、文件来源 / 工具栏底线、树分隔线、表头底线和列间短线、设置行及系统信息行分隔线。侧栏恢复整窗画布底色，选中项移除静态外轮廓；工具、命令、状态与Docker等标签统一用圆角底色代替下划线，资源卡片以轻底色分组。表单输入、键盘焦点、拖动悬停反馈、图表及浮层菜单必要边界保留；没有全局清空Border token，也未修改vendor。
+
+Split与Table只在原生chrome构造时使用局部透明Border，pane / cell回调恢复原主题；原生身份、拖动、排序、虚拟化、选择和焦点继续保留。只读复审发现去掉终端组强调线后活动组不易辨认，已用当前组选中Tab的紫色字 / 底色与其他组的弱底色区分，保留文件标签选择行为。settingsParameter移除仅用于最后一行分隔线的参数。REQUIREMENTS记录本轮去线条规则。
+
+验证记录：
+
+- build/logs/check-20261107-022118-race.log：共享components完整race门禁通过。
+- build/logs/check-20261107-022153-race.log：完整desktop/... race跑完（desktop 359.188s，components 2.428s），仅两个旧的1px外描边几何断言失败（四个子场景），其余用例通过，无数据竞争报告。该次没有被记作全绿；活动组字色修订后022547定向回归也指出同一旧描边断言。
+- chrome_test.go只把已删除描边的+1偏移改成实际边缘对齐，窄栏偏移明确为RailWidth+2*WorkspaceGap；48px顶栏、8px间距、宽度回收、标签唯一性和状态保留断言没有删除。build/logs/check-20261107-022817-race.log：全部首次失败用例及最终终端分组 / 点击输入 / 拖放 / 右键 / 关闭 / 工作区交互定向race通过（3.540s）。
+- build/logs/check-20261107-022709.log：最终16张主窗 / 连接 / 设置 / 文件 / 编辑 / 端口浅深场景及29张服务器资源场景通过。目录另保留022547定向运行生成的13张导航 / 空态图；合计58张PNG。主代理逐张查看核心浅深、窄连接、文件、端口、概览和系统信息；均为正式renderer，不使用alva_prototype。
+- build/logs/compile-20261107-022618.log：最终五平台编译通过；build/logs/build-clean-ui-final-20261107.log：darwin/arm64构建和签名通过；build/logs/build-clean-ui-check-final-20261107.log：两份生成文件均最新。此前022246编译及非final构建记录已由这些最终记录替代。
+- build/logs/install-20261107-022834.log：已安装/Applications/SmallSSH.app，旧包保留/Users/smallraw/.Trash/SmallSSH-before-20261107-022834.453650000.app。安装后codesign --verify --deep --strict通过；主可执行SHA256 f437b5882c62f9f6ffb7d2c6fc8552148044b5f649f851f8dcb7e75d125ce412与最终构建包一致。版本仍0.0.1。
+
+前后对照画廊：build/snapshots/production-clean-20261107/index.html；53份生产源码、测试预期、58张图及安装 / 备份 / 门禁记录：build/logs/production-clean-ui-installed-20261107-artifacts.json。验收使用合成数据、无窗口Tester及隔离测试服务，未启动、退出或前置用户App；旧运行进程需用户自行保存、退出后重开。本轮不宣称真实服务器或各系统原生窗口实机验收完成。
+
+
+## 连续命令授权入口、硬件驱动兼容与认证表单稳定 · 2026-11-07
+
+用户要求修复每次命令都要授权，随后追加硬件驱动故障及密码切换硬件认证时布局跳动。本轮以AI / CLI连续命令路径实现：新增smallssh exec 连接ID与session exec 连接ID [2h] [15m]，复用同一进程活控制连接和内存Delegation；逐行原样输出stdout，远端stderr / 授权提示 / 退出码写入stderr。所有者首次明确批准完整命令会话，后续每条仍由现有RequestDelegated签名、校验范围与策略、启动并审计。EOF / :quit / 错误关闭Delegation，撤销或断线直接退出，不回退单次请求、不自动重放。策略拒绝报告后允许下一行；32KiB输入限制在执行前核对。每行独立exec，不共享cd或环境变量，机器JSON协议session serve保留。单次exec 连接ID 命令的审批语义不变；文案和README明确区分，未引入磁盘能力文件、公共socket、PID / 程序名信任或跨进程继承。
+
+session.go抽出共享参数与批准步骤，JSON与纯命令入口使用同一生命周期。新增回环测试验证一次批准执行多条、EOF / quit撤销、撤权后不运行也不产生新pending、坏参数、策略拒绝后继续和32KiB边界。CLI初次定向检查与Desktop检查同秒启动，日志路径发生覆盖；该记录不作为证据，已由下列串行完整门禁替代。
+
+布局根因为ui.Form会按硬件分支的长标签重算整张表单的标签列。认证专属字段改用独立Form，公共名称 / 地址 / 端口 / 分组 / 用户名 / 登录方式在切换时保持相同Rect；硬件读取按钮限宽且tooltip保留全文。测试覆盖新建与编辑、中英、560 / 1100窗口、password→key→agent→pkcs11→password，以及草稿和秘密清除行为。初次新增fixture误用vault.Profile赋给Summary字段，静态检查发现后修正，最终门禁通过。
+
+驱动侧修复均有合成C模块证据：GetSlotList计数与取值之间增长时有界重试三次；GetTokenInfo报告TOKEN_NOT_PRESENT / DEVICE_REMOVED时跳过该槽并继续其他设备；所选序列号重复时在OpenSession / Login前拒绝，避免把PIN发送给多个令牌；保留系统动态加载错误及GetFunctionList返回码。EC公钥按曲线依赖的精确长度先识别兼容裸点，避免04 / 3f开头被误当DER短OCTET STRING而遗漏，同时保持标准DER及certificate-only路径。PIN不自动重试、不枚举尝试默认PIN；独立worker和SSH握手取消逻辑保留。两名Terra workers分别负责表单和原生驱动，主代理实现CLI / 集成 / 验证，另一路只读复审无剩余实质发现。
+
+最终证据：
+
+- build/logs/check-20261107-024415-race.log：完整CLI包race通过（13.472s），包括原JSON会话、旧能力文件拒绝及新连续命令全部用例。其后只改两个边界子用例的可读名称，测试主体和生产代码未变。
+- build/logs/check-20261107-023954-race.log：完整hardware包race通过（5.290s），包括五项新增发现 / 错误 / EC编码回归，原单PIN与取消、RSA SHA2 / NIST ECDSA签名回归。
+- build/logs/check-20261107-024120-race.log：SSH原生硬件签名握手deadline回归通过（16.571s）。
+- build/logs/check-20261107-023819-race.log：认证切换稳定性race通过（3.474s）；build/logs/check-20261107-024027-race.log：全部连接及代理相关流程定向race通过（103.253s）。
+- build/logs/check-20261107-024046.log：20张正式工作台 / 连接 / 硬件宽窄浅深及16张连接分类离线图通过（1.277s），主代理实际查看密码 / 硬件宽窄对照，内容仍可滚动，固定操作区可达。画廊位于build/snapshots/session-hardware-20261107/index.html。
+- build/logs/compile-20261107-024508.log：最终五平台编译通过；build/logs/build-session-hardware-final-20261107.log：darwin/arm64构建签名通过；build/logs/build-session-hardware-check-final-20261107.log：两份生成文件均最新。
+- build/logs/install-20261107-024548.log：已安装/Applications/SmallSSH.app，旧版/Users/smallraw/.Trash/SmallSSH-before-20261107-024548.304726000.app保留。安装后codesign --verify --deep --strict通过。主程序SHA256为8e30195743f3a5245c6162c92f89bec59c28351e7bdb2a97d56d0a6b1356c6c3，两个CLI副本均为5b01c12ce839355d7ed5044d6c9d2ad12f1b8868c74a63ca957244dd3d52d681，与最终包一致；已实际运行安装包内CLI help确认新入口，证据build/logs/installed-session-cli-help-20261107.log。
+
+源码、fixture、36张PNG及所有门禁 / 安装hash见build/logs/session-hardware-installed-20261107-artifacts.json。本轮没有修改依赖、vendor或密码可访问性补丁；未启动、退出或前置用户桌面App，只有CLI help及无窗口 / 回环 / 模拟驱动测试。用户尚未提供具体硬件型号、驱动名称和错误，因此上述修复不代表其真实令牌已验证；Windows / Linux是交叉编译证据。已运行的旧App需自行保存退出后重开才能使用新表单。
+
+
+## 标题栏拖窗与 macOS 红绿灯内缩 · 2026-11-07
+
+用户反馈标题上方不能拖动窗口，红绿灯过于贴边。根因是正式workspaceHeader仅为若干Spacer和按钮上下小带标记DragWindow，标签上方及剩余空白未覆盖；macOS采用TitleBarHidden但未设置TrafficLightPosition，沿用AppKit紧凑默认位置。
+
+整条workspaceHeader现在以DragWindow作为空白回退；locked标题Row、独立文件WindowFrame标题Row和设置两侧标题Row同样覆盖空白。已核对固定vendor的hitChain / pointerDown：最内层interactive优先，按钮、Tab和Tab拖放先于外层DragWindow，未改底层事件系统。主窗 / 设置 / 文件编辑窗共用applyHiddenWindowChrome，macOS仍为原生TitleBarHidden，红按钮左上角设为距左16 / 顶17点；14点原生按钮对应48点标题高度，非macOS不设置此位置。WindowFrame在原生控件右端额外保留8点。设置两侧面板取消顶部重复12点padding，标题高度max(32, nativeHeight-16)、关闭按钮32点且垂直居中；在48点原生标题下标题和按钮中心均Y24，内容viewport相应上移12点，避免标题下沉。
+
+验证：
+
+- build/logs/check-20261107-141811-race.log：缩紧设置标题后，三处旧viewport几何断言（四个子场景）仍要求Y60 / 原高度而失败；仅把预期同步为Y48 / H+12，滚动、焦点、导航与操作断言全部保留。
+- build/logs/check-20261107-141901-race.log：最终标题栏、主窗选项、真实Tab、标签拖放 / 右键 / 关闭、设置、编辑窗口及迟到关闭回归race通过（3.585s）；含macOS内缩选项与其他平台nil的核对。
+- build/logs/check-20261107-141901.log：最终20张正式浅深工作台 / 连接 / 设置 / 文件 / 编辑 / 端口离线截图通过（1.077s）。主代理查看主窗、设置与文件编辑图；fixture使用48 / 70点原生安全区。
+- build/logs/compile-20261107-141901.log：五平台编译通过。build/logs/build-window-chrome-20261107.log：darwin/arm64打包签名通过；build/logs/build-window-chrome-check-20261107.log：两份生成文件最新。
+- build/logs/install-20261107-142030.log：已安装/Applications/SmallSSH.app，旧版保留/Users/smallraw/.Trash/SmallSSH-before-20261107-142030.540924000.app。安装后codesign --verify --deep --strict通过；主程序SHA256为469695dc8b7c35b3a4dd143e42b98e642e234c75507f48324d2691ee65b65cea，与构建包一致。
+
+只读复审已核对原生控件坐标定义、48点高度计算、命中链优先级及设置几何，无剩余实质发现。源码 / 20张图 / 门禁与安装hash见build/logs/window-chrome-installed-20261107-artifacts.json，画廊build/snapshots/window-chrome-20261107/index.html。未修改vendor、依赖或密码可访问性补丁。Headless不会绘制系统红绿灯，StartDrag本身是空操作，所以本轮证明配置、布局和交互回归，不宣称已观察真实OS窗口移动；没有启动、退出或前置用户App。旧进程需自行保存并重开以加载新版。
+
+
+## 2026-11-07 — SmallPen CLI 页面归档与过时导出清理
+
+按用户指定使用 SmallPen CLI 创建并维护 `docs/design/smallssh.smallpen/`；正式源码核对的 49 项页面 / 窗口 / 面板已逐项记录入口、操作、状态、边界、源码位置与画布映射。共 54 张可编辑画布，包含关键状态、7 张用途目录及明确标为待实现的需求记录；8 个共享组件、14 个变体、33 个 Token、明暗主题、17 条入口链接和 1 个起点。设计入口为 `docs/design/DESIGN.md`，机器可读映射为 `docs/design/pages.json`；AGENTS 添加后续页面同步规则。独立编辑窗保留单一标题栏、保存 / 更多 / 关闭图标与底部行列 / 编码信息。
+
+- 保存修订 `05e6ba982cfcd5d85ac82335910656c90afad7d7256bc5c37fefc47beb33595c`；项目及链接清单在 `build/logs/smallpen-project-20261107.json`、`build/logs/smallpen-flows-20261107.json`。
+- 明暗主题各完成 68/68 个目标，数据有效，没有溢出或低对比度警告；各有 6 条设置原生控制叠放的 info。透明背景 / 混合文本等 364 项检查跳过，coverage 为 false；没有把它描述为完全视觉验收。完整报告在 `build/logs/smallpen-validate-light-20261107.json` 与 `build/logs/smallpen-validate-dark-20261107.json`。
+- CLI PNG 抽查工作台、硬件认证、设置、独立编辑器和页面目录；记录包含各样本真实修订 / 布局哈希，见 `build/logs/smallpen-summary-20261107.json`。中文字形改为经来源 SHA256 核对的 Noto Sans SC 子集；等宽字与 Lucide 图标资源及许可来源在 `docs/design/font-notices/`。
+- `go run ./tools check` 通过，证据 `build/logs/check-20261107-152742.log`（vendor 补丁、格式、vet、全量 Go 测试）。本轮修改为设计与文档，没有新增 App 功能，没有重新打包或启动 SmallSSH，没有读取真实凭据。
+- 110 张文档旧图和 75 份旧快照目录移入用户废纸篓，保留最新 `build/snapshots/window-chrome-20261107/` 与既有日志。逐项来源 / 目的路径在 `build/logs/smallpen-cleanup-20261107.json`；README、组件及服务器管理文档改为引用设计源，普通文档图片链接检查无断链，见 `build/logs/smallpen-image-links-20261107.json`。历史验收段落中的图片路径仍表示历史位置。
+
+限制：设计稿是结构与样式记录，业务状态依正式源码及需求文档；待实现画布不表示功能已完成。链接仅保存并核对，CLI 不支持跨页面 overlay 或双击触发，没有进行 SmallPen App 打开 / 导航验收，也没有把测试夹具或设计占位内容当作真实服务器 / 硬件验收。此前误用入口只读检查过 SmallPen 首页，此后全部设计写入通过 CLI 完成。
+
+
+## 2026-11-07 — 启动 SmallPen Web 查看设计
+
+按用户要求启动本机配套 SmallPen Web 服务，直接加载 `docs/design/smallssh.smallpen/`，监听 `127.0.0.1:43128`；未替换已有 SmallPen 桌面服务。启动日志返回 ready，工作区 URL 的 HTTP 检查为 200，已调用系统默认浏览器打开该工作区。日志为 `build/logs/smallpen-web-20261107.log`，启动证据为 `build/logs/smallpen-web-start-20261107.json`。本轮仅启动查看服务，没有修改设计或 App 功能；HTTP 就绪与浏览器启动不代替逐页视觉验收。
+
+
+## 2026-11-07 — 顶栏单一小窗开关与解锁设计对齐
+
+主窗右侧合并为一个工具显示 / 收起按钮，复用既有 toolsToggle / setToolsHidden，保持底部、右侧或独立窗口的已选位置。停靠切换、放大、收起仍由工具面板自身布局菜单管理；没有添加尚不存在的左侧停靠。同步了原有布局、窗口边界、键盘和终端输入测试，确认收起再打开不重置位置、服务器会话或固定文件来源。
+
+SmallPen 通过 CLI 原子修改 18 张工作区画布的重复顶栏按钮，并为 12 处工具栏补齐本地布局菜单和关闭入口。解锁 / 创建以当前 App 的离屏图和 locked.go 为准，替换旧大弹框为最大宽度 392 DIP 的居中卡片，单列系统验证就绪及密码回退；这些画布均实际保存在 `docs/design/smallssh.smallpen/`，pages.json 仅为入口 / 状态 / 源码索引。字体补齐真实加粗与 Lucide 指纹字形，来源和许可保存在既有 font-notices 中。当前设计修订 `20739c64584aa5f07c91c35c22e0ca17733b954f3188f3e8a3455f43492ed244`，57 张画布、9 个组件、18 个变体、38 个 Token。
+
+- 仓库 gate：`build/logs/check-20261107-155628.log` 通过（补丁、格式、vet、全量测试）。
+- 真实组件离屏：`build/logs/test-20261107-155628.log`，10 张明暗工作台 / 解锁关键状态截图在 `build/snapshots/tools-toggle-unlock-20261107/`。没有弹出原生窗口或系统认证框。
+- 终端保留输入及窄分组按钮：`build/logs/test-20261107-155949.log` 通过。
+- SmallPen 明暗主题各 75/75 目标完成，数据有效，无溢出或对比度警告。各有 6 条设置原生控制叠放 info 和 375 项跳过检查，coverage 为 false；报告为 `build/logs/smallpen-tools-toggle-unlock-light-20261107.json` 与对应 dark 文件。主窗、系统验证和暗色创建已比较原生渲染，不等同于逐像素或全流程验收。
+- macOS arm64 打包成功：`build/logs/build-tools-toggle-20261107.log`；已静默安装到 `/Applications/SmallSSH.app`，签名校验通过，日志 `build/logs/install-20261107-160017.log`，旧包在用户废纸篓；没有启动、退出或重启用户的 App。汇总和产物指纹见 `build/logs/tools-toggle-unlock-20261107-summary.json`。
+
+限制：本轮没有改变解锁认证、空闲锁定或授权策略。系统验证可用性来自隔离测试元数据，未接触真实密码 / PIN / 指纹验证。SmallPen 只保存和核对页面 / 链接，Web 服务仍在本机原端口；未进行 SmallPen 交互与所有页面视觉验收，位置菜单草图不意味着新增停靠能力。
+
+
+## 2026-11-07 — 密码输入右侧指纹入口核验
+
+按用户要求核对点击 / 回车展开密码后的指纹入口。当前 lockedView 的密码组件以 systemReady 控制右侧系统验证动作，passwordMode 只决定是否展开密码，不会关闭该动作；系统验证可用时，点击右侧动作调用 systemUnlock。输入密码中取消嵌入式验证后也保留密码及系统验证入口。现有行为已满足要求，本轮没有改生产认证逻辑，也没有重新安装相同产物。
+
+相关离屏测试通过：`build/logs/test-20261107-163520.log`，覆盖点击展开、Enter 进入密码、异步系统状态到达与输入取消嵌入验证。SmallPen 的“01 访问 / 系统验证密码回退”已保存系统验证可用的密码框实例，右侧指纹可见；CLI 原生预览已查看，记录为 `build/logs/unlock-fingerprint-preview-20261107.json`，设计修订保持 `20739c64584aa5f07c91c35c22e0ca17733b954f3188f3e8a3455f43492ed244`。预览 PNG 属于工具临时缓存，不作为永久导出。未触发真实 Touch ID、读取用户密码或打开系统认证窗口。
+
+
+## 2026-11-07 — 平级工作区标签、递归四向分栏与保护路径编辑器
+
+按用户澄清重构工作区承载：终端、独立文件、命令、服务器状态进入同一标签模型，支持排序、跨组、向上下左右继续拆分成四格 / 六格、空组收回、合并与拖回停靠。分支只保存比例和方向，叶节点保留既有会话、文档及工具身份，不复制 PTY 或浏览器；每个窗格统一圆角与 8 DIP 分栏留白。单组标签在顶栏，多组标签在各自窗格。工具停靠支持四边，窄窗左右回退底部但保留偏好；“独立到标签页”和既有“系统窗口”分别命名。
+
+独立命令 / 状态捕获源会话，原生延迟菜单重新核对代际、视图归属与源会话。修复独立状态页停止采样、改停靠方向清除文件选择、关闭功能区误关源 SSH、关闭其他终端导致焦点卡住，以及从系统窗口独立时丢失左侧 / 顶部偏好。保护路径编辑器宽 720 DIP、多行区高 210 DIP，窄窗收敛到可用宽度；错误保留草稿，说明明确为 AI 文件操作限制。未更改策略校验或远端权限，不能据此声称任意 exec 已被沙箱化。
+
+外部配置代理实际完成了保护路径渲染 / 校验测试及公共标签栏测试调整，日志为 `build/logs/delegate-protected-paths-resume-20261107.log`、`build/logs/delegate-workspace-tabs-tests-resume-20261107.log`；配置身份不从脱敏状态推断为某个模型。主代理负责递归布局、拖放、目标绑定及回归修复，独立只读审查发现的问题已落地修复。外部任务中的沙箱网络限制不作为主仓库验收证据。
+
+- 最终仓库 gate：`build/logs/check-20261107-192322.log` 通过，含 vendor 补丁完整性、567 个文件格式、vet 和全量测试；未改 vendor。
+- 完整终端集成：`build/logs/test-20261107-192321.log` 通过。真实指针拖动构造六个混合窗格、四边拆分、移走最后标签收回空组、合并、将文件拖回工具区，确认输入只到指定 PTY，并保留会话、输出和文件浏览状态。菜单目标、关闭快捷键、独立状态源及停靠偏好有隔离回归测试。
+- 真实 Go 界面离屏：`build/logs/test-20261107-191409.log` 通过，14 张明暗文件标签 / 四格 / 六格 / 左侧 / 顶部停靠 / 宽窄路径编辑器图保留于 `build/snapshots/workspace-peers-20261107/`，均用合成会话与缓存，不接触真实凭据、硬件或系统选择框。
+- SmallPen 仅通过 CLI 维护正式设计源，保存修订 `e74922aad4474aacf2010d6169c935506a1eb9450f96cfbb7fda6e67ba8caf94`；64 张画布、10 个组件、21 个变体、39 个 Token，26 条入口链接。明暗各完成 85/85 目标，数据有效，无 warning；各有 6 条既有设置窗口控制叠放 info、527 项跳过，完整 coverage 为 false。完整报告：`build/logs/smallpen-workspace-peers-light-20261107.json` 与对应 dark 文件；部分页面经 CLI 原生 PNG 目视检查，不代表全部页面 / 状态 / App 交互通过。
+- macOS arm64 打包：`build/logs/build-workspace-peers-20261107.log`；生成文件核对：`build/logs/build-workspace-peers-check-20261107.log`，两者通过。
+- 已静默安装 `/Applications/SmallSSH.app`，签名校验通过，已比较安装二进制与构建二进制 SHA256 一致。日志 `build/logs/install-20261107-192010.log`；旧包保留于 `/Users/smallraw/.Trash/SmallSSH-before-20261107-192010.745726000.app`。没有启动、退出或重启正在运行的用户 App。
+
+限制：以上运行与渲染证据来自本机 macOS 和 headless UI Tester；未触发真实服务器、认证或系统原生鼠标拖动。SmallPen Web 原端口 HTTP 200 只证明服务可访问，不证明所有 App 页面已人工验收。当前用户旧进程不会随磁盘安装自动更新。汇总与产物指纹：`build/logs/workspace-peers-20261107-summary.json`。

@@ -14,11 +14,13 @@ import (
 )
 
 var (
-	ErrDisabled      = errors.New("此服务器已禁止 AI 和自动化访问")
-	ErrProtected     = errors.New("操作涉及受保护路径")
-	ErrUncontrolled  = errors.New("路径保护模式不允许无法限定文件影响范围的操作")
-	ErrCommand       = errors.New("保护模式下不开放任意命令与终端；关闭保护需确认账户完整权限风险")
-	ErrInvalidPolicy = errors.New("自动化策略无效")
+	ErrDisabled           = errors.New("此服务器已禁止 AI 和自动化访问")
+	ErrProtected          = errors.New("操作涉及受保护路径")
+	ErrUncontrolled       = errors.New("路径保护模式不允许无法限定文件影响范围的操作")
+	ErrCommand            = errors.New("保护模式下不开放交互终端和容器终端；命令请使用可检查的 exec")
+	ErrEmptyCommand       = errors.New("命令不能为空")
+	ErrDestructiveCommand = errors.New("命令被破坏性命令护栏拦截")
+	ErrInvalidPolicy      = errors.New("自动化策略无效")
 )
 
 type Policy struct {
@@ -129,7 +131,15 @@ func (p Policy) Check(op approval.Operation) error {
 		return nil
 	}
 	switch op.Kind {
-	case "exec", "shell", "docker-terminal":
+	case "exec":
+		if strings.TrimSpace(op.Command) == "" {
+			return ErrEmptyCommand
+		}
+		if reason := DestructiveCommand(op.Command); reason != "" {
+			return fmt.Errorf("%w：%s（护栏是尽力而为，不是安全边界）", ErrDestructiveCommand, reason)
+		}
+		return nil
+	case "shell", "docker-terminal":
 		return ErrCommand
 	case "compose-update", "chmod", "file-attributes", "put-resume":
 		// SFTP v3 cannot prove that an existing inode is not also hard-linked
@@ -153,6 +163,10 @@ func Reason(err error) string {
 		return "automation_disabled"
 	case errors.Is(err, ErrProtected):
 		return "protected_path"
+	case errors.Is(err, ErrDestructiveCommand):
+		return "destructive_command"
+	case errors.Is(err, ErrEmptyCommand):
+		return "invalid_operation"
 	case errors.Is(err, ErrUncontrolled), errors.Is(err, ErrCommand):
 		return "uncontrolled_operation"
 	case errors.Is(err, ErrInvalidPolicy):

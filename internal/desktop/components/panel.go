@@ -9,14 +9,14 @@ type PanelTab struct {
 
 type PanelBarOptions struct {
 	Leading func()
+	Tab     func(ui.Element, int)
 }
 
 // HeaderBar gives adjacent panes the same baseline and keeps leading actions
 // at the same pointer position when a pane is collapsed or restored.
 func HeaderBar(c *ui.Context) ui.Element {
 	return ui.Row(c).FillWidth().Height(HeaderHeight).Shrink(0).Padding(0, HeaderInset).Gap(0).
-		AlignItems(ui.Center).Background(c.Theme().Surface).
-		BorderWidth(0, 0, 1, 0).BorderColor(c.Theme().Border)
+		AlignItems(ui.Center)
 }
 
 // HeaderLabel optically aligns the visible glyphs with the SVG actions.
@@ -42,14 +42,17 @@ func PanelBar(c *ui.Context, selected *int, items []PanelTab, actions func(), op
 		tabs := ui.TabsBase(c, &index, len(items))
 		tabs.List.Grow(1).Height(HeaderHeight).Gap(0).AlignItems(ui.Center).Label(tr(c, "工具选项卡")).Children(func() {
 			for i, item := range items {
-				tab := tabs.Tab(i).Height(HeaderHeight).Padding(0, 12).Label(item.Title).
-					TextColor(c.Theme().TextMuted).BorderWidth(0, 0, 2, 0).BorderColor(ui.Transparent)
+				tab := tabs.Tab(i).Height(28).Padding(0, 12).Radius(8).Label(item.Title).
+					TextColor(c.Theme().TextMuted)
 				if i == index {
-					tab.TextColor(c.Theme().Accent).Background(c.Theme().Accent.Alpha(.07)).BorderColor(c.Theme().Accent)
+					tab.TextColor(c.Theme().Accent).Background(c.Theme().Accent.Alpha(.10))
 				} else if tab.Hovered() {
 					tab.TextColor(c.Theme().Text).Background(c.Theme().Border.Alpha(.35))
 				}
 				tab.Children(func() { HeaderLabel(c, item.Title) })
+				if len(options) > 0 && options[0].Tab != nil {
+					options[0].Tab(tab, item.ID)
+				}
 			}
 		})
 		if tabs.List.Changed() && index >= 0 && index < len(items) {

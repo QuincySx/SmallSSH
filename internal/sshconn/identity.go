@@ -10,6 +10,9 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/netroute"
+	"sshclient/internal/vault"
 )
 
 type HostIdentity struct {
@@ -29,13 +32,27 @@ func ValidateTarget(host string, port int) error {
 // ProbeHost stops during key exchange, before any user authentication. A network
 // observation is a candidate identity; the caller must obtain owner confirmation.
 func ProbeHost(parent context.Context, host string, port int) (HostIdentity, error) {
+	return ProbeRoute(parent, host, port, connectcfg.Network{}, nil)
+}
+func ProbeRoute(parent context.Context, host string, port int, network connectcfg.Network, relays []vault.Profile) (HostIdentity, error) {
 	if err := ValidateTarget(host, port); err != nil {
 		return HostIdentity{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, 8*time.Second)
 	defer cancel()
 	addr := net.JoinHostPort(host, fmt.Sprint(port))
-	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	var raw net.Conn
+	var err error
+	if len(relays) == 0 {
+		raw, err = netroute.Dial(ctx, addr, network.Proxy)
+	} else {
+		var relay *Client
+		relay, err = DialRoute(ctx, relays)
+		if err == nil {
+			defer relay.Close()
+			raw, err = relay.SSH.DialContext(ctx, "tcp", addr)
+		}
+	}
 	if err != nil {
 		return HostIdentity{}, fmt.Errorf("无法连接服务器 %s（TCP 连接）: %w", addr, err)
 	}

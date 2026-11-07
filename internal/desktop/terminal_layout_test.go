@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
@@ -188,7 +189,7 @@ func TestNewTerminalSplitAuthenticatesThroughBrokerAndCreatesSeparatePTY(t *test
 	h.a.connections = []vault.Summary{{ID: p.ID, Name: "Loopback", Host: p.Host, Port: p.Port, User: p.User}}
 	h.ui = ui.NewTester(h.a.view, 1100, 760)
 	h.a.openShell()
-	h.wait(func() bool { return len(h.a.sessions) == 1 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 })
 	first := h.a.sessions[0]
 	h.a.selected = "unrelated-sidebar-server"
 	if err := h.ui.Click("终端分栏"); err != nil {
@@ -197,7 +198,7 @@ func TestNewTerminalSplitAuthenticatesThroughBrokerAndCreatesSeparatePTY(t *test
 	if err := h.ui.ChooseMenuItem("新建终端到另一组"); err != nil {
 		t.Fatal(err)
 	}
-	h.wait(func() bool { return len(h.a.sessions) == 2 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 2 })
 	second := h.a.sessions[1]
 	if h.a.terminalLayout == nil || len(h.a.terminalLayout.sessions()) != 2 || first.term == second.term || first.requestID == second.requestID || h.a.currentTerminal() != second || second.host != first.host || h.a.selected != "unrelated-sidebar-server" {
 		t.Fatal("new split did not own a separate authorized SSH PTY")
@@ -211,7 +212,7 @@ func TestNewTerminalSplitAuthenticatesThroughBrokerAndCreatesSeparatePTY(t *test
 	before := h.a.terminalLayout
 	h.a.newSplitTerminal(second)
 	h.a.activateTerminal(first, true)
-	h.wait(func() bool { return len(h.a.sessions) == 3 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 3 })
 	if h.a.currentTerminal() != first || h.a.terminalLayout != before {
 		t.Fatal("a delayed connection stole focus or changed a later layout")
 	}
@@ -249,7 +250,7 @@ func TestTerminalTabDragAcrossGroupsAndReorderRetainsLocalSelection(t *testing.T
 	tt := ui.NewTester(a.view, 1280, 900)
 	left, right := a.terminalLayout.left, a.terminalLayout.right
 	r, _ := tt.Find(fmt.Sprintf("终端组%d", right.id))
-	dragTerminalTab(t, tt, "Shell c", r.X+r.W/2, r.Y+100)
+	dragTerminalTab(t, tt, "Shell c", r.X+r.W/2, r.Y+r.H/2)
 	if !slices.Equal(right.sessions, []*session{a.sessions[1], a.sessions[2]}) || len(left.sessions) != 2 || a.activeTerminalGroup != right {
 		t.Fatal("cross-group drag lost ownership or order")
 	}
@@ -262,7 +263,7 @@ func TestTerminalTabDragAcrossGroupsAndReorderRetainsLocalSelection(t *testing.T
 		t.Fatal("one group changed the other group's selected tab")
 	}
 	r, _ = tt.Find(fmt.Sprintf("终端组%d", left.id))
-	dragTerminalTab(t, tt, "Shell b", r.X+r.W/2, r.Y+100)
+	dragTerminalTab(t, tt, "Shell b", r.X+r.W/2, r.Y+r.H/2)
 	before, _ := tt.Find("Shell a")
 	dragTerminalTab(t, tt, "Shell b", before.X+before.W/2, before.Y+before.H/2)
 	if left.sessions[0] != a.sessions[1] || len(a.sessions) != 4 || right.active != a.sessions[2] {
@@ -281,51 +282,51 @@ func TestTerminalTabDragToRightEdgeCreatesGroupAndMovingBackCollapsesIt(t *testi
 	a, _ := terminalSplitFixture(t, 3)
 	tt := ui.NewTester(a.view, 1280, 900)
 	r, _ := tt.Find(fmt.Sprintf("终端组%d", a.singleTerminalGroup.id))
-	dragTerminalTab(t, tt, "Shell c", r.X+r.W*.9, r.Y+100)
+	dragTerminalTab(t, tt, "Shell c", r.X+r.W*.9, r.Y+r.H/2)
 	if a.terminalLayout == nil || len(a.terminalLayout.left.sessions) != 2 || len(a.terminalLayout.right.sessions) != 1 {
 		t.Fatal("right-edge drop did not create a separate tab group")
 	}
 	left := a.terminalLayout.left
 	r, _ = tt.Find(fmt.Sprintf("终端组%d", left.id))
-	dragTerminalTab(t, tt, "Shell c", r.X+r.W/2, r.Y+100)
+	dragTerminalTab(t, tt, "Shell c", r.X+r.W/2, r.Y+r.H/2)
 	if a.terminalLayout != nil || len(a.singleTerminalGroup.sessions) != 3 {
 		t.Fatal("last-tab move did not collapse the empty group")
 	}
 }
 
-func TestEditorTabMovesBetweenTerminalGroupsWithoutLosingDocument(t *testing.T) {
-	a, recorders := terminalSplitFixture(t, 2)
+func TestStandaloneEditorDoesNotOccupyTerminalGroup(t *testing.T) {
+	a, recorders := terminalSplitFixture(t, 3)
 	a.ensureTerminalGroups()
 	a.splitExistingTerminal(a.sessions[1])
 	a.activateTerminal(a.sessions[0], false)
+	var window *fakeToolsWindow
+	a.newEditorWindow = func(options mygo.WindowOptions, request, closed func()) toolsWindow {
+		window = &fakeToolsWindow{options: options, onClosed: closed}
+		return window
+	}
 	a.installEditor(localEndpoint, "/example/notes.txt", "preserved document", "fixture-hash")
-	a.activateTerminal(a.sessions[1], true)
-	tt := ui.NewTester(a.view, 1280, 900)
-	if _, ok := tt.Find("文件编辑器"); !ok {
-		t.Fatal("inactive group's editor disappeared")
+	if window == nil || a.editShown || a.editorTerminalGroup != nil {
+		t.Fatal("standalone editor occupied a terminal group")
 	}
-	tt.Type("terminal only")
-	expectTerminalInput(t, recorders[1], "terminal only")
-	if a.edit.Buffer.String() != "preserved document" {
-		t.Fatal("terminal input reached another group's editor")
-	}
-	if err := tt.Click("文件编辑器"); err != nil {
-		t.Fatal(err)
-	}
-	if !a.editShown || a.activeTerminalGroup != a.editorTerminalGroup {
-		t.Fatal("clicking an inactive editor did not activate its group")
+	main := ui.NewTester(a.view, 1280, 900)
+	if _, ok := main.Find("文件编辑器"); ok {
+		t.Fatal("main window retained the editor")
 	}
 	right := a.terminalLayout.right
-	r, _ := tt.Find(fmt.Sprintf("终端组%d", right.id))
-	dragTerminalTab(t, tt, "编辑: notes.txt", r.X+r.W/2, r.Y+100)
-	if a.editorTerminalGroup != right || a.edit.Buffer.String() != "preserved document" {
-		t.Fatal("moving editor tab lost document state")
+	r, _ := main.Find(fmt.Sprintf("终端组%d", right.id))
+	dragTerminalTab(t, main, "Shell c", r.X+r.W/2, r.Y+r.H/2)
+	if a.sessions[2].group != right || a.edit.Buffer.String() != "preserved document" {
+		t.Fatal("terminal drag changed the standalone document")
 	}
-	if err := tt.Click("关闭标签：编辑: notes.txt"); err != nil {
-		t.Fatal(err)
+	main.Type("terminal only")
+	expectTerminalInput(t, recorders[2], "terminal only")
+	ed := ui.NewTester(a.editorWindowView, 900, 680)
+	if _, ok := ed.Find("文件编辑器"); !ok {
+		t.Fatal("standalone window lost editor")
 	}
-	tt.Type("back to shell")
-	expectTerminalInput(t, recorders[1], "back to shell")
+	if a.edit.Buffer.String() != "preserved document" {
+		t.Fatal("terminal input reached editor")
+	}
 }
 
 func TestTerminalGroupCloseAndRestoreControlsFitNarrowRightDock(t *testing.T) {
@@ -336,7 +337,7 @@ func TestTerminalGroupCloseAndRestoreControlsFitNarrowRightDock(t *testing.T) {
 	a.sidebarWidth = 390
 	tt := ui.NewTester(a.view, 1000, 760)
 	tt.Frame()
-	for _, label := range []string{"关闭标签：Shell a", "关闭标签：Shell b", "隐藏工具面板", "锁定"} {
+	for _, label := range []string{"关闭标签：Shell a", "关闭标签：Shell b", "隐藏工具面板", "设置"} {
 		r, ok := tt.Find(label)
 		if !ok || r.W < 24 || r.X < 0 || r.X+r.W > 1000 {
 			left, _ := tt.Find(fmt.Sprintf("终端组%d", a.terminalLayout.left.id))
@@ -382,7 +383,7 @@ func TestTerminalTabContextMenuTargetsClickedSessionAndKeepsLocalScope(t *testin
 			t.Fatal("tab menu lost a terminal action", label, tt.Menu())
 		}
 	}
-	for _, label := range []string{"授权中心", "安全设置", "立即锁定", "文件", "向右拆分", "关闭窗口", "工具面板独立窗口"} {
+	for _, label := range []string{"授权中心", "安全设置", "立即锁定", "文件", "关闭窗口", "工具面板独立窗口"} {
 		if slices.Contains(tt.Menu(), label) {
 			t.Fatal("terminal tab menu contains unrelated actions", label)
 		}
@@ -420,9 +421,9 @@ func TestNewTerminalTabCompletionRespectsLaterTerminalEditorAndPageSelection(t *
 	h.a.connections = []vault.Summary{{ID: p.ID, Name: "Loopback", Host: p.Host, Port: p.Port, User: p.User}}
 	h.ui = ui.NewTester(h.a.view, 1100, 760)
 	h.a.openShell()
-	h.wait(func() bool { return len(h.a.sessions) == 1 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 1 })
 	h.a.openShellMode(true)
-	h.wait(func() bool { return len(h.a.sessions) == 2 })
+	h.wait(func() bool { return readyTerminalCount(h.a) == 2 })
 	source, other := h.a.sessions[0], h.a.sessions[1]
 	for _, selection := range []string{"source", "native-menu", "other-terminal", "editor", "security"} {
 		t.Run(selection, func(t *testing.T) {
@@ -462,7 +463,7 @@ func TestNewTerminalTabCompletionRespectsLaterTerminalEditorAndPageSelection(t *
 				a.page = 4
 			}
 			a.contentFocus = false
-			h.wait(func() bool { return len(a.sessions) == before+1 })
+			h.wait(func() bool { return readyTerminalCount(a) == before+1 })
 			added := a.sessions[before]
 			if added.term == source.term || added.requestID == source.requestID || added.host != source.host || a.selected != "unrelated-sidebar-server" {
 				t.Fatal("new tab did not create a separate authorized PTY for its source")

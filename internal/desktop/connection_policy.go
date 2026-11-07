@@ -9,6 +9,9 @@ import (
 	"sshclient/internal/desktop/components"
 )
 
+// The owner decides whether automation may touch this server at all. The
+// consequence of the choice belongs in the approval dialog, not repeated as
+// paragraphs under the checkbox.
 func (a *app) connectionPolicyForm(c *ui.Context) {
 	ui.Field(c, tr(c, "AI 访问"), func() {
 		ui.Column(c).Key("connection-ai-policy").FillWidth().Gap(8).Children(func() {
@@ -23,12 +26,11 @@ func (a *app) connectionPolicyForm(c *ui.Context) {
 				a.form.Policy.Disabled = !enabled
 			}
 			if !enabled {
-				ui.Text(c, tr(c, "AI 请求会直接拒绝并记入历史")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 				return
 			}
 			protected := !a.form.Policy.Unrestricted
 			ui.Row(c).FillWidth().MinWidth(0).Gap(8).AlignItems(ui.Center).Children(func() {
-				if ui.Checkbox(c, &protected, tr(c, "保护关键路径")).Grow(1).Changed() {
+				if ui.Checkbox(c, &protected, tr(c, "保护关键操作")).Grow(1).Changed() {
 					if protected {
 						a.form.Policy.Unrestricted = false
 					} else {
@@ -39,21 +41,14 @@ func (a *app) connectionPolicyForm(c *ui.Context) {
 					a.editProtectedPaths()
 				}
 			})
-			if !a.form.Policy.Unrestricted {
-				ui.Text(c, tr(c, "受保护路径禁止读取、下载和修改")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
-				ui.Text(c, tr(c, "保护开启时，AI 不开放任意命令和终端")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
-				ui.Text(c, tr(c, "仅开放受控文件操作；属性和续传写入关闭")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
-			} else {
-				ui.Text(c, tr(c, "保护已关闭 · AI 可使用账户全部权限")).FillWidth().FontSize(11).TextColor(c.Theme().Warning)
-			}
 		})
 	})
 }
 
 func (a *app) confirmUnrestrictedPolicy() {
 	seq, gen, id := a.connection.sequence, a.generation, a.form.ID
-	a.ask(tr(nil, "关闭关键路径保护？"), a.form.Name,
-		tr(nil, "AI 将可使用此 SSH 账户的全部权限，包括任意命令、终端和关键文件修改。"), "", "", tr(nil, "关闭保护"), func(string) {
+	a.ask(tr(nil, "关闭关键操作保护？"), a.form.Name,
+		tr(nil, "AI 将可执行任意命令、使用交互终端并修改关键文件；破坏性命令护栏不再生效。"), "", "", tr(nil, "关闭保护"), func(string) {
 			if a.editorCurrent(seq, gen) && a.form.ID == id {
 				a.form.Policy.Unrestricted = true
 			}
@@ -73,7 +68,7 @@ func protectedPathsInput(value string) (accesspolicy.Policy, error) {
 
 func (a *app) editProtectedPaths() {
 	seq, gen, id := a.connection.sequence, a.generation, a.form.ID
-	a.ask(tr(nil, "保护路径"), a.form.Name, tr(nil, "每行一个绝对路径；留空使用默认保护路径。"), tr(nil, "保护路径输入"),
+	a.ask(tr(nil, "保护路径"), a.form.Name, tr(nil, "AI 的文件操作不能读取、下载或修改这些路径。每行一个绝对路径；留空使用默认保护路径。"), tr(nil, "保护路径输入"),
 		strings.Join(a.form.Policy.Paths(), "\n"), tr(nil, "应用"), func(value string) {
 			if a.editorCurrent(seq, gen) && a.form.ID == id {
 				policy, err := protectedPathsInput(value)
@@ -83,6 +78,8 @@ func (a *app) editProtectedPaths() {
 			}
 		})
 	a.prompt.multiline = true
+	a.prompt.width = 720
+	a.prompt.multilineHeight = 210
 	a.prompt.validate = func(value string) error {
 		_, err := protectedPathsInput(value)
 		return err

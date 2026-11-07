@@ -26,6 +26,8 @@ func Button(c *ui.Context, label string, options ...ButtonOptions) ui.Element {
 	}
 	original := c.Theme()
 	theme := *original
+	theme.Surface = theme.Background.Mix(theme.Surface, .45)
+	theme.Border = ui.Transparent
 	switch o.Variant {
 	case Destructive:
 		theme.Accent = theme.Danger
@@ -46,7 +48,7 @@ func Button(c *ui.Context, label string, options ...ButtonOptions) ui.Element {
 	} else {
 		button = ui.Button(c, text)
 	}
-	button.Height(ControlHeight).Disabled(o.Disabled || o.Busy).Label(label)
+	button.Height(ControlHeight).Radius(8).Disabled(o.Disabled || o.Busy).Label(label)
 	if o.Busy {
 		button.Children(func() {
 			ui.Spinner(c).Size(12, 12)

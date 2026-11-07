@@ -96,7 +96,7 @@ func TestAuthenticationPasswordNativeAnchorKeepsButtonAndKeyboard(t *testing.T) 
 		})
 	}, 240, 60)
 	tt.Frame()
-	if bounds.W != 36 || bounds.H != 34 || bounds.X < 0 || bounds.X+bounds.W > 240 {
+	if bounds.W != 42 || bounds.H != 40 || bounds.X < 0 || bounds.X+bounds.W > 240 {
 		t.Fatal("native authentication anchor moved outside its button", bounds)
 	}
 	if err := tt.Click("Touch ID"); err != nil {

@@ -110,7 +110,7 @@ func (a *app) transferActivity(c *ui.Context) {
 				}
 			})
 			if len(a.dockerJobs) > 0 {
-				ui.Tabs(c, &a.activityTab, tr(c, "传输"), tr(c, "服务器操作"))
+				components.Tabs(c, &a.activityTab, tr(c, "传输"), tr(c, "服务器操作"))
 			}
 			if a.activityTab == 1 && len(a.dockerJobs) > 0 {
 				a.dockerJobsView(c)
