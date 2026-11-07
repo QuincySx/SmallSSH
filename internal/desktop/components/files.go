@@ -14,6 +14,7 @@ type FileEntry struct {
 	Directory bool
 	Bytes     uint64
 	Modified  time.Time
+	Loading   bool
 }
 
 type FileListOptions struct {
@@ -21,7 +22,7 @@ type FileListOptions struct {
 	ShowModified bool
 	// Decorate binds context menus, selection, drag/drop and double-clicks to
 	// the actual cell. The caller snapshots its operation target as usual.
-	Decorate func(ui.Element, int)
+	Decorate func(ui.Element, int, int)
 }
 
 func FileList(c *ui.Context, state *ui.ListState, count int, entry func(int) FileEntry, o FileListOptions) ui.Element {
@@ -56,6 +57,9 @@ func FileList(c *ui.Context, state *ui.ListState, count int, entry func(int) Fil
 			switch col {
 			case 0:
 				FileName(c, f, FileNameOptions{Selected: selected})
+				if f.Loading {
+					ui.Spinner(c).Size(14, 14).Shrink(0).Label(tr(c, "正在打开文件")).Tooltip(tr(c, "正在打开文件"))
+				}
 			case 1:
 				text := "—"
 				if !f.Directory {
@@ -71,7 +75,7 @@ func FileList(c *ui.Context, state *ui.ListState, count int, entry func(int) Fil
 			}
 		})
 		if o.Decorate != nil {
-			o.Decorate(cell, i)
+			o.Decorate(cell, i, col)
 		}
 	}).Fill().Label(o.Label)
 }

@@ -327,27 +327,29 @@
       "name": "文件管理窗格",
       "host": "工具面板/独立工具窗/文件大标签",
       "entry": "工具→文件；选服务器文件或切换来源",
-      "actions": "本机/已存服务器/跟随终端；路径、目录树、列表、搜索、排序、隐藏项；多窗及拆分",
-      "states": "加载、空目录、无目标、错误重试、脱机/已断开",
-      "source": "internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_workspace.go",
+      "actions": "选择来源、路径与目录树；显示本机文件，一键并排，已有本机窗格则定位；拆分、排列与关闭",
+      "states": "目标目录立即加载；空目录、错误重试；文件名旁与底部显示打开进度、成功或失败",
+      "source": "internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_layout.go; internal/desktop/filebrowser.go",
       "limits": "最多8窗；状态按来源隔离；不同服务器可浏览但不能直接互传",
       "design_pages": [
         "04 文件 / 文件大标签",
-        "04 文件 / 本机与服务器"
+        "04 文件 / 本机与服务器",
+        "04 文件 / 列表右键与打开反馈"
       ]
     },
     {
       "id": "file-actions",
       "name": "文件操作与更多菜单",
-      "host": "文件工具栏/树或列表右键菜单",
+      "host": "工具栏与目录树原生菜单；文件列表应用内菜单",
       "entry": "文件窗格右上/文件或目录右键",
       "actions": "上一级、刷新、新建文件/目录、上传、下载、重命名/移动、删除、属性/权限；拆分/关闭/恢复",
-      "states": "多选、确认、目标冲突、部分失败、权限不足",
-      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go",
+      "states": "右键切换目标、选中组内保持多选；菜单外点击直接生效；Esc、方向键、Tab/Enter；过期目标失效",
+      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go; internal/desktop/file_context_menu.go",
       "limits": "目录上传与服务器间直接复制未实现；非空目录不能删除；不主动覆盖",
       "design_pages": [
         "04 文件 / 文件大标签",
-        "04 文件 / 批量删除确认"
+        "04 文件 / 批量删除确认",
+        "04 文件 / 列表右键与打开反馈"
       ]
     },
     {
@@ -381,13 +383,14 @@
       "name": "单文件编辑",
       "host": "独立原生文件窗口",
       "entry": "文件列表打开文本文件",
-      "actions": "语法高亮、搜索、编辑、保存、另存为；标题/来源/状态栏",
-      "states": "后台加载、取消/重试、格式不支持可下载、未保存关闭确认、保存中/失败/冲突",
+      "actions": "立即显示读取窗口；列表进度与显示文件窗口按钮；搜索、编辑、保存、另存为、关闭",
+      "states": "读取中、取消/重试；失败原因与下载入口；未保存关闭确认、保存失败/冲突",
       "source": "internal/desktop/editor_window.go; internal/desktop/file_open.go; internal/desktop/filebrowser.go",
       "limits": "仅≤4 MiB UTF-8文本；非文本不伪装成文本编辑；真实文件访问不属于离线样例",
       "design_pages": [
         "04 文件 / 独立文件编辑",
-        "04 文件 / 文件加载与失败"
+        "04 文件 / 文件加载与失败",
+        "04 文件 / 列表右键与打开反馈"
       ]
     },
     {

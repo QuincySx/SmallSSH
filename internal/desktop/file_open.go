@@ -136,3 +136,29 @@ func (a *app) editorReadView(c *ui.Context, load *fileReadState) {
 		})
 	})
 }
+
+// Keep feedback beside the originating list even when the editor is behind
+// another window. The action only shows the existing document, without I/O.
+func (a *app) fileOpenFeedback(c *ui.Context, p *filePane, dir string) {
+	if a.editPath == "" || a.editHost != p.endpoint || parentDir(p.endpoint == localEndpoint, a.editPath) != dir {
+		return
+	}
+	name := reviewText(baseName(p.endpoint == localEndpoint, a.editPath))
+	label := tr(c, "已打开 · ") + name
+	load := a.editorRead
+	if load != nil {
+		if load.loading {
+			ui.Spinner(c).Size(14, 14).Shrink(0).Label(tr(c, "正在打开文件"))
+			label = tr(c, "正在打开 · ") + name
+		} else {
+			label = tr(c, "打开失败 · ") + name
+		}
+	}
+	message := ui.Text(c, label).SingleLine().MinWidth(0).Shrink(1).FontSize(11).TextColor(c.Theme().TextMuted).Tooltip(label)
+	if load != nil && !load.loading {
+		message.TextColor(c.Theme().Danger).Tooltip(reviewText(load.error))
+	}
+	if components.SVGButton(c, components.DetachPanelIcon, tr(c, "显示文件窗口")).Size(24, 24).Shrink(0).Clicked() {
+		a.openEditorWindow()
+	}
+}

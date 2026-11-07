@@ -289,8 +289,8 @@ func TestBatchDeleteSelectionAndCapturedLocalEndpoint(t *testing.T) {
 	if b.chosen.Len() != 4 {
 		t.Fatal("right click discarded selected files", b.chosen.Len())
 	}
-	if err := tt.ChooseMenuItem("删除"); err != nil {
-		t.Fatal(err, tt.Menu())
+	if err := tt.Click("删除"); err != nil {
+		t.Fatal(err)
 	}
 	if !a.prompt.open || !strings.Contains(a.prompt.message, "4") || !strings.Contains(a.prompt.message, "empty") || !strings.Contains(a.prompt.message, "b.txt") {
 		t.Fatal("confirmation did not identify all selections", a.prompt)

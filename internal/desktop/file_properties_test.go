@@ -162,8 +162,13 @@ func TestTreeDeleteEmptyLocalDirectoryThroughConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.applyDirectory(p.browser(), true, dir, []sshconn.File{{Name: "empty-folder", Directory: true}}, 0, true)
-	tt := ui.NewTester(a.view, 1100, 820)
-	if err := tt.RightClick("empty-folder"); err != nil {
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.directoryTree(c, p, p.browser())
+		a.promptForHost(c, dialogHostMain)
+	}, 700, 600)
+	// The list contains the same name; the tree row's accessible label is
+	// its full path, so this continues to exercise the native tree menu.
+	if err := tt.RightClick(folder); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.ChooseMenuItem("删除"); err != nil {

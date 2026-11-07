@@ -9,6 +9,8 @@ import (
 	"sshclient/internal/sshconn"
 )
 
+var fileLocalIcon = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M8 21h8m-4-5v5"/></svg>`))
+
 func (a *app) fileToolbar(c *ui.Context, p *filePane, width float32) {
 	b := p.browser()
 	if width <= 0 {
@@ -27,6 +29,20 @@ func (a *app) fileToolbar(c *ui.Context, p *filePane, width float32) {
 			Background(ui.Transparent).Border(1, ui.Transparent).Label(a.paneSide(p) + tr(c, "目录路径")).Tooltip(tr(c, "输入目录路径，按 Enter 打开"))
 		if input.Submitted() {
 			a.navigateDirectory(p, b.address)
+		}
+		if p.endpoint != localEndpoint {
+			panes := a.fileLayout.panes()
+			hasLocal := false
+			for _, pane := range panes {
+				if pane.endpoint == localEndpoint {
+					hasLocal = true
+					break
+				}
+			}
+			if components.SVGButton(c, fileLocalIcon, tr(c, "显示本机文件")).Size(28, 28).Shrink(0).
+				Disabled(len(panes) >= maxFilePanes && !hasLocal).Clicked() {
+				a.showLocalFileWindow(p)
+			}
 		}
 		if !tiny && components.SVGButton(c, components.FolderTreeIcon, tr(c, "显示或隐藏目录树")).Size(28, 28).Shrink(0).Clicked() {
 			p.treeHidden = !p.treeHidden

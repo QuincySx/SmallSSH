@@ -121,6 +121,22 @@ func (a *app) splitFilePane(p *filePane, vertical bool, useLocal bool) *filePane
 	return a.insertFilePane(p, added, vertical)
 }
 
+func (a *app) showLocalFileWindow(p *filePane) *filePane {
+	a.ensureFileLayout()
+	for _, pane := range a.fileLayout.panes() {
+		if pane.endpoint == localEndpoint {
+			a.activeFilePane = pane
+			pane.focusList = true
+			return pane
+		}
+	}
+	added := a.addLocalFileWindow(p)
+	if added != nil {
+		added.focusList = true
+	}
+	return added
+}
+
 func (a *app) addLocalFileWindow(p *filePane) *filePane {
 	a.ensureFileLayout()
 	panes := a.fileLayout.panes()

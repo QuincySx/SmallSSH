@@ -166,16 +166,20 @@ func (a *app) browserPane(c *ui.Context, p *filePane) {
 
 func (a *app) filePaneFooter(c *ui.Context, p *filePane, b *directoryBrowser) {
 	text := filePaneCounts(b.cache[b.dir], b.chosen.Len())
-	if _, loaded := b.cache[b.dir]; !loaded && len(b.loading) == 0 {
+	if _, loaded := b.cache[b.dir]; !loaded {
 		text = ""
 	}
-	if len(b.loading) > 0 {
-		text += tr(c, " · 正在读取…")
+	if b.loading[b.dir] != nil {
+		if text != "" {
+			text += " · "
+		}
+		text += tr(c, "正在读取…")
 	}
 	if b.loadError[b.dir] != "" {
 		text = tr(c, "读取失败 · ") + reviewText(b.loadError[b.dir])
 	}
 	ui.Row(c).FillWidth().Shrink(0).Padding(3, 8).Gap(8).Justify(ui.End).Children(func() {
+		a.fileOpenFeedback(c, p, b.dir)
 		ui.Spacer(c).Grow(1).MinWidth(0)
 		ui.Text(c, text).SingleLine().MinWidth(0).FontSize(11).TextColor(c.Theme().TextMuted).Tooltip(text)
 		if b.loadError[b.dir] != "" && components.Button(c, tr(c, "重试")).Clicked() {
@@ -236,7 +240,16 @@ func (a *app) fileLocationHeader(c *ui.Context, p *filePane) {
 }
 
 func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
+	a.validateFileContextPopup(p)
 	endpoint, dir := p.endpoint, b.dir
+	if _, loaded := b.cache[dir]; !loaded && b.loading[dir] != nil {
+		ui.Column(c).Fill().MinHeight(0).Center().Gap(10).Padding(16).Label(tr(c, "文件夹加载状态")).Children(func() {
+			ui.Spinner(c).Size(24, 24)
+			ui.Text(c, tr(c, "正在读取文件夹…")).FontSize(12)
+			ui.Text(c, reviewText(dir)).FillWidth().SingleLine().TextAlign(ui.Center).FontSize(12).TextColor(c.Theme().TextMuted)
+		})
+		return
+	}
 	if message := b.loadError[dir]; message != "" {
 		// The pane states the refusal itself: no stale rows, and the retry sits
 		// where the files would be.
@@ -256,17 +269,11 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 	b.table.MenuKeepsSelection = true
 	table := components.FileList(c, &b.table, len(fs), func(i int) components.FileEntry {
 		f := fs[i]
-		return components.FileEntry{ID: f.Name, Name: reviewText(f.Name), Directory: f.Directory, Bytes: uint64(max(f.Size, 0)), Modified: f.Modified}
-	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: a.fileExpanded || a.renderingToolsWindow || a.filesTabSelected || a.renderingWorkspaceTool != nil && a.renderingWorkspaceTool.kind == toolFiles, Decorate: func(cell ui.Element, i int) {
+		loading := a.editorRead != nil && a.editorRead.loading && a.editorRead.endpoint == endpoint && a.editorRead.name == joinPath(endpoint == localEndpoint, dir, f.Name)
+		return components.FileEntry{ID: f.Name, Name: reviewText(f.Name), Directory: f.Directory, Bytes: uint64(max(f.Size, 0)), Modified: f.Modified, Loading: loading}
+	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: a.fileExpanded || a.renderingToolsWindow || a.filesTabSelected || a.renderingWorkspaceTool != nil && a.renderingWorkspaceTool.kind == toolFiles, Decorate: func(cell ui.Element, i, col int) {
 		f := fs[i]
-		cell.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) {
-			if !b.chosen.Has(f.Name) {
-				b.chosen.Clear()
-				b.chosen.Add(f.Name)
-				b.selected = i
-			}
-			a.fileContextMenu(m, p, dir, chosenFiles(b))
-		}))
+		a.fileCellContextMenu(c, cell, p, b, dir, i, col)
 		if cell.Clicked() {
 			b.chooseFile(fs, i, cell.ClickModifiers())
 		}
@@ -284,6 +291,9 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 	}})
 	table.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) { a.directoryContextMenu(m, p, b, dir) }))
 	a.fileDropTarget(c, table, p, dir)
+	if p.focusList && b.table.Focus(c) {
+		p.focusList = false
+	}
 	if table.Submitted() {
 		a.openPaneFile(p)
 	}
@@ -348,6 +358,10 @@ func (a *app) otherPane(p *filePane) *filePane {
 }
 
 func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshconn.File) {
+	a.fileContextActions(&fileMenu{native: m}, p, dir, files)
+}
+
+func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []sshconn.File) {
 	// Capture a pane containing the original browser: a later terminal switch
 	// cannot redirect a menu action or an outstanding confirmation.
 	endpoint, b := p.endpoint, p.browser()
@@ -374,7 +388,7 @@ func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshco
 			a.transferEntries(endpoint, dir, files, other.endpoint, other.browser().dir)
 		}
 	} else {
-		m.Submenu(tr(nil, "传输到窗口"), func(m *ui.Menu) {
+		m.Submenu(tr(nil, "传输到窗口"), func(m *fileMenu) {
 			for _, destination := range a.fileLayout.panes() {
 				if destination == p {
 					continue
@@ -391,14 +405,18 @@ func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshco
 		})
 	}
 	m.Separator()
-	a.fileMutationMenu(m, source, dir, files, false)
+	a.fileMutationActions(m, source, dir, files, false)
 	m.Separator()
-	a.directoryActions(m, source, dir)
+	a.directoryMenuActions(m, source, dir)
 	m.Separator()
-	a.fileFollowMenu(m, p)
+	a.fileFollowActions(m, p)
 }
 
 func (a *app) fileMutationMenu(m *ui.Menu, source *filePane, dir string, files []sshconn.File, root bool) {
+	a.fileMutationActions(&fileMenu{native: m}, source, dir, files, root)
+}
+
+func (a *app) fileMutationActions(m *fileMenu, source *filePane, dir string, files []sshconn.File, root bool) {
 	if m.Item(tr(nil, "重命名 / 移动")).Disabled(root || len(files) != 1).Chosen() {
 		a.fileOperationAt(source, dir, files, "rename")
 	}
@@ -464,6 +482,10 @@ func (a *app) directoryContextMenu(m *ui.Menu, p *filePane, b *directoryBrowser,
 }
 
 func (a *app) fileFollowMenu(m *ui.Menu, p *filePane) {
+	a.fileFollowActions(&fileMenu{native: m}, p)
+}
+
+func (a *app) fileFollowActions(m *fileMenu, p *filePane) {
 	if m.Item(tr(nil, "跟随当前终端")).Checked(p.follow).Chosen() {
 		if p.follow {
 			p.follow = false
@@ -474,6 +496,10 @@ func (a *app) fileFollowMenu(m *ui.Menu, p *filePane) {
 }
 
 func (a *app) directoryActions(m *ui.Menu, p *filePane, dir string) {
+	a.directoryMenuActions(&fileMenu{native: m}, p, dir)
+}
+
+func (a *app) directoryMenuActions(m *fileMenu, p *filePane, dir string) {
 	if m.Item(tr(nil, "新建文件夹")).Disabled(p.endpoint == "").Chosen() {
 		a.fileOperationAt(p, dir, nil, "mkdir")
 	}

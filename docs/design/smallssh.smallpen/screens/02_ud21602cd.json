@@ -1206,6 +1206,7 @@
             "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_u83180a7a",
             "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_u057a59bf",
             "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_ubfb83423",
+            "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_local_files",
             "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_u21a44385"
           ],
           "fills": [],
@@ -1230,6 +1231,32 @@
           "name": "文件工具栏",
           "type": "FRAME",
           "width": 205,
+          "x": 0,
+          "y": 0
+        },
+        "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_local_files": {
+          "children": [],
+          "height": 28,
+          "id": "node_02_ud21602cd_desktop_desktop_u8a47bee8_uabd5eb98_u5572cd22_u951fa46e_ucba9f39d_u194db304_ub3341fc8_local_files",
+          "instance": {
+            "component": {
+              "assetId": "cmp_ucd81d05c",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "overrides": {
+              "node_ucd81d05c_root:tokenBindings": {
+                "height": null,
+                "width": null
+              },
+              "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+            },
+            "variant": {}
+          },
+          "layout-item-h-sizing": "fix",
+          "layout-item-v-sizing": "fix",
+          "name": "显示本机文件",
+          "type": "INSTANCE",
+          "width": 28,
           "x": 0,
           "y": 0
         },

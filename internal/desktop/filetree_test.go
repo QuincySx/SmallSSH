@@ -157,8 +157,8 @@ func TestContextMenuTargetsClickedFileAndBlankSpaceTargetsDirectory(t *testing.T
 	if err := tt.RightClick("second.txt"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.ChooseMenuItem("重命名 / 移动"); err != nil {
-		t.Fatal(err, tt.Menu())
+	if err := tt.Click("重命名 / 移动"); err != nil {
+		t.Fatal(err)
 	}
 	if a.prompt.target != "web · /srv/second.txt" {
 		t.Fatal(a.prompt.target)

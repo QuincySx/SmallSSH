@@ -52,12 +52,14 @@ type directoryLoad struct {
 	seq      uint64
 }
 type filePane struct {
-	id         uint64
-	endpoint   string
-	states     map[string]*directoryBrowser
-	treeWidth  float32
-	treeHidden bool
-	follow     bool
+	id           uint64
+	endpoint     string
+	states       map[string]*directoryBrowser
+	treeWidth    float32
+	treeHidden   bool
+	follow       bool
+	contextPopup *fileContextPopup
+	focusList    bool
 }
 
 func newFilePane(endpoint string, follow bool) *filePane {
@@ -386,7 +388,9 @@ func (a *app) navigateDirectory(p *filePane, dir string) {
 		b.showDirectory(p.endpoint == localEndpoint, dir)
 		return
 	}
-	b.address = dir
+	// Move to the requested location before I/O, so the list can show its
+	// loading state and old rows cannot be acted on as if navigation finished.
+	b.showDirectory(p.endpoint == localEndpoint, dir)
 	a.loadDirectory(p, dir, true)
 }
 func (a *app) endpointName(endpoint string) string {
