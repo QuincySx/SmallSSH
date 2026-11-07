@@ -21,6 +21,18 @@ func transferActivityCounts(jobs []transfer.Job) (active, failed int) {
 }
 
 func (a *app) showTransfers() {
+	if tool := a.workspaceTools[toolTransfers]; tool != nil {
+		a.activateWorkspaceTab(tool.group, workspaceTab{tool: tool})
+		a.transfersOpen = false
+		a.invalidateWindows()
+		return
+	}
+	if a.workspaceCanvas && a.dock == toolTransfers {
+		a.page, a.transfersOpen = 1, false
+		a.setToolsHidden(false)
+		a.invalidateWindows()
+		return
+	}
 	a.page, a.transfersOpen = 1, true
 	a.activityTab = 0
 	a.setTransferWindow(a.toolsWindowFocused())
@@ -29,6 +41,7 @@ func (a *app) showTransfers() {
 func (a *app) setTransferWindow(detached bool) {
 	if a.transfersDetached != detached {
 		rebindToolList(&a.transferTable)
+		rebindToolList(&a.activityTable)
 		a.transfersDetached = detached
 	}
 }
@@ -76,12 +89,20 @@ func (a *app) transferActivity(c *ui.Context) {
 		})
 	}
 	if button.Clicked() {
+		if a.workspaceTools[toolTransfers] != nil || a.workspaceCanvas && a.dock == toolTransfers {
+			a.showTransfers()
+			return
+		}
 		if a.transfersDetached != a.renderingToolsWindow {
 			a.transfersOpen = true
 		} else {
 			a.transfersOpen = !a.transfersOpen
 		}
 		a.setTransferWindow(a.renderingToolsWindow)
+	}
+	if a.workspaceTools[toolTransfers] != nil || a.workspaceCanvas && a.dock == toolTransfers && !a.toolsHidden {
+		a.transfersOpen = false
+		return
 	}
 	if a.transfersDetached != a.renderingToolsWindow {
 		return

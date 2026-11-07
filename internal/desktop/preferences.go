@@ -12,6 +12,7 @@ import (
 // This file contains layout only: no host names, command text or credentials.
 type layoutPreferences struct {
 	Version            int     `json:"version"`
+	Canvas             *bool   `json:"canvas,omitempty"`
 	Right              bool    `json:"right"`
 	Edge               string  `json:"edge,omitempty"`
 	Hidden             bool    `json:"hidden"`
@@ -27,6 +28,7 @@ type layoutPreferences struct {
 }
 
 func (a *app) loadLayout() {
+	a.workspaceCanvas, a.toolsHidden = true, true
 	f, e := os.Open(filepath.Join(a.dir, "layout.json"))
 	if e != nil {
 		return
@@ -37,9 +39,12 @@ func (a *app) loadLayout() {
 		return
 	}
 	a.toolsRight, a.toolsHidden = p.Right, p.Hidden
+	if p.Canvas != nil {
+		a.workspaceCanvas = *p.Canvas
+	}
 	a.toolsEdge = ""
 	if p.Version > 1 && (p.Edge == "top" || p.Edge == "left") {
-		a.toolsEdge, a.toolsRight = p.Edge, false
+		a.toolsRight = false
 	}
 	if p.Version == 1 {
 		// The preview's previous three-column preset used a right dock. Move
@@ -51,7 +56,7 @@ func (a *app) loadLayout() {
 	a.languageChoice = languageChoiceOrSystem(p.LocaleChoice)
 	if p.Tab >= 0 && p.Tab <= toolDiagnostics {
 		a.dock = p.Tab
-		if a.dock == toolTransfers {
+		if a.dock == toolTransfers && (p.Canvas == nil || !a.workspaceCanvas) {
 			a.dock = toolFiles
 		}
 	}
@@ -72,7 +77,7 @@ func (a *app) saveLayout() error {
 	if e := localipc.Prepare(a.dir); e != nil {
 		return e
 	}
-	p := layoutPreferences{Version: 3, Right: a.toolsRight, Edge: a.toolsEdge, Hidden: a.toolsHidden, Tab: a.dock,
+	p := layoutPreferences{Version: 3, Canvas: &a.workspaceCanvas, Right: a.toolsRight, Edge: a.toolsEdge, Hidden: a.toolsHidden, Tab: a.dock,
 		TerminalShare: a.terminalShare, TerminalWidthShare: a.terminalWidthShare, Sidebar: a.sidebarWidth, SidebarHidden: a.sidebarHidden, LocaleChoice: a.languageChoice,
 		Zoom: a.viewZoom()}
 	f, e := os.CreateTemp(a.dir, ".layout-")

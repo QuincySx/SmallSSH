@@ -336,13 +336,16 @@ func (a *app) openContainerTerminal(source *session, target serverops.DockerTarg
 		group = replace.group
 	}
 	ctx, cancel := context.WithCancel(a.operationContext())
+	if replace != nil && replace.connectionState != "" {
+		replace.connectionCancel = cancel
+	}
 	cli, gen := a.client, a.generation
 	op := approval.Operation{Host: source.host, Endpoint: source.target.Endpoint, HostFingerprint: source.target.HostFingerprint, Kind: "docker-terminal", ServerStatus: true, Docker: serverops.DockerRequest{Target: target, Shell: shell}}
 	a.status = tr(nil, "正在打开容器终端…")
 	go func() {
 		stream, err := cli.StartWithOwner(ctx, op, owner)
 		a.postUI(func() {
-			if gen != a.generation || !a.online || ctx.Err() != nil || !a.hasSession(source) {
+			if gen != a.generation || !a.online || ctx.Err() != nil || !a.hasSession(source) || replace != nil && !a.hasSession(replace) {
 				cancel()
 				if stream != nil {
 					stream.Close()
@@ -352,6 +355,10 @@ func (a *app) openContainerTerminal(source *session, target serverops.DockerTarg
 			if err != nil {
 				cancel()
 				a.status = err.Error()
+				if replace != nil && replace.connectionState != "" {
+					replace.closed, replace.connectionState, replace.connectionError = true, "error", err.Error()
+					replace.connectionCancel = nil
+				}
 				return
 			}
 			attached := a.attachTerminalInGroup(stream, source.host, cancel, false, group)
@@ -376,7 +383,7 @@ func (a *app) openContainerTerminal(source *session, target serverops.DockerTarg
 			if replace != nil {
 				a.replaceClosedTerminal(replace, attached)
 			}
-			if a.currentTerminal() == focus && a.page == 1 && !a.editShown {
+			if a.workspaceTerminalSelected(focus) && a.page == 1 && !a.editShown {
 				a.activateTerminal(attached, true)
 			}
 			a.status = tr(nil, "容器终端已打开")

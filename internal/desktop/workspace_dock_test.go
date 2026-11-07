@@ -7,29 +7,32 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func TestWorkspaceDockFourSidesKeepViewsAndNarrowFallback(t *testing.T) {
+func TestWorkspaceDockOnlyBottomOrRightAndNarrowFallback(t *testing.T) {
 	for _, side := range []string{"left", "right", "top", "bottom"} {
 		t.Run(side, func(t *testing.T) {
 			a := fileFollowDemo()
 			pane, source := a.primaryFilePane, a.currentTerminal()
 			a.setToolsDockSide(side)
+			want := side
+			if want == "left" || want == "top" {
+				want = "bottom"
+			}
 			tt := ui.NewTester(a.view, 1280, 900)
 			term, termOK := tt.Find("终端区域")
 			tools, toolsOK := tt.Find("工具面板")
 			if !termOK || !toolsOK || term.W < 200 || tools.W < 200 || term.H < 160 || tools.H < 160 {
 				t.Fatal("dock lost a usable view", side, term, tools)
 			}
-			correct := side == "left" && tools.X+tools.W <= term.X+1 || side == "right" && term.X+term.W <= tools.X+1 ||
-				side == "top" && tools.Y+tools.H <= term.Y+1 || side == "bottom" && term.Y+term.H <= tools.Y+1
+			correct := want == "right" && term.X+term.W <= tools.X+1 || want == "bottom" && term.Y+term.H <= tools.Y+1
 			if !correct || a.primaryFilePane != pane || a.currentTerminal() != source {
 				t.Fatal("dock placement changed content identity", side, term, tools)
 			}
 			tt.SetSize(560, 760)
 			tt.Frame()
-			if a.savedToolsDockSide() != side {
+			if a.savedToolsDockSide() != want {
 				t.Fatal("responsive fallback overwrote the requested side")
 			}
-			if side == "left" || side == "right" {
+			if want == "right" {
 				term, _ = tt.Find("终端区域")
 				tools, _ = tt.Find("工具面板")
 				if tools.Y < term.Y+term.H {
@@ -51,9 +54,13 @@ func TestWorkspaceDockSidePersistsWithoutContent(t *testing.T) {
 		if err := a.saveLayout(); err != nil {
 			t.Fatal(err)
 		}
+		want := side
+		if want == "left" || want == "top" {
+			want = "bottom"
+		}
 		b := &app{dir: a.dir}
 		b.loadLayout()
-		if b.savedToolsDockSide() != side {
+		if b.savedToolsDockSide() != want {
 			t.Fatal("saved side did not round trip", side, b.savedToolsDockSide())
 		}
 	}

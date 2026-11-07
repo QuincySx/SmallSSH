@@ -77,7 +77,7 @@ func (a *app) workspaceTerminalTabs(c *ui.Context) {
 		}
 	}()
 	groups := a.terminalGroups()
-	if len(groups) == 1 {
+	if len(groups) == 1 && !a.workspaceCanvas {
 		g := groups[0]
 		ui.Column(c).Key(g.id).Grow(1).MinWidth(0).Height(32).Children(func() { a.terminalGroupHeader(c, g, true, true, 0) })
 	} else {

@@ -33,7 +33,7 @@ func TestVisualDockSelectorKeyboardAndDismissal(t *testing.T) {
 	for _, step := range []struct {
 		key  ui.Key
 		want string
-	}{{ui.KeyDown, "放大工具面板"}, {ui.KeyDown, "独立到标签页"}, {ui.KeyDown, "收起面板"}, {ui.KeyDown, "放到底部"}, {ui.KeyUp, "收起面板"}, {ui.KeyUp, "独立到标签页"}, {ui.KeyUp, "放大工具面板"}, {ui.KeyUp, "放到底部"}} {
+	}{{ui.KeyDown, "放大工具面板"}, {ui.KeyDown, "移到画布"}, {ui.KeyDown, "收起面板"}, {ui.KeyDown, "放到底部"}, {ui.KeyUp, "收起面板"}, {ui.KeyUp, "移到画布"}, {ui.KeyUp, "放大工具面板"}, {ui.KeyUp, "放到底部"}} {
 		tt.Key(0, step.key)
 		if !tt.Focused(step.want) || !open || choices != 0 {
 			t.Fatal("vertical menu navigation changed layout or lost focus", step.want, open, choices)
@@ -57,6 +57,7 @@ func TestVisualDockSelectorKeyboardAndDismissal(t *testing.T) {
 	if err := tt.Click("工具面板布局"); err != nil {
 		t.Fatal(err)
 	}
+	assertNoStalePlacements(t, tt)
 	tt.ClickAt(10, 210)
 	if open || !right || choices != 1 {
 		t.Fatal("outside click changed the selected dock")
@@ -89,7 +90,16 @@ func TestDockMenuUsesCompactSingleRowAndVisibleSelection(t *testing.T) {
 				if math.Abs(float64(heading.Y+heading.H/2-bottom.Y-bottom.H/2)) > 1 || heading.X+heading.W > bottom.X {
 					t.Fatal("heading and dock icons are not on one row", heading, bottom)
 				}
-				for _, label := range []string{"放大工具面板", "独立到标签页", "收起面板"} {
+				sys, s := tt.Find("系统窗口")
+				if !s || sys.Y != bottom.Y || bottom.X-sys.X-sys.W != 4 {
+					t.Fatal("the three remaining placements are not one row of icons", sys, bottom, rightChoice)
+				}
+				if popup.W != 256 || sys.X+sys.W > popup.X+popup.W || rightChoice.X+rightChoice.W > popup.X+popup.W {
+					t.Fatal("popup width or dock row does not fit", popup, sys, rightChoice)
+				}
+				assertNoStalePlacements(t, tt)
+				assertCurrentDockFocused(t, tt, right)
+				for _, label := range []string{"放大工具面板", "移到画布", "收起面板"} {
 					row, found := tt.Find(label)
 					if !found || row.Y < bottom.Y+bottom.H || row.X < popup.X || row.X+row.W > popup.X+popup.W {
 						t.Fatal("menu row was clipped or mixed with dock choices", label, row, popup)
@@ -105,6 +115,33 @@ func TestDockMenuUsesCompactSingleRowAndVisibleSelection(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The dock selector offers System window, bottom and right only: they are three
+// adjacent 32 DIP radios whose last one ends the row. Any additional placement
+// choice would push 放到右侧 away from the row's right edge, and the popup is
+// narrow enough that a fourth or fifth icon cannot hide elsewhere.
+func assertNoStalePlacements(t *testing.T, tt *ui.Tester) {
+	t.Helper()
+	popup, _ := tt.Find("工具面板布局菜单")
+	rightChoice, ok := tt.Find("放到右侧")
+	if !ok {
+		t.Fatal("the right dock choice is missing")
+	}
+	if gap := popup.X + popup.W - (rightChoice.X + rightChoice.W); gap < 0 || gap > 14 {
+		t.Fatal("another placement choice follows the right dock icon", gap, rightChoice, popup)
+	}
+}
+
+func assertCurrentDockFocused(t *testing.T, tt *ui.Tester, right bool) {
+	t.Helper()
+	focused, other := "放到底部", "放到右侧"
+	if right {
+		focused, other = other, focused
+	}
+	if !tt.Focused(focused) || tt.Focused(other) {
+		t.Fatal("current dock is not the focused choice", right, focused)
 	}
 }
 
@@ -185,7 +222,7 @@ func TestDetachedDockSelectorKeyboardAndApplicableActions(t *testing.T) {
 		t.Fatal("undocked mode is not selected or contains pane-only controls")
 	}
 	tt.Key(0, ui.KeyDown)
-	if !tt.Focused("独立到标签页") {
+	if !tt.Focused("移到画布") {
 		t.Fatal("Down did not skip the inapplicable resize action")
 	}
 	tt.Key(0, ui.KeyUp)

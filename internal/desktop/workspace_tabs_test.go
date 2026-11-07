@@ -119,7 +119,7 @@ func TestWorkspaceDockDragChoosesSidesOrPromotesAtCenter(t *testing.T) {
 	a := workspaceModelFixture(1)
 	g := a.singleTerminalGroup
 	drag := terminalTabDrag{owner: a, generation: a.generation, fromDock: true, dockKind: toolCommands, toolSource: a.currentTerminal()}
-	for _, side := range []string{"left", "top", "right", "bottom"} {
+	for _, side := range []string{"right", "bottom"} {
 		a.dropWorkspaceTab(drag, g, workspaceTab{}, side)
 		if a.savedToolsDockSide() != side || a.workspaceTools[toolCommands] != nil {
 			t.Fatal("edge docking unexpectedly promoted a tool", side)

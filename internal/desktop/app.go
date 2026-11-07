@@ -79,6 +79,7 @@ type app struct {
 	filePaneSequence                                              uint64
 	fileExpanded, editShown, editLocal                            bool
 	toolsHidden, toolsRight                                       bool
+	workspaceCanvas                                               bool
 	toolsEdge                                                     string
 	toolsLayoutOpen                                               bool
 	settingsSection                                               string
@@ -149,6 +150,7 @@ type app struct {
 	layoutRendered                           workspaceLayout
 	dock                                     int
 	fileTable, processTable, transferTable   ui.ListState
+	activityTable                            ui.ListState
 	fileSelected                             int
 	details                                  *vault.Summary
 

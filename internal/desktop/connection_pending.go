@@ -42,6 +42,7 @@ func (a *app) reserveTerminal(host string, group *terminalGroup, activate bool) 
 	}
 	if activate {
 		a.page, a.dock = 1, toolCommands
+		a.placeCanvasTab(workspaceTab{session: pending}, group)
 		a.activateTerminal(pending, true)
 	}
 	return pending
@@ -63,7 +64,11 @@ func (a *app) retryPendingTerminal(s *session) {
 	}
 	s.closed, s.connectionError, s.connectionMismatch = false, "", false
 	s.connectionState = "connecting"
-	a.openShellInGroup(s.host, true, s.group, nil, s)
+	if s.target.Kind == "docker-terminal" {
+		a.openContainerTerminal(s, s.target.Docker.Target, s.containerName, s.target.Docker.Shell, s)
+	} else {
+		a.openShellInGroup(s.host, true, s.group, nil, s)
+	}
 }
 
 func (a *app) pendingTerminalView(c *ui.Context, s *session) {

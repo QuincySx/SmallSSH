@@ -232,6 +232,7 @@ func (a *app) resetToolPresentation() {
 	}
 	a.snippetGrid = ui.GridState{Handle: a.snippetGrid.Handle, Key: a.snippetGrid.Key, Selected: a.snippetGrid.Selected, Selection: a.snippetGrid.Selection, Label: a.snippetGrid.Label}
 	rebindToolList(&a.transferTable)
+	rebindToolList(&a.activityTable)
 	for _, sess := range a.sessions {
 		if state := sess.management; state != nil {
 			if state.containerDetails != nil && state.containerDetails.log != nil {

@@ -12,9 +12,10 @@ import (
 // A tool has one presentation owner. Its source is captured when promoted;
 // changing focus or dragging it must not silently retarget an operation.
 type workspaceToolTab struct {
-	kind   int
-	group  *terminalGroup
-	source *session
+	kind          int
+	group         *terminalGroup
+	source        *session
+	activityTable ui.ListState
 }
 
 type workspaceTab struct {
@@ -73,6 +74,8 @@ func (a *app) workspaceTabTitle(c *ui.Context, tab workspaceTab) string {
 
 func workspaceToolTitle(c *ui.Context, kind int) string {
 	switch kind {
+	case toolTransfers:
+		return tr(c, "任务")
 	case toolCommands:
 		return tr(c, "命令")
 	case toolDiagnostics:
@@ -84,7 +87,7 @@ func workspaceToolTitle(c *ui.Context, kind int) string {
 
 func (a *app) workspaceTabDisplayTitle(c *ui.Context, tab workspaceTab) string {
 	label := a.workspaceTabTitle(c, tab)
-	if tab.tool != nil && tab.tool.kind != toolFiles && tab.tool.source != nil {
+	if tab.tool != nil && tab.tool.kind != toolFiles && tab.tool.kind != toolTransfers && tab.tool.source != nil {
 		label += " · " + sessionDisplayName(c, tab.tool.source)
 	}
 	return label
@@ -172,7 +175,7 @@ func (a *app) reconcileWorkspaceTools() {
 }
 
 func (a *app) openWorkspaceTool(kind int) {
-	if !a.online || kind == toolTransfers {
+	if !a.online || kind < toolFiles || kind > toolDiagnostics {
 		return
 	}
 	if a.deferTerminalMutation(func() { a.openWorkspaceTool(kind) }) {
@@ -186,6 +189,7 @@ func (a *app) openWorkspaceTool(kind int) {
 		a.workspaceTools = make(map[int]*workspaceToolTab)
 	}
 	tool := a.workspaceTools[kind]
+	added := tool == nil
 	if tool == nil {
 		tool = &workspaceToolTab{kind: kind, group: a.activeTerminalGroup, source: a.currentTerminal()}
 		a.workspaceTools[kind] = tool
@@ -193,6 +197,12 @@ func (a *app) openWorkspaceTool(kind int) {
 	}
 	a.ensureFileLayout()
 	a.resetToolPresentation()
+	if added {
+		a.placeCanvasTab(workspaceTab{tool: tool}, tool.group)
+	}
+	if kind == toolTransfers {
+		a.transfersOpen = false
+	}
 	a.activateWorkspaceTab(tool.group, workspaceTab{tool: tool})
 	a.page = 1
 	a.workspaceRevision++
@@ -282,6 +292,8 @@ func (a *app) renderWorkspaceTool(c *ui.Context, tool *workspaceToolTab) {
 	body.Children(func() {
 		a.workspaceToolBounds = body.Bounds()
 		switch tool.kind {
+		case toolTransfers:
+			a.workspaceActivity(c)
 		case toolCommands:
 			a.commandsView(c)
 		case toolDiagnostics:

@@ -128,14 +128,23 @@ func (a *app) workspaceSettings(c *ui.Context) {
 		})
 		settingsParameter(c, tr(c, "停靠位置"), func() {
 			dock := 0
-			sides := []string{"bottom", "right", "top", "left"}
+			sides := []string{"bottom", "right"}
 			for i, side := range sides {
 				if side == a.savedToolsDockSide() {
 					dock = i
 				}
 			}
-			if ui.Segmented(c, &dock, tr(c, "底部"), tr(c, "右侧"), tr(c, "顶部"), tr(c, "左侧")).Height(32).Label(tr(c, "工作区工具停靠位置")).Changed() {
+			if ui.Segmented(c, &dock, tr(c, "底部"), tr(c, "右侧")).Height(32).Label(tr(c, "工作区工具停靠位置")).Changed() {
 				a.applySettingsLayout(func() { a.setToolsDockSide(sides[dock]) })
+			}
+		})
+		settingsParameter(c, tr(c, "主工作区"), func() {
+			mode := 0
+			if !a.workspaceCanvas {
+				mode = 1
+			}
+			if ui.Segmented(c, &mode, tr(c, "画布"), tr(c, "标签聚合")).Height(32).Label(tr(c, "工作区呈现方式")).Changed() {
+				a.applySettingsLayout(func() { a.setWorkspaceCanvas(mode == 0) })
 			}
 		})
 		settingsParameter(c, tr(c, "默认布局"), func() {

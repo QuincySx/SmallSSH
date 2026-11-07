@@ -2528,3 +2528,22 @@ SmallPen 通过 CLI 原子修改 18 张工作区画布的重复顶栏按钮，�
 - 已静默安装 `/Applications/SmallSSH.app`，签名校验通过，已比较安装二进制与构建二进制 SHA256 一致。日志 `build/logs/install-20261107-192010.log`；旧包保留于 `/Users/smallraw/.Trash/SmallSSH-before-20261107-192010.745726000.app`。没有启动、退出或重启正在运行的用户 App。
 
 限制：以上运行与渲染证据来自本机 macOS 和 headless UI Tester；未触发真实服务器、认证或系统原生鼠标拖动。SmallPen Web 原端口 HTTP 200 只证明服务可访问，不证明所有 App 页面已人工验收。当前用户旧进程不会随磁盘安装自动更新。汇总与产物指纹：`build/logs/workspace-peers-20261107-summary.json`。
+
+
+## 2026-11-07 — SSHYard 式画布、标签聚合与独立功能开关
+
+按用户要求先保存旧版：本地 checkpoint `a660e27`，覆盖此前工作代码和 SmallPen。既有 1Password SSH 提交签名器报 `failed to fill whole buffer`；保存时仅对当前 Git 命令使用 `commit.gpgsign=false`，没有修改持久 Git 配置或推送。随后读取 SSHYard 固定 revision `93c596b46efba3e3939f06fbff4c179e7241755b` 的工作区 / 侧栏源码与官方截图，增量结论归入既有 SSHYARD-REFERENCE.md；没有构建运行来源应用。
+
+生产工作区增加卡片画布和标签聚合，支持两者混排：单内容用共享标题栏，多个内容可拖成局部 tab，画布继续四向分栏。右侧文件、命令、状态、任务开关分别管理展示；工具标签区只在底部或右侧，旧顶部 / 左侧配置回退底部。设置保存呈现方式，切换保留会话、浏览器、目标服务器及队列；原生设置 / 文件编辑窗口保留。
+
+终端标题的文件入口明确选择该终端的服务器，普通焦点切换则保留已有文件来源；文件缓存不重建，旧源的延迟原生菜单失效。新终端拆分先建立连接占位，再填入完成结果，切换呈现不会被迟到结果重新分栏。容器终端保留 Docker 目标，重试 / 失败 / 关闭来源卡片都沿用已保留占位卡片的生命周期。任务复用现有传输 / 服务器操作记录；popup、停靠和卡片各有独立 ListState，并抑制重复浮层。没有虚构消息数据，也没有加入 AI 助手业务。
+
+外部配置代码代理负责 `components/dock.go` 与对应测试，完成 256 DIP 菜单、仅底部 / 右侧及系统窗口选择、移到画布和键盘回归；原始证据 `build/logs/delegate-canvas-dock-20261107.log`。主代理完成画布 / 所有权接入及实际验收，独立只读审查指出的占位竞态、Docker 目标与任务重复展示已修复。没有根据脱敏配置状态猜测外部代理的模型名称。
+
+- 最终仓库 gate：`build/logs/check-20261107-221012.log` 通过，含 vendor 补丁、570 个 Go 文件格式、vet 及全量测试；未改变 vendor 或认证协议。
+- 完整终端集成：`build/logs/test-20261107-221013.log` 通过。新增测试覆盖真实指针拖动将卡片聚合为标签再拆开、PTY 输入目标、六种内容平铺 / 聚合不重建、独立开关、任务单一展示、Docker 占位与关闭来源后的完成，以及显式打开另一服务器文件保留旧缓存。聚焦验收亦见 `build/logs/test-20261107-220716.log`。
+- 真实 Go 视图离屏：`build/logs/test-20261107-220257.log` 通过，12 张明暗画布 / 局部 tab / 聚合 / 底部 / 右侧 / 窄窗图保留在 `build/snapshots/sshyard-canvas-20261107/`；用合成缓存和隔离测试服务，不接触真实服务器凭据或硬件。
+- SmallPen 通过 CLI 保存正式源并同步 pages.json；修订 `c68562874c6afb38aaaa1d4a2529136d24052f6d808f3818fd4dd7de0c626882`，65 页、11 个组件、23 个变体、39 个 Token、26 条导航链接。明暗各完成 88/88 目标，数据有效，无 warning；各有 6 条既有设置原生控制叠放 info 和 642 项跳过，完整 coverage=false。完整报告 `build/logs/sshyard-canvas-design-light-20261107.json` 与对应 dark 文件；不是所有页面 / 平台的实际交互验收。
+- macOS arm64 打包与生成核对：`build/logs/build-sshyard-canvas-20261107.log`、`build/logs/build-sshyard-canvas-check-20261107.log` 均通过。静默安装 `/Applications/SmallSSH.app`，签名有效，安装二进制与构建 SHA256 一致；安装日志 `build/logs/install-20261107-221124.log`，旧包留在用户废纸篓。
+
+限制：运行与渲染证据属于本机 macOS / headless UI Tester；未自动打开、退出、重启或激活 SmallSSH / SmallPen 进行原生鼠标实机验收。SmallPen Web 原端口 HTTP 200 仅证明服务可访问。当前源不提供任意 x/y 叠放的无限画布；采用与参考相同的分栏卡片，并增加标签聚合。其他未完成业务仍按 REQUIREMENTS 原编号记账，不因 UI 改版算作已完成。摘要与指纹：`build/logs/sshyard-canvas-20261107-summary.json`。

@@ -23,11 +23,14 @@ func (a *app) showTool(index int) {
 		a.invalidateWindows()
 		return
 	}
-	if index == toolTransfers {
+	if index == toolTransfers && !a.workspaceCanvas {
 		a.showTransfers()
 		return
 	}
 	a.dock, a.toolsHidden, a.page = index, false, 1
+	if index == toolTransfers {
+		a.transfersOpen = false
+	}
 	if a.toolsDetached {
 		a.detachTools()
 	}
@@ -35,11 +38,15 @@ func (a *app) showTool(index int) {
 
 func (a *app) fileArea(c *ui.Context) {
 	a.ensureFileLayout()
-	if a.dock == toolTransfers {
+	if a.dock == toolTransfers && !a.workspaceCanvas {
 		a.dock = toolFiles // Reserved persisted ID; transfers now have a global entry.
 	}
 	var tabs []components.PanelTab
-	for _, kind := range []int{toolCommands, toolFiles, toolDiagnostics} {
+	kinds := []int{toolCommands, toolFiles, toolDiagnostics}
+	if a.workspaceCanvas {
+		kinds = append(kinds, toolTransfers)
+	}
+	for _, kind := range kinds {
 		if a.workspaceTools[kind] == nil {
 			tabs = append(tabs, components.PanelTab{ID: kind, Title: workspaceToolTitle(c, kind)})
 		}
@@ -55,6 +62,9 @@ func (a *app) fileArea(c *ui.Context) {
 			label := tr(c, "在标签页打开功能区")
 			if a.dock == toolFiles {
 				label = tr(c, "在标签页打开文件管理")
+			}
+			if a.workspaceCanvas {
+				label = tr(c, "移到画布")
 			}
 			if components.SVGButton(c, components.ExpandPanelIcon, label).Disabled(len(tabs) == 0).Clicked() {
 				a.openWorkspaceTool(a.dock)
@@ -99,6 +109,8 @@ func (a *app) fileArea(c *ui.Context) {
 			return
 		}
 		switch a.dock {
+		case toolTransfers:
+			a.workspaceActivity(c)
 		case toolCommands:
 			a.commandsView(c)
 		case toolDiagnostics:
@@ -247,14 +259,14 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 		return components.FileEntry{ID: f.Name, Name: reviewText(f.Name), Directory: f.Directory, Bytes: uint64(max(f.Size, 0)), Modified: f.Modified}
 	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: a.fileExpanded || a.renderingToolsWindow || a.filesTabSelected || a.renderingWorkspaceTool != nil && a.renderingWorkspaceTool.kind == toolFiles, Decorate: func(cell ui.Element, i int) {
 		f := fs[i]
-		cell.ContextMenu(func(m *ui.Menu) {
+		cell.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) {
 			if !b.chosen.Has(f.Name) {
 				b.chosen.Clear()
 				b.chosen.Add(f.Name)
 				b.selected = i
 			}
 			a.fileContextMenu(m, p, dir, chosenFiles(b))
-		})
+		}))
 		if cell.Clicked() {
 			b.chooseFile(fs, i, cell.ClickModifiers())
 		}
@@ -270,7 +282,7 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 		}
 		a.fileDropTarget(c, cell, p, target)
 	}})
-	table.ContextMenu(func(m *ui.Menu) { a.directoryContextMenu(m, p, b, dir) })
+	table.ContextMenu(a.workspaceBoundMenu(func(m *ui.Menu) { a.directoryContextMenu(m, p, b, dir) }))
 	a.fileDropTarget(c, table, p, dir)
 	if table.Submitted() {
 		a.openPaneFile(p)

@@ -258,7 +258,7 @@ func (a *app) setToolsDock(right bool) {
 }
 
 func (a *app) setToolsDockSide(side string) {
-	if side != "top" && side != "left" && side != "right" {
+	if side != "right" {
 		side = "bottom"
 	}
 	if a.toolsDetached {
@@ -268,9 +268,6 @@ func (a *app) setToolsDockSide(side string) {
 		a.moveToolDialogsToMain()
 	}
 	a.toolsEdge = ""
-	if side == "left" || side == "top" {
-		a.toolsEdge = side
-	}
 	a.toolsRight, a.toolsHidden, a.fileExpanded = side == "right", false, false
 	a.toolsLayoutOpen = false
 	a.contentFocus = a.terminalFocusWanted()
@@ -329,7 +326,15 @@ func (a *app) workspaceContent(c *ui.Context, page int) {
 		case 4:
 			a.settingsView(c)
 		default:
-			a.terminalWorkspace(c, content.Bounds().W, content.Bounds().H)
+			if a.workspaceCanvas {
+				ui.Row(c).Fill().Gap(8).Children(func() {
+					body := ui.Column(c).FillHeight().Grow(1).MinWidth(0).MinHeight(0)
+					body.Children(func() { a.terminalWorkspace(c, body.Bounds().W, body.Bounds().H) })
+					a.workspaceAppsRail(c)
+				})
+			} else {
+				a.terminalWorkspace(c, content.Bounds().W, content.Bounds().H)
+			}
 		}
 	})
 }
@@ -347,7 +352,7 @@ func (a *app) terminalWorkspace(c *ui.Context, width, height float32) {
 		return
 	}
 	side := a.effectiveToolsDockSide(c)
-	if side == "right" || side == "left" {
+	if side == "right" {
 		limits := components.SplitLimits{Min: 1, Max: 80, Default: 65}
 		if width > 8 {
 			room := width - 8
@@ -355,17 +360,9 @@ func (a *app) terminalWorkspace(c *ui.Context, width, height float32) {
 			maximum := max(minimum, (room-340)*100/room)
 			limits.Min, limits.Max = minimum, min(80, maximum)
 		}
-		if side == "right" {
-			components.SplitPercent(c, &a.terminalWidthShare, limits, func() {
-				ui.Column(c).Fill().Padding(0, 4, 0, 0).Children(terminal)
-			}, func() { ui.Column(c).Fill().Padding(0, 0, 0, 3).Children(tools) }).Fill()
-		} else {
-			share := 100 - limits.Clamp(a.terminalWidthShare)
-			components.SplitPercent(c, &share, components.SplitLimits{Min: 100 - limits.Max, Max: 100 - limits.Min, Default: 35},
-				func() { ui.Column(c).Fill().Padding(0, 4, 0, 0).Children(tools) },
-				func() { ui.Column(c).Fill().Padding(0, 0, 0, 3).Children(terminal) }).Fill()
-			a.terminalWidthShare = 100 - share
-		}
+		components.SplitPercent(c, &a.terminalWidthShare, limits, func() {
+			ui.Column(c).Fill().Padding(0, 4, 0, 0).Children(terminal)
+		}, func() { ui.Column(c).Fill().Padding(0, 0, 0, 3).Children(tools) }).Fill()
 	} else {
 		limits := components.SplitLimits{Min: 30, Max: 90, Default: 72}
 		if height > 8 {
@@ -373,17 +370,9 @@ func (a *app) terminalWorkspace(c *ui.Context, width, height float32) {
 			limits.Min = max(30, min(50, 166*100/room))
 			limits.Max = max(limits.Min, min(90, (room-165)*100/room))
 		}
-		if side == "bottom" {
-			components.SplitVerticalPercent(c, &a.terminalShare, limits, func() {
-				ui.Column(c).Fill().Padding(0, 0, 4, 0).Children(terminal)
-			}, func() { ui.Column(c).Fill().Padding(3, 0, 0, 0).Children(tools) }).Fill()
-		} else {
-			share := 100 - limits.Clamp(a.terminalShare)
-			components.SplitVerticalPercent(c, &share, components.SplitLimits{Min: 100 - limits.Max, Max: 100 - limits.Min, Default: 28},
-				func() { ui.Column(c).Fill().Padding(0, 0, 4, 0).Children(tools) },
-				func() { ui.Column(c).Fill().Padding(3, 0, 0, 0).Children(terminal) }).Fill()
-			a.terminalShare = 100 - share
-		}
+		components.SplitVerticalPercent(c, &a.terminalShare, limits, func() {
+			ui.Column(c).Fill().Padding(0, 0, 4, 0).Children(terminal)
+		}, func() { ui.Column(c).Fill().Padding(3, 0, 0, 0).Children(tools) }).Fill()
 	}
 }
 
@@ -395,9 +384,6 @@ func (a *app) toolsDockRight(c *ui.Context) bool {
 }
 
 func (a *app) savedToolsDockSide() string {
-	if a.toolsEdge == "top" || a.toolsEdge == "left" {
-		return a.toolsEdge
-	}
 	if a.toolsRight {
 		return "right"
 	}
@@ -407,6 +393,9 @@ func (a *app) savedToolsDockSide() string {
 func (a *app) effectiveToolsDockSide(c *ui.Context) string {
 	side := a.savedToolsDockSide()
 	w, _ := c.Size()
+	if a.workspaceCanvas {
+		w -= 44
+	}
 	if a.sidebarHidden {
 		w -= components.RailWidth
 	} else {

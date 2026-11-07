@@ -242,3 +242,12 @@ SSH config：入口先预览、标记冲突与选择行，再保存认证/主机
 [inc-clipprefs]: https://github.com/Licoy/sshyard/blob/93c596b46efba3e3939f06fbff4c179e7241755b/internal/app/settingsview.go#L537-L573
 [inc-osc52]: https://github.com/Licoy/sshyard/blob/93c596b46efba3e3939f06fbff4c179e7241755b/internal/app/osc52.go#L74-L410
 [inc-termcopy]: https://github.com/Licoy/sshyard/blob/93c596b46efba3e3939f06fbff4c179e7241755b/internal/app/termview.go#L774-L991
+
+
+## 增量核对：画布卡片与功能开关（2026-11-07）
+
+沿用已解析基线 `93c596b46efba3e3939f06fbff4c179e7241755b`，本次补查三个问题：主画布怎样承载不同内容、右侧开关怎样管理功能、如何保留我们更紧凑的标签工具区。读取了固定 revision 的 workspace.go、rail.go、single.go、panels_test.go，并检查 README 的终端 / 状态截图；未构建或执行来源代码。取证底稿在 `build/reference/sshyard-canvas/`，Go 源码以 `.go.txt` 保存，避免 Go 将它们作为本项目包扫描。
+
+[workspace.go](https://github.com/Licoy/sshyard/blob/93c596b46efba3e3939f06fbff4c179e7241755b/internal/app/workspace.go#L319) 的画布由分栏树构成，卡片各有标题、拖动和关闭入口；文件可在终端右侧或下方打开。它不是任意 x/y 浮窗的无限画布。[rail.go](https://github.com/Licoy/sshyard/blob/93c596b46efba3e3939f06fbff4c179e7241755b/internal/app/rail.go#L104) 区分主画布内文件 / AI 与旁边可同时打开的多个 inspector；开关亮灭反映对应功能，不用一个工具标签替换全部功能。
+
+本地采用相同的卡片标题栏和独立功能开关思路，复用已有递归分栏与目标绑定：文件、命令、状态和实际任务队列能分别显示，卡片可拖到一起聚合成 tab，也能再次拆开。次要内容的标签工具区只在底部 / 右侧；主画布仍可四向拆分。主区支持“平铺为画布 / 聚合为标签”，既有源会话、浏览器和任务队列不随呈现切换重建。不移植其 AI、开放接口或凭据模型；该部分不属于本轮请求。

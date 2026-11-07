@@ -30,7 +30,7 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, dark := range []bool{false, true} {
-		for _, screen := range []string{"workspace", "unlock", "unlock-system", "unlock-expanded", "vault-create", "connection", "connection-narrow", "connection-hardware", "connection-hardware-narrow", "settings", "files-tab", "workspace-four", "workspace-six", "dock-left", "dock-top", "protected-paths", "protected-paths-narrow", "editor", "editor-loading", "ports"} {
+		for _, screen := range []string{"workspace", "unlock", "unlock-system", "unlock-expanded", "vault-create", "connection", "connection-narrow", "connection-hardware", "connection-hardware-narrow", "settings", "canvas-mixed", "canvas-grouped", "canvas-tabs", "canvas-bottom", "canvas-right", "canvas-small", "files-tab", "workspace-four", "workspace-six", "dock-left", "dock-top", "protected-paths", "protected-paths-narrow", "editor", "editor-loading", "ports"} {
 			name := screen + "-light"
 			if dark {
 				name = screen + "-dark"
@@ -77,6 +77,34 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 					width, height = 1080, 760
 					a.settingsOpen = true
 					view = a.settingsWindowView
+				case "canvas-mixed", "canvas-grouped", "canvas-tabs", "canvas-bottom", "canvas-right", "canvas-small":
+					fixture, _ := terminalSplitFixture(t, 2)
+					a.sessions = fixture.sessions
+					a.openWorkspaceTool(toolFiles)
+					a.openWorkspaceTool(toolDiagnostics)
+					a.setWorkspaceCanvas(true)
+					a.toolsHidden = true
+					width, height = 1440, 960
+					if screen == "canvas-grouped" {
+						a.dropWorkspaceTab(a.workspaceTabPayload(workspaceTab{session: a.sessions[1]}), a.sessions[0].group, workspaceTab{}, "")
+					}
+					if screen == "canvas-tabs" {
+						a.setWorkspaceCanvas(false)
+					}
+					if screen == "canvas-bottom" || screen == "canvas-right" {
+						a.dockWorkspaceTool(a.workspaceTools[toolDiagnostics])
+						a.dock = toolDiagnostics
+						a.setToolsDockSide("bottom")
+						if screen == "canvas-right" {
+							a.setToolsDockSide("right")
+						}
+					}
+					if screen == "canvas-small" {
+						a.setWorkspaceCanvas(false)
+						a.workspaceCanvas = true
+						width, height = 560, 760
+					}
+					view = a.view
 				case "workspace-four", "workspace-six":
 					fixture, _ := terminalSplitFixture(t, 4)
 					a.sessions = fixture.sessions

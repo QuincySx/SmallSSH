@@ -2806,6 +2806,586 @@
         }
       ],
       "visibility": "public"
+    },
+    {
+      "axes": [
+        {
+          "domain": [
+            "终端",
+            "功能区"
+          ],
+          "id": "axis_u7aa38d36",
+          "name": "类型",
+          "role": "configuration"
+        }
+      ],
+      "id": "cmp_u20d6992a",
+      "name": "画布标题栏",
+      "variants": [
+        {
+          "id": "var_u20d6992a_u4dadc0b0",
+          "nodes": {
+            "node_u20d6992a_root": {
+              "children": [
+                "node_u20d6992a_uc90b9554_uc2557cc9",
+                "node_u20d6992a_uc90b9554_uef6c1502",
+                "node_u20d6992a_uc90b9554_uf655af68",
+                "node_u20d6992a_uc90b9554_u7ba21d60",
+                "node_u20d6992a_uc90b9554_u913539b6",
+                "node_u20d6992a_uc90b9554_ue69643c5",
+                "node_u20d6992a_uc90b9554_u1d0411ab",
+                "node_u20d6992a_uc90b9554_uf468157f"
+              ],
+              "fills": [],
+              "height": 32,
+              "id": "node_u20d6992a_root",
+              "layout": "flex",
+              "layout-align-items": "center",
+              "layout-flex-dir": "row",
+              "layout-gap": {
+                "column-gap": 6,
+                "row-gap": 6
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "layout-padding": {
+                "p1": 0,
+                "p2": 6,
+                "p3": 0,
+                "p4": 10
+              },
+              "layout-padding-type": "multiple",
+              "name": "标题栏容器",
+              "type": "COMPONENT",
+              "width": 600,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_u1d0411ab": {
+              "children": [],
+              "fills": [
+                {
+                  "color": "#626B7A",
+                  "type": "solid"
+                }
+              ],
+              "growType": "auto-height",
+              "height": 17,
+              "id": "node_u20d6992a_uc90b9554_u1d0411ab",
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "类型图标",
+              "text": "",
+              "textStyle": {
+                "fontFamily": "SmallSSH Icons",
+                "fontSize": 14
+              },
+              "tokenBindings": {
+                "fill": {
+                  "assetId": "tok_88dae447f93698b2585221c145249b10",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                }
+              },
+              "type": "TEXT",
+              "width": 14,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_u7ba21d60": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_u7ba21d60",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "向右拆分",
+              "type": "INSTANCE",
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_u913539b6": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_u913539b6",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "打开文件",
+              "type": "INSTANCE",
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uc2557cc9": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_uc2557cc9",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "关闭面板",
+              "type": "INSTANCE",
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_ue69643c5": {
+              "children": [],
+              "fills": [
+                {
+                  "color": "#272A34",
+                  "type": "solid"
+                }
+              ],
+              "growType": "auto-height",
+              "height": 20,
+              "id": "node_u20d6992a_uc90b9554_ue69643c5",
+              "layout-item-h-sizing": "fill",
+              "layout-item-v-sizing": "fix",
+              "name": "标题",
+              "text": "Web 生产环境",
+              "textStyle": {
+                "fontFamily": "SmallSSH UI",
+                "fontSize": 13,
+                "fontWeight": 400,
+                "lineHeight": 1.5
+              },
+              "tokenBindings": {
+                "fill": {
+                  "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "typography": {
+                  "assetId": "tok_da8835713e2e1f7a4c8a5bfb42dccfc9",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                }
+              },
+              "type": "TEXT",
+              "width": 83,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uef6c1502": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_uef6c1502",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "收回工具区",
+              "type": "INSTANCE",
+              "visible": false,
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uf468157f": {
+              "children": [],
+              "cornerRadius": 3,
+              "fills": [
+                {
+                  "color": "#6555CD",
+                  "type": "solid"
+                }
+              ],
+              "height": 6,
+              "id": "node_u20d6992a_uc90b9554_uf468157f",
+              "layout": "flex",
+              "layout-flex-dir": "column",
+              "layout-gap": {
+                "column-gap": 8,
+                "row-gap": 8
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "layout-padding": {
+                "p1": 0,
+                "p2": 0,
+                "p3": 0,
+                "p4": 0
+              },
+              "layout-padding-type": "multiple",
+              "name": "连接状态",
+              "tokenBindings": {
+                "fill": {
+                  "assetId": "tok_5e5dd698605807bd1335364dbd6b0645",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                }
+              },
+              "type": "FRAME",
+              "width": 6,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uf655af68": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_uf655af68",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "向下拆分",
+              "type": "INSTANCE",
+              "width": 24,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "rootId": "node_u20d6992a_root",
+          "selection": {
+            "axis_u7aa38d36": "终端"
+          }
+        },
+        {
+          "id": "var_u20d6992a_ub54c7fce",
+          "nodes": {
+            "node_u20d6992a_root": {
+              "children": [
+                "node_u20d6992a_uc90b9554_uc2557cc9",
+                "node_u20d6992a_uc90b9554_uef6c1502",
+                "node_u20d6992a_uc90b9554_uf655af68",
+                "node_u20d6992a_uc90b9554_u7ba21d60",
+                "node_u20d6992a_uc90b9554_u913539b6",
+                "node_u20d6992a_uc90b9554_ue69643c5",
+                "node_u20d6992a_uc90b9554_u1d0411ab",
+                "node_u20d6992a_uc90b9554_uf468157f"
+              ],
+              "fills": [],
+              "height": 32,
+              "id": "node_u20d6992a_root",
+              "layout": "flex",
+              "layout-align-items": "center",
+              "layout-flex-dir": "row",
+              "layout-gap": {
+                "column-gap": 6,
+                "row-gap": 6
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "layout-padding": {
+                "p1": 0,
+                "p2": 6,
+                "p3": 0,
+                "p4": 10
+              },
+              "layout-padding-type": "multiple",
+              "name": "标题栏容器",
+              "type": "COMPONENT",
+              "width": 600,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_u1d0411ab": {
+              "children": [],
+              "fills": [
+                {
+                  "color": "#626B7A",
+                  "type": "solid"
+                }
+              ],
+              "growType": "auto-height",
+              "height": 17,
+              "id": "node_u20d6992a_uc90b9554_u1d0411ab",
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "类型图标",
+              "text": "",
+              "textStyle": {
+                "fontFamily": "SmallSSH Icons",
+                "fontSize": 14
+              },
+              "tokenBindings": {
+                "fill": {
+                  "assetId": "tok_88dae447f93698b2585221c145249b10",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                }
+              },
+              "type": "TEXT",
+              "width": 14,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_u7ba21d60": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_u7ba21d60",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "向右拆分",
+              "type": "INSTANCE",
+              "visible": false,
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_u913539b6": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_u913539b6",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "打开文件",
+              "type": "INSTANCE",
+              "visible": false,
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uc2557cc9": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_uc2557cc9",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "关闭面板",
+              "type": "INSTANCE",
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_ue69643c5": {
+              "children": [],
+              "fills": [
+                {
+                  "color": "#272A34",
+                  "type": "solid"
+                }
+              ],
+              "growType": "auto-height",
+              "height": 20,
+              "id": "node_u20d6992a_uc90b9554_ue69643c5",
+              "layout-item-h-sizing": "fill",
+              "layout-item-v-sizing": "fix",
+              "name": "标题",
+              "text": "Web 生产环境",
+              "textStyle": {
+                "fontFamily": "SmallSSH UI",
+                "fontSize": 13,
+                "fontWeight": 400,
+                "lineHeight": 1.5
+              },
+              "tokenBindings": {
+                "fill": {
+                  "assetId": "tok_c9705906f17aed6d2e4d77e27c3eced3",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "typography": {
+                  "assetId": "tok_da8835713e2e1f7a4c8a5bfb42dccfc9",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                }
+              },
+              "type": "TEXT",
+              "width": 83,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uef6c1502": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_uef6c1502",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "收回工具区",
+              "type": "INSTANCE",
+              "width": 24,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uf468157f": {
+              "children": [],
+              "cornerRadius": 3,
+              "fills": [
+                {
+                  "color": "#6555CD",
+                  "type": "solid"
+                }
+              ],
+              "height": 6,
+              "id": "node_u20d6992a_uc90b9554_uf468157f",
+              "layout": "flex",
+              "layout-flex-dir": "column",
+              "layout-gap": {
+                "column-gap": 8,
+                "row-gap": 8
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "layout-padding": {
+                "p1": 0,
+                "p2": 0,
+                "p3": 0,
+                "p4": 0
+              },
+              "layout-padding-type": "multiple",
+              "name": "连接状态",
+              "tokenBindings": {
+                "fill": {
+                  "assetId": "tok_5e5dd698605807bd1335364dbd6b0645",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                }
+              },
+              "type": "FRAME",
+              "visible": false,
+              "width": 6,
+              "x": 0,
+              "y": 0
+            },
+            "node_u20d6992a_uc90b9554_uf655af68": {
+              "children": [],
+              "height": 24,
+              "id": "node_u20d6992a_uc90b9554_uf655af68",
+              "instance": {
+                "component": {
+                  "assetId": "cmp_ucd81d05c",
+                  "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+                },
+                "overrides": {
+                  "node_ucd81d05c_root:tokenBindings": {
+                    "height": null,
+                    "width": null
+                  },
+                  "node_ucd81d05c_u99dba154_uf3c2b98c:text": ""
+                },
+                "variant": {}
+              },
+              "layout-item-h-sizing": "fix",
+              "layout-item-v-sizing": "fix",
+              "name": "向下拆分",
+              "type": "INSTANCE",
+              "visible": false,
+              "width": 24,
+              "x": 0,
+              "y": 0
+            }
+          },
+          "rootId": "node_u20d6992a_root",
+          "selection": {
+            "axis_u7aa38d36": "功能区"
+          }
+        }
+      ]
     }
   ]
 }

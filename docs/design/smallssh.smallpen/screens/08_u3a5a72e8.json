@@ -106,6 +106,7 @@
         "node_08_u3a5a72e8_desktop_desktop_u118fda61_ucc20a900_u77531a6f_u28481bdb": {
           "children": [
             "node_08_u3a5a72e8_desktop_desktop_u118fda61_ucc20a900_u77531a6f_u28481bdb_u28deb4db",
+            "node_08_u3a5a72e8_desktop_u28481bdb_u34db8683",
             "node_08_u3a5a72e8_desktop_desktop_u118fda61_ucc20a900_u77531a6f_u28481bdb_uc5246901",
             "node_08_u3a5a72e8_desktop_desktop_u118fda61_ucc20a900_u77531a6f_u28481bdb_ucba9f39d",
             "node_08_u3a5a72e8_desktop_desktop_u118fda61_ucc20a900_u77531a6f_u28481bdb_u37253f27",
@@ -238,7 +239,7 @@
             },
             "overrides": {
               "node_ufc69bfc4_ufc69bfc4_u3d8dc836:text": "工具面板",
-              "node_ufc69bfc4_ufc69bfc4_ud961c408:text": "开启"
+              "node_ufc69bfc4_ufc69bfc4_ud961c408:text": "按需显示"
             },
             "variant": {}
           },
@@ -634,6 +635,29 @@
           },
           "type": "FRAME",
           "width": 1080,
+          "x": 0,
+          "y": 0
+        },
+        "node_08_u3a5a72e8_desktop_u28481bdb_u34db8683": {
+          "children": [],
+          "height": 54,
+          "id": "node_08_u3a5a72e8_desktop_u28481bdb_u34db8683",
+          "instance": {
+            "component": {
+              "assetId": "cmp_ufc69bfc4",
+              "packageId": "pkg_7ca313fcdbf1492c92a938d061b31ed9"
+            },
+            "overrides": {
+              "node_ufc69bfc4_ufc69bfc4_u3d8dc836:text": "主工作区",
+              "node_ufc69bfc4_ufc69bfc4_ud961c408:text": "画布 / 标签聚合"
+            },
+            "variant": {}
+          },
+          "layout-item-h-sizing": "fill",
+          "layout-item-v-sizing": "fix",
+          "name": "主工作区",
+          "type": "INSTANCE",
+          "width": 640,
           "x": 0,
           "y": 0
         }

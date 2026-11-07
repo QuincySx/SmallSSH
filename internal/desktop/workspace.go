@@ -65,8 +65,12 @@ func (a *app) runTransfer(id string) {
 	}()
 }
 func (a *app) transferView(c *ui.Context) {
-	a.transferTable.Key = func(i int) any { return a.jobs[i].ID }
-	a.transferTable.Label = func(i int) string { return path.Base(a.jobs[i].Remote) }
+	a.transferViewWithState(c, &a.transferTable)
+}
+
+func (a *app) transferViewWithState(c *ui.Context, state *ui.ListState) {
+	state.Key = func(i int) any { return a.jobs[i].ID }
+	state.Label = func(i int) string { return path.Base(a.jobs[i].Remote) }
 	if len(a.jobs) == 0 {
 		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Center().Gap(12).Children(func() {
 			ui.Icon(c, components.TransfersIcon).Size(28, 28).TextColor(c.Theme().TextMuted)
@@ -74,7 +78,7 @@ func (a *app) transferView(c *ui.Context) {
 		})
 		return
 	}
-	components.List(c, &a.transferTable, len(a.jobs), func(i int) {
+	components.List(c, state, len(a.jobs), func(i int) {
 		j := a.jobs[i]
 		ui.Column(c).FillWidth().Padding(8, 10).Gap(4).Tooltip(j.Local + " ↔ " + j.Remote).Children(func() {
 			ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {

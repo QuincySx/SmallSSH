@@ -17,6 +17,7 @@ type terminalGroup struct {
 	active         *session
 	editorSelected bool
 	headerWidth    float32
+	canvasBounds   ui.Rect
 	revealedTab    *session
 	revealedEditor bool
 	split          *terminalLayoutNode
@@ -309,6 +310,13 @@ func (a *app) terminalLayoutMenu(c *ui.Context) {
 		if !a.online || a.generation != generation {
 			return
 		}
+		if m.Item(tr(c, "平铺为画布")).Chosen() {
+			a.setWorkspaceCanvas(true)
+		}
+		if m.Item(tr(c, "聚合为标签")).Chosen() {
+			a.setWorkspaceCanvas(false)
+		}
+		m.Separator()
 		if m.Item(tr(c, "新建终端到另一组")).Disabled(s == nil || s.closed || a.connecting[s.host] != nil).Chosen() {
 			a.newSplitTerminal(s)
 		}
@@ -461,7 +469,7 @@ type terminalTabDrag struct {
 
 func (a *app) validTerminalDrag(d terminalTabDrag) bool {
 	if d.fromDock {
-		kind := d.dockKind == toolFiles || d.dockKind == toolCommands || d.dockKind == toolDiagnostics
+		kind := d.dockKind == toolFiles || d.dockKind == toolCommands || d.dockKind == toolDiagnostics || d.dockKind == toolTransfers
 		return d.owner == a && d.generation == a.generation && kind && a.workspaceTools[d.dockKind] == nil &&
 			d.session == nil && d.document == nil && d.tool == nil && (d.toolSource == nil || a.hasSession(d.toolSource))
 	}

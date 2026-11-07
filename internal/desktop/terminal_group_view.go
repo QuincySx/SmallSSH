@@ -16,10 +16,13 @@ func (a *app) terminalGroupDrop(c *ui.Context, panel ui.Element, g *terminalGrou
 func (a *app) terminalGroupView(c *ui.Context, g *terminalGroup, first, last bool) {
 	panel := ui.Column(c).Fill().MinWidth(0).MinHeight(0).Gap(0).Key(fmt.Sprintf("terminal-group:%d", g.id)).Label(fmt.Sprintf(tr(c, "终端组%d"), g.id))
 	panel.Children(func() {
+		g.canvasBounds = panel.Bounds()
 		previous := a.renderingTerminalGroup
 		a.renderingTerminalGroup = g
 		defer func() { a.renderingTerminalGroup = previous }()
-		if len(a.terminalGroups()) > 1 {
+		if a.workspaceCanvas && len(a.workspaceTabs(g)) == 1 {
+			a.canvasPaneHeader(c, g, panel.Bounds())
+		} else if a.workspaceCanvas || len(a.terminalGroups()) > 1 {
 			a.terminalGroupHeader(c, g, false, false, panel.Bounds().W, panel.Bounds())
 		}
 		if g.selectedTool != nil {
@@ -113,6 +116,8 @@ func (a *app) terminalGroupHeader(c *ui.Context, g *terminalGroup, first, last b
 		}
 		if last {
 			a.terminalLayoutMenu(c)
+		} else if a.workspaceCanvas {
+			components.ButtonGroup(c, func() { a.canvasPaneActions(c, g) }).MinWidth(0).Shrink(1)
 		}
 	})
 	g.revealedTab, g.revealedEditor, g.revealedTool = displayedTab, displayedEditor, displayedTool

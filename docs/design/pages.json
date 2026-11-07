@@ -33,14 +33,17 @@
       "name": "工作台",
       "host": "主窗口",
       "entry": "解锁成功",
-      "actions": "服务器侧栏；单组顶栏标签、多组窗格内标签；拖动标签排序、跨组移动及向四边递归拆分；单一小窗开关、任务、设置",
+      "actions": "默认卡片画布；右侧独立开关文件、命令、状态、任务；平铺或标签聚合；可混排局部标签组，保持源会话与队列",
       "states": "空服务器、未选择、已选择无会话、窄窗回退、锁定",
-      "source": "internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go",
+      "source": "internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go; internal/desktop/workspace_canvas.go",
       "limits": "不等于独立设置或工具窗口",
       "design_pages": [
         "02 工作台 / 终端与底部文件",
         "02 工作台 / 四个混合分栏",
-        "02 工作台 / 六个混合分栏"
+        "02 工作台 / 六个混合分栏",
+        "02 工作台 / 画布与功能开关",
+        "02 工作台 / 画布与标签混排",
+        "02 工作台 / 标签聚合"
       ]
     },
     {
@@ -59,9 +62,9 @@
     {
       "id": "terminal",
       "name": "终端与会话组",
-      "host": "主窗工作区平级标签与递归分栏",
+      "host": "画布卡片 / 局部标签组 / 顶栏标签聚合",
       "entry": "双击服务器或新建终端",
-      "actions": "Ghostty交互；终端、文件、命令、状态统一标签选择/关闭/排序；四向拆分、跨组移动、合并；空组自动收起",
+      "actions": "Ghostty交互；终端、文件、命令、状态统一标签选择/关闭/排序；四向拆分、跨组移动、合并；空组自动收起；卡片标题拖动聚合，终端标题打开下方文件及右侧 / 下方新终端，连接中即占位",
       "states": "排队、连接中、取消、失败重试、断开、主机指纹变化",
       "source": "internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/connection_pending.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go",
       "limits": "分组不是多个独立工具实例；不提供批量广播",
@@ -90,26 +93,26 @@
     {
       "id": "tools",
       "name": "工具面板",
-      "host": "主窗四边停靠；可独立为工作区平级标签，也保留原生系统窗口",
+      "host": "底部或右侧标签工具区；可移到主画布，也保留系统窗口",
       "entry": "顶栏单一小窗开关；工具面板自己的布局菜单",
-      "actions": "上下左右停靠；工具标签拖到主区中心独立、拖到四边改停靠位置；独立标签可继续分栏，也可拖回工具区；菜单放大、收起、系统窗口",
+      "actions": "次要功能收进底部 / 右侧 tab；移到画布、拖回停靠、系统窗口、放大或收起；主画布四向拆分不受工具区停靠方向限制",
       "states": "隐藏、右侧空间不足回退底部、独立窗",
       "source": "internal/desktop/filepanes.go; internal/desktop/tool_window.go; internal/desktop/layout.go",
-      "limits": "每类工具一份展示状态；窄窗的左右停靠回退底部，保留用户选择；系统窗口与工作区标签为不同承载方式",
+      "limits": "每类工具一份展示；旧顶部 / 左侧停靠回退底部；右侧窄窗回退底部并保留选择",
       "design_pages": [
         "02 工作台 / 终端与底部文件",
         "02 工作台 / 小窗布局菜单",
-        "02 工作台 / 工具停靠顶部",
         "02 工作台 / 工具停靠底部",
-        "02 工作台 / 工具停靠左侧",
-        "02 工作台 / 工具停靠右侧"
+        "02 工作台 / 工具停靠右侧",
+        "02 工作台 / 画布与功能开关",
+        "02 工作台 / 画布与标签混排"
       ]
     },
     {
       "id": "file-tab",
-      "name": "文件管理大标签",
+      "name": "画布文件管理 / 聚合标签",
       "host": "工作区平级文件标签 / 分栏",
-      "entry": "工具面板“在标签页打开文件管理”",
+      "entry": "终端标题文件图标、右侧文件开关、工具区移到画布",
       "actions": "独立到工作区标签；与终端共用选择、关闭、排序和四向分栏；拖回工具区；保留文件树、来源与选择",
       "states": "选中/未选、返回停靠",
       "source": "internal/desktop/file_workspace.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go",
@@ -667,259 +670,328 @@
   "design_pages": [
     {
       "name": "01 访问 / 创建保险库",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "01 访问 / 解锁",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "02 工作台 / 终端与底部文件",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "canvas"
     },
     {
       "name": "02 工作台 / 未选择服务器",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "02 工作台 / 连接中",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "02 工作台 / 连接失败",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "02 工作台 / 双终端分组",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "canvas"
     },
     {
       "name": "03 连接 / 常规与密码",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "03 连接 / 硬件认证",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "03 连接 / 加速与代理",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "03 连接 / 编码与保活",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "03 连接 / 访问策略",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "03 连接 / 核对服务器身份",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 文件大标签",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 本机与服务器",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 独立文件编辑",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 文件加载与失败",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 文件属性与权限",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 传输目标确认",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "04 文件 / 批量删除确认",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "05 命令 / 命令列表",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "05 命令 / 编辑命令模板",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "05 命令 / 参数与发送确认",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "06 状态 / 资源概览",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "06 状态 / 资源详情",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "06 状态 / 进程",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "06 状态 / 自启服务",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "06 状态 / 系统信息",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "06 状态 / 端口与对外连接",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "07 Docker / 容器",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "07 Docker / 镜像",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "07 Docker / Compose 项目",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "07 Docker / 容器日志与详情",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "07 Docker / Compose 更新确认",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 工作区",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 安全与解锁",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 运行与后台",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 授权中心 · 待处理",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 授权中心 · 活动",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 授权中心 · 历史",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "08 设置 / 本机 CLI 配对确认",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "09 工具 / SSH 隧道",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "09 工具 / 服务器备注",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "09 工具 / 传输与任务中心",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "10 待实现 / 登录公钥安装",
-      "status": "planned"
+      "status": "planned",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "10 待实现 / 配置迁移与备份",
-      "status": "planned"
+      "status": "planned",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "10 待实现 / 终端增强与完整变量",
-      "status": "planned"
+      "status": "planned",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 1",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 2",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 3",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 4",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 5",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 6",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "00 页面目录 / 页面地图 7",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "01 访问 / 系统验证解锁",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "01 访问 / 系统验证密码回退",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "02 工作台 / 小窗布局菜单",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
     },
     {
       "name": "02 工作台 / 四个混合分栏",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "canvas"
     },
     {
       "name": "02 工作台 / 六个混合分栏",
-      "status": "source-mapped"
-    },
-    {
-      "name": "02 工作台 / 工具停靠左侧",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "canvas"
     },
     {
       "name": "02 工作台 / 工具停靠右侧",
-      "status": "source-mapped"
-    },
-    {
-      "name": "02 工作台 / 工具停靠顶部",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "canvas"
     },
     {
       "name": "02 工作台 / 工具停靠底部",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "canvas"
     },
     {
       "name": "03 连接 / 保护路径编辑器",
-      "status": "source-mapped"
+      "status": "source-mapped",
+      "presentation": "tabs-or-window"
+    },
+    {
+      "name": "02 工作台 / 画布与功能开关",
+      "status": "source-mapped",
+      "presentation": "canvas"
+    },
+    {
+      "name": "02 工作台 / 画布与标签混排",
+      "status": "source-mapped",
+      "presentation": "canvas"
+    },
+    {
+      "name": "02 工作台 / 标签聚合",
+      "status": "source-mapped",
+      "presentation": "tabs"
     }
   ],
   "scope": "source-mapped: 按正式源码核对的页面结构记录；planned: 待实现需求。均不代替功能验收。"

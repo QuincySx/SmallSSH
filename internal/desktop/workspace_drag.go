@@ -68,12 +68,15 @@ func (a *app) dropWorkspaceTab(d terminalTabDrag, destination *terminalGroup, be
 		return
 	}
 	if d.fromDock {
-		if edge != "" {
+		if edge == "right" || edge == "bottom" {
 			a.setToolsDockSide(edge)
 			a.showTool(d.dockKind)
 			return
 		}
+		canvas := a.workspaceCanvas
+		a.workspaceCanvas = false
 		a.openWorkspaceTool(d.dockKind)
+		a.workspaceCanvas = canvas
 		d.tool = a.workspaceTools[d.dockKind]
 		if d.tool == nil {
 			return

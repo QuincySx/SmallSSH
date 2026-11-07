@@ -30,15 +30,23 @@ func PanelLayoutMenu(c *ui.Context, open *bool, right, expanded bool, floating .
 	return PanelLayoutMenuAt(c, open, side, expanded, len(floating) > 0 && floating[0])
 }
 
+// PanelLayoutMenuAt offers System window, bottom and right. PanelDockTop and
+// PanelDockLeft remain valid actions for callers that still handle them, so a
+// side that is no longer offered resolves to bottom rather than selecting
+// nothing.
 func PanelLayoutMenuAt(c *ui.Context, open *bool, side string, expanded, detached bool) PanelLayoutAction {
 	action := PanelLayoutUnchanged
+	placement := "bottom"
+	if side == "right" {
+		placement = "right"
+	}
 	button := SVGButton(c, MoreIcon, tr(c, "工具面板布局")).Tooltip(tr(c, "切换停靠位置与面板大小"))
 	if button.Clicked() {
 		*open = !*open
 	}
 	ui.PopoverBase(c, button, open, func(panel ui.Element) {
 		panel.AttachTo(button, ui.AnchorBottomEnd, ui.AnchorTopEnd).Margin(4, 0, 0, 0).
-			Width(320).Padding(4, 0).Radius(8).Background(c.Theme().Background).
+			Width(256).Padding(4, 0).Radius(8).Background(c.Theme().Background).
 			Border(1, c.Theme().Border).Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, .18)).
 			Label(tr(c, "工具面板布局菜单"))
 		ui.Column(c).FillWidth().Gap(0).Children(func() {
@@ -52,10 +60,8 @@ func PanelLayoutMenuAt(c *ui.Context, open *bool, side string, expanded, detache
 						active     bool
 						action     PanelLayoutAction
 					}{{tr(c, "系统窗口"), DetachPanelIcon, detached, PanelDetach},
-						{tr(c, "放到底部"), BottomPanelIcon, side == "bottom" && !detached, PanelDockBottom},
-						{tr(c, "放到右侧"), RightPanelIcon, side == "right" && !detached, PanelDockRight},
-						{tr(c, "放到顶部"), TopPanelIcon, side == "top" && !detached, PanelDockTop},
-						{tr(c, "放到左侧"), SidebarIcon, side == "left" && !detached, PanelDockLeft}} {
+						{tr(c, "放到底部"), BottomPanelIcon, placement == "bottom" && !detached, PanelDockBottom},
+						{tr(c, "放到右侧"), RightPanelIcon, placement == "right" && !detached, PanelDockRight}} {
 						choice := SVGButton(c, item.icon, item.accessible).Size(32, 32).Radius(4).
 							Role(ui.RoleRadio).Checked(item.active)
 						if item.active {
@@ -84,7 +90,7 @@ func PanelLayoutMenuAt(c *ui.Context, open *bool, side string, expanded, detache
 					*open = false
 				}
 			}
-			promote := panelMenuItem(c, ExpandPanelIcon, tr(c, "独立到标签页"), "")
+			promote := panelMenuItem(c, ExpandPanelIcon, tr(c, "移到画布"), "")
 			if promote.Clicked() {
 				action = PanelPromote
 				*open = false
