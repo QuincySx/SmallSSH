@@ -1,0 +1,29 @@
+<sp-component name="画布标题栏" props="类型: 终端 | 功能区">
+  <div class="flex flex-row items-center gap-[6px] pr-[6px] pl-[10px] w-[600px] h-[32px]">
+    <div data-name="连接状态" class="flex flex-col gap-[8px] w-[6px] h-[6px] bg-accent rounded-[3px]"></div>
+    <p data-name="类型图标" class="w-[14px] text-muted font-[SmallSSH_Icons] text-[14px]"></p>
+    <p data-name="标题" class="w-full text-text type-body">Web 生产环境</p>
+    <sp-use component="图标按钮" data-name="打开文件" class="w-[24px] h-[24px]">
+      <p data-name="图标"></p>
+    </sp-use>
+    <sp-use component="图标按钮" data-name="向右拆分" class="w-[24px] h-[24px]">
+      <p data-name="图标"></p>
+    </sp-use>
+    <sp-use component="图标按钮" data-name="向下拆分" class="w-[24px] h-[24px]">
+      <p data-name="图标"></p>
+    </sp-use>
+    <sp-use component="图标按钮" data-name="收回工具区" class="w-[24px] h-[24px] hidden">
+      <p data-name="图标"></p>
+    </sp-use>
+    <sp-use component="图标按钮" data-name="关闭面板" class="w-[24px] h-[24px]">
+      <p data-name="图标"></p>
+    </sp-use>
+  </div>
+  <sp-variant when="类型: 功能区">
+    <div data-name="收回工具区" class="shown"></div>
+    <div data-name="向下拆分" class="hidden"></div>
+    <div data-name="向右拆分" class="hidden"></div>
+    <div data-name="打开文件" class="hidden"></div>
+    <div data-name="连接状态" class="hidden"></div>
+  </sp-variant>
+</sp-component>

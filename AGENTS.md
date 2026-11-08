@@ -11,4 +11,4 @@ Rules for anyone (human or agent) changing this repository. Commands live in [do
 - Versions live in `go.mod` (MyGo, Go, any `tool` directive), never in scripts or workflows.
 - Document what changed in `docs/VERIFICATION.md` as one appended section per round: what was done, where the evidence is, and which claims only hold locally.
 
-- UI 页面与窗口的设计入口是 [docs/design/DESIGN.md](docs/design/DESIGN.md)，可编辑源是 `docs/design/smallssh.smallpen/`。修改页面结构时同步 SmallPen 与 `docs/design/pages.json` 的入口、状态、操作及源码映射；用 SmallPen CLI 维护，不堆积静态导出图。
+- UI 页面与窗口的设计入口是 [docs/design/DESIGN.md](docs/design/DESIGN.md)，可编辑源是 `docs/design/smallssh.smallpen/`。SmallPen 使用 0.2 HTML 格式：先用 `smallpen help skills --json` 找到并读取当前安装版的 `smallpen-ui-design/SKILL.md`；直接编辑 `index.html`、`tokens.css`、`components/*.html`、`pages/<模块>/*.html`，每轮写入后执行 `smallpen check`，用 `check --render` 和 `view` 核验。修改页面结构时同步 `docs/design/pages.json` 的入口、状态、操作及源码映射。CLI 的 help 是当前契约，不再使用旧版 JSON 包、`page draw` / `advanced apply` 等已移除的写命令；不堆积静态导出图。

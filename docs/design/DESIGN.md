@@ -1,12 +1,13 @@
 # SmallSSH 设计入口
 
-唯一可编辑设计源为 [smallssh.smallpen](smallssh.smallpen/)，使用 SmallPen CLI 维护。页面目录、原生窗口、面板和关键状态已归档，每项记录入口、操作、状态、边界、源码和画布位置；业务需求以 [REQUIREMENTS.md](../REQUIREMENTS.md) 为准，运行行为以正式源码为准。[pages.json](pages.json) 逐项保存入口、操作、状态、源码位置、边界及画布对应关系。
+唯一可编辑设计源为 [smallssh.smallpen](smallssh.smallpen/)，现使用 SmallPen 0.2 的 HTML + tokens.css 格式。直接编辑设计文件，用当前 CLI 的 check、view、changes 核验；先通过 `smallpen help skills --json` 定位并读取该版本自带的 smallpen-ui-design Skill。页面目录、原生窗口、面板和关键状态已归档；业务需求以 [REQUIREMENTS.md](../REQUIREMENTS.md) 为准，运行行为以正式源码为准。[pages.json](pages.json) 逐项保存入口、操作、状态、源码位置、边界及画布对应关系。
 
 这次记录的是 macOS 桌面当前结构和视觉约束。示例地址使用文档网段，用户名、指纹和令牌均为占位内容。设计中的文本输入、网络状态和表格为示意内容，不执行真实 SSH 操作；不能据此认定需求已经实现。
 
 ## 结构与复用
 
-- 工作台：默认卡片画布，终端与独立功能区各有标题、拖动和关闭；卡片可四向拆分，也能聚合成局部 tab。整区可切换为顶栏标签聚合。右侧文件、命令、状态、任务各有独立开关；次要功能的 tab 工具区只放底部或右侧。圆角与留白统一，文件来源及动作仍共用一行。
+- 当前 App：默认卡片画布，终端与独立功能区各有标题、拖动和关闭；卡片可四向拆分，也能聚合成局部 tab。整区可切换为顶栏标签聚合。右侧文件、命令、状态、任务各有独立开关；次要功能的 tab 工具区只放底部或右侧。圆角与留白统一，文件来源及动作仍共用一行。
+- 已确认的下一版方案：启动默认标签；标签可右键转为独立临时画布；保存时命名并在左侧生成快捷画布入口，下次点击才打开该画布；未保存的画布不跨次恢复。关闭画布保留已保存入口，删除保存项只移除布局与快捷入口。名字与布局的恢复不复用旧安全会话。该方案待单独出稿和实现，本轮格式迁移保留现有 66 页内容。
 - 设置、文件编辑为独立原生窗口；连接、授权确认、属性等使用统一弹窗容器。目录中的“窗口”和“弹窗”不会互相代替。
 - 顶栏预留 48 DIP，红绿灯左边距 16 DIP。设置内容贴齐标题区，避免重复大标题与多层外框；可拖动区需要保留交互控件。
 - 11 个共享组件：按钮、图标按钮、输入框、解锁密码框、导航项、文件行、设置行、状态卡、窗口控制、工作区标签及画布标题栏；39 个 Token 定义明暗颜色、字体、间距及控件尺寸。内容高度优先 hug，固定尺寸只用于控件或视口。
@@ -16,14 +17,18 @@
 ## 查看与维护
 
 ```sh
-smallpen project show docs/design/smallssh.smallpen --json
-smallpen view docs/design/smallssh.smallpen --page '02 工作台 / 终端与底部文件' --as png --theme 外观/浅色 --json
+smallpen help skills --json
+smallpen check docs/design/smallssh.smallpen --json
+smallpen check docs/design/smallssh.smallpen --render --all-themes --json
+smallpen view docs/design/smallssh.smallpen --as text --json
+smallpen view docs/design/smallssh.smallpen --page '02 工作台 / 终端与底部文件' --as png --theme appearance/light --json
 smallpen view docs/design/smallssh.smallpen --page '08 设置 / 安全与解锁' --as spec --json
-smallpen validate docs/design/smallssh.smallpen --theme 外观/浅色 --json
-smallpen flow list docs/design/smallssh.smallpen --json
+smallpen changes docs/design/smallssh.smallpen --since REVISION --json
 ```
 
-日常查看用临时预览，不持续导出 PNG、HTML 图库或同一页面多个历史副本。新建或修改页面时，同时维护对应设计页面和 pages.json 的入口、操作、状态及源码位置。原有验收日志仍是历史证据，旧图片归档位置见本轮清理清单。
+`index.html` 保存包名、默认页面及主题默认值；`tokens.css` 保存 Token、明暗主题及字体声明；每个共享组件是 `components/<名称>.html`，页面是 `pages/<模块>/<页面>.html`，字体在 `assets/fonts/`。原型起点与跳转由 `data-flow`、`data-click` 等属性保存，可直接检索这些文件。主题名使用 `appearance/light`、`appearance/dark`。
+
+日常查看用临时预览，不持续导出 PNG、HTML 图库或同一页面多个历史副本。新建或修改页面时，同时维护 pages.json 的入口、操作、状态及源码位置。下面各日期章节保留历史证据，旧版 JSON 修订及已移除命令不作为当前操作说明。
 
 ## 页面与承载地图
 
@@ -133,3 +138,16 @@ SmallPen 新增共享“工作区标签”的普通、选中和非焦点状态�
 SmallPen 通过 CLI 更新 10 处远端文件工具栏，补齐文件读取窗口，并新增“04 文件 / 列表右键与打开反馈”；pages.json 同步入口、状态与源码。保存修订 `29e7d942dd8685781208ff998dc2cc9bc66fb46260d38b7fb7fec0e5d5dfff59`：66 页、11 个组件、23 个变体、39 个 Token。明暗各完成 89/89 目标，数据有效，无 warning；保留 6 条设置窗口控制叠放 info，新增 1 条菜单有意覆盖列表的 info。各有 659 项跳过检查，coverage=false。报告为 `build/logs/file-interactions-design-light-20261108.json` 及 dark 对应文件。
 
 实际 Go 文件区的 560/1100 DIP、明暗、并排/打开/失败/右键/目录加载共 20 张离屏快照保存在 `build/snapshots/file-interactions-20261108/`。已抽查窄窗打开反馈、目录加载、并排及深色右键菜单；设计图不替代实际交互测试，也未自动将 SmallSSH 或 SmallPen 带到前台验收。
+
+
+## SmallPen 0.2 HTML 格式（2026-11-08，当前维护方式）
+
+本机 CLI 已为 `@smallpen/cli 0.2.0-alpha.1`，已读取该版本自带的 `smallpen-ui-design` Skill。正式设计源已整体切换为新版 HTML 包：`index.html`、`tokens.css`、66 个页面文件、11 个独立组件文件和 4 个字体文件，共 83 个文件、815,524 字节。旧版 JSON 源从正式目录移出，迁移恢复副本在 `build/authoring/smallpen-v2-20261108/legacy.smallpen/` 与 `previous-live.smallpen/`；旧提交也保留原格式。
+
+页面名称、23 个组件变体、39 个 Token、26 条跳转及 1 个起点保留；`pages.json` 的 66 项画布目录补齐实际 HTML 路径。明暗主题标识改为 `appearance/light` 和 `appearance/dark`；原来的单选基础 Theme 组收进 CSS 根值。保留原包身份，图标及中英文字体四份 WOFF 与旧源逐字节相同。格式适配仅包括：去掉 false 的废弃标记、将四个空文字间隔改为空容器，以及把旧 itemSpacing 绑定展开为两轴 gap 绑定。
+
+使用 SmallPen 自身的 HTML 编写器生成副本后重新读取，再由已安装的新版 CLI 检查。两个主题各 39 项 Token 的有效值完全一致；26 条跳转的来源、触发方式与目标一致，字体 SHA-256 一致。保真核对报告为 `build/logs/smallpen-v2-preservation-20261108.json`。
+
+保存修订 `e43c5dd0d71b136127271a470d17b2a1dc59b654ef2d3ffdbe851703209231e6`；结构检查 0 error，941 条 `literal_matches_token` 整理建议、5 项未使用 Token。建议针对旧稿原有的字面值恰好等于 Token 值，并非迁移遗漏；没有仅凭数值相等批量改绑。明暗共 178 个渲染目标组合（每主题 89 项）完成，渲染无 warning/error，14 条 info 均为已有的设置原生控制或菜单覆盖。覆盖报告有 667 项跳过，complete=false，不能据此称为所有视觉意图已验证。完整报告为 `build/logs/smallpen-v2-render-20261108.json`；正式目录结构检查为 `build/logs/smallpen-v2-check-20261108.json`。
+
+已目视抽查浅色解锁、连接与设置、深色局部标签混排；采用临时 CLI 原生 PNG，没有新增静态图库。本地 Web 服务已重启到新版实现，仍监听 `127.0.0.1:43128`；新工作区 URL 的 page-id 以 `build/logs/smallpen-v2-web-20261108.log` 为准。后端实际读取正式目录，同修订、66 页、readOnly=false、projectionErrors=0（`build/logs/smallpen-v2-service-20261108.json`）。这证明服务和数据投影可用，未自动将浏览器或桌面 App 带到前台，尚未完成桌面交互或 CLI/App 逐像素验收。

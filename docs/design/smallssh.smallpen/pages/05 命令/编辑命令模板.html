@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>编辑命令模板</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[960px] h-[760px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+        <p data-name="标题文字" class="w-full text-text type-section">编辑命令</p>
+        <sp-use component="图标按钮" data-name="关闭弹窗">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="命令表单" class="flex flex-col gap-[8px] w-full">
+        <div data-name="字段组" class="flex flex-col gap-[12px] w-full">
+          <div data-name="字段 名称" class="flex flex-row items-center gap-[8px] w-full">
+            <p data-name="标签" class="w-[116px] text-text type-body">名称</p>
+            <sp-use component="输入框" data-name="值" class="w-full">
+              <p data-name="值">查看容器</p>
+            </sp-use>
+          </div>
+          <div data-name="字段 分组" class="flex flex-row items-center gap-[8px] w-full">
+            <p data-name="标签" class="w-[116px] text-text type-body">分组</p>
+            <sp-use component="输入框" data-name="值" class="w-full">
+              <p data-name="值">运维</p>
+            </sp-use>
+          </div>
+          <div data-name="字段 命令" class="flex flex-row items-center gap-[8px] w-full">
+            <p data-name="标签" class="w-[116px] text-text type-body">命令</p>
+            <sp-use component="输入框" data-name="值" class="w-full">
+              <p data-name="值">pct config $1</p>
+            </sp-use>
+          </div>
+          <div data-name="字段 参数 1" class="flex flex-row items-center gap-[8px] w-full">
+            <p data-name="标签" class="w-[116px] text-text type-body">参数 1</p>
+            <sp-use component="输入框" data-name="值" class="w-full">
+              <p data-name="值">ContainerID · 整数 · 默认 100</p>
+            </sp-use>
+          </div>
+          <div data-name="字段 系统变体" class="flex flex-row items-center gap-[8px] w-full">
+            <p data-name="标签" class="w-[116px] text-text type-body">系统变体</p>
+            <sp-use component="输入框" data-name="值" class="w-full">
+              <p data-name="值">默认 / Debian / Red Hat</p>
+            </sp-use>
+          </div>
+        </div>
+        <p data-name="选项" class="w-full text-accent type-body">发送时询问：开     记录参数历史：开</p>
+      </div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消" data-click="05 命令/命令列表">
+          <p data-name="文字">取消</p>
+        </sp-use>
+        <sp-use component="按钮" data-name="保存">
+          <p data-name="文字">保存</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

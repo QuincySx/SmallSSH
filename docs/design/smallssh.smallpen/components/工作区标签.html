@@ -1,0 +1,12 @@
+<sp-component name="工作区标签" props="状态: 普通 | 选中 | 非焦点">
+  <div class="flex flex-row items-center gap-[8px] py-[2px] px-[8px] h-control bg-[#00000000] rounded-control">
+    <p data-name="名称" class="text-text type-body">Web 生产环境</p>
+    <p data-name="关闭" class="w-[14px] text-muted font-[SmallSSH_Icons] text-[14px]"></p>
+  </div>
+  <sp-variant when="状态: 选中" class="bg-accentsoft">
+    <p data-name="名称" class="text-accent"></p>
+  </sp-variant>
+  <sp-variant when="状态: 非焦点" class="bg-subtle">
+    <p data-name="名称" class="text-muted"></p>
+  </sp-variant>
+</sp-component>

@@ -1,0 +1,14 @@
+<sp-component name="按钮" props="样式: 主操作 | 普通 | 轻量 | 危险">
+  <div class="flex flex-row items-center justify-center gap-space-sm px-space-md h-control bg-accent rounded-control">
+    <p data-name="文字" class="text-onaccent type-body">操作</p>
+  </div>
+  <sp-variant when="样式: 普通" class="bg-subtle">
+    <p data-name="文字" class="text-text"></p>
+  </sp-variant>
+  <sp-variant when="样式: 轻量" class="bg-[#00000000]">
+    <p data-name="文字" class="text-text"></p>
+  </sp-variant>
+  <sp-variant when="样式: 危险" class="bg-danger">
+    <p data-name="文字" class="text-ondanger"></p>
+  </sp-variant>
+</sp-component>

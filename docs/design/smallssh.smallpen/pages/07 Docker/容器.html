@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>容器</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1280px] h-[860px] bg-canvas">
+  <div data-name="工作台根" class="flex flex-col w-full h-full">
+    <div data-name="标题栏" class="flex flex-row items-center gap-[8px] pr-[8px] w-full h-titlebar">
+      <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
+      <sp-use component="图标按钮" data-name="侧栏开关">
+        <p data-name="图标"></p>
+      </sp-use>
+      <div data-name="对齐留白" class="flex flex-col gap-[8px] w-[88px] h-[1px]"></div>
+      <sp-use component="工作区标签" props="状态: 选中" data-name="Web 生产环境标签">
+        <p data-name="名称">Web 生产环境</p>
+      </sp-use>
+      <sp-use component="工作区标签" data-name="Staging标签">
+        <p data-name="名称">Staging</p>
+      </sp-use>
+      <div data-name="拖动空白" class="flex flex-col gap-[8px] w-full h-full"></div>
+      <sp-use component="图标按钮" data-name="工作区分栏">
+        <p data-name="图标"></p>
+      </sp-use>
+      <sp-use component="图标按钮" data-name="新建终端">
+        <p data-name="图标"></p>
+      </sp-use>
+      <sp-use component="图标按钮" data-name="任务入口">
+        <p data-name="图标"></p>
+      </sp-use>
+      <sp-use component="图标按钮" data-name="工具面板开关">
+        <p data-name="图标"></p>
+      </sp-use>
+      <sp-use component="图标按钮" data-name="设置入口">
+        <p data-name="图标"></p>
+      </sp-use>
+    </div>
+    <div data-name="工作区" class="flex flex-row items-center gap-[8px] pr-[8px] pb-[8px] pl-[8px] w-full h-full">
+      <div data-name="服务器侧栏" class="flex flex-col gap-[8px] w-sidebar h-full">
+        <sp-use component="按钮" props="样式: 轻量" data-name="新建连接">
+          <p data-name="文字">＋  新建连接</p>
+        </sp-use>
+        <sp-use component="输入框" data-name="搜索服务器" class="w-full">
+          <p data-name="值">搜索服务器</p>
+        </sp-use>
+        <p data-name="分组" class="w-full text-muted type-detail">我的服务器</p>
+        <sp-use component="导航项" props="状态: 选中" data-name="Web 生产环境" class="w-full">
+          <p data-name="标签">Web 生产环境</p>
+          <div data-name="图标">
+            <p data-name="字标">W</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="Staging" class="w-full">
+          <p data-name="标签">Staging</p>
+          <div data-name="图标">
+            <p data-name="字标">S</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="备份服务器" class="w-full">
+          <p data-name="标签">备份服务器</p>
+          <div data-name="图标">
+            <p data-name="字标">备</p>
+          </div>
+        </sp-use>
+      </div>
+      <div data-name="状态面板" class="flex flex-col gap-[8px] p-[8px] w-full h-full bg-surface rounded-panel">
+        <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
+          <sp-use component="按钮" props="样式: 轻量" data-name="命令">
+            <p data-name="文字">命令</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="文件">
+            <p data-name="文字">文件</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="服务器状态">
+            <p data-name="文字">服务器状态</p>
+          </sp-use>
+          <div data-name="工具栏弹性留白" class="w-full h-[32px]"></div>
+          <sp-use component="图标按钮" data-name="工具面板布局">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="收起工具面板">
+            <p data-name="图标"></p>
+          </sp-use>
+        </div>
+        <div data-name="状态分类" class="flex flex-row items-center gap-[4px] w-full">
+          <sp-use component="按钮" props="样式: 轻量" data-name="概览">
+            <p data-name="文字">概览</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="进程">
+            <p data-name="文字">进程</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="自启服务">
+            <p data-name="文字">自启服务</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="系统信息">
+            <p data-name="文字">系统信息</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="Docker">
+            <p data-name="文字">Docker</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="端口">
+            <p data-name="文字">端口</p>
+          </sp-use>
+        </div>
+        <div data-name="Docker内容" class="flex flex-col gap-[8px] w-full">
+          <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
+            <sp-use component="按钮" props="样式: 普通" data-name="容器">
+              <p data-name="文字">容器</p>
+            </sp-use>
+            <sp-use component="按钮" props="样式: 轻量" data-name="镜像">
+              <p data-name="文字">镜像</p>
+            </sp-use>
+            <sp-use component="按钮" props="样式: 轻量" data-name="Compose 项目">
+              <p data-name="文字">Compose 项目</p>
+            </sp-use>
+          </div>
+          <div data-name="数据表" class="flex flex-col gap-[2px] w-full">
+            <div data-name="表头" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+              <p data-name="列0" class="w-full text-muted type-detail">容器</p>
+              <p data-name="列1" class="w-[110px] text-muted type-detail">镜像</p>
+              <p data-name="列2" class="w-[110px] text-muted type-detail">状态</p>
+              <p data-name="列3" class="w-[110px] text-muted type-detail">端口</p>
+            </div>
+            <div data-name="行0" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+              <p data-name="列0" class="w-full text-text type-body">web</p>
+              <p data-name="列1" class="w-[110px] text-text type-body">nginx:stable</p>
+              <p data-name="列2" class="w-[110px] text-text type-body">运行中</p>
+              <p data-name="列3" class="w-[110px] text-text type-body">443:443</p>
+            </div>
+            <div data-name="行1" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+              <p data-name="列0" class="w-full text-text type-body">redis</p>
+              <p data-name="列1" class="w-[110px] text-text type-body">redis:7</p>
+              <p data-name="列2" class="w-[110px] text-text type-body">运行中</p>
+              <p data-name="列3" class="w-[110px] text-text type-body">6379</p>
+            </div>
+          </div>
+          <div data-name="操作" class="flex flex-row items-center gap-[8px] w-full">
+            <sp-use component="按钮" props="样式: 普通" data-name="日志与详情">
+              <p data-name="文字">日志与详情</p>
+            </sp-use>
+            <sp-use component="按钮" props="样式: 普通" data-name="终端">
+              <p data-name="文字">终端</p>
+            </sp-use>
+            <sp-use component="按钮" props="样式: 普通" data-name="更新计划">
+              <p data-name="文字">更新计划</p>
+            </sp-use>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>核对服务器身份</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[900px] h-[600px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+        <p data-name="标题文字" class="w-full text-text type-section">核对服务器身份</p>
+        <sp-use component="图标按钮" data-name="关闭弹窗">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="身份" class="flex flex-col gap-[8px] w-full">
+        <p data-name="目标" class="w-full text-text type-section">demo@192.0.2.10:22</p>
+        <div data-name="字段 公钥算法" class="flex flex-row items-center gap-[8px] w-full">
+          <p data-name="标签" class="w-[116px] text-text type-body">公钥算法</p>
+          <sp-use component="输入框" data-name="值" class="w-full">
+            <p data-name="值">ssh-ed25519</p>
+          </sp-use>
+        </div>
+        <p data-name="指纹" class="w-full text-accent type-body">SHA256:EXAMPLE_PUBLIC_HOST_FINGERPRINT</p>
+        <p data-name="提醒" class="w-full text-muted type-body">请与服务器控制台核对；确认前不发送登录凭据。</p>
+      </div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消">
+          <p data-name="文字">取消</p>
+        </sp-use>
+        <sp-use component="按钮" data-name="信任并连接">
+          <p data-name="文字">信任并连接</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

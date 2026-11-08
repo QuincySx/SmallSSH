@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>页面地图 7</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1400px] h-[1200px] bg-canvas">
+  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+    <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
+    <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
+    <div data-name="待实现；曾有离线视觉原型" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">待实现；曾有离线视觉原型</p>
+      <div data-name="planned-server-key" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">安装登录公钥向导</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：需求：服务器安全与密钥入口</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：计划选择专用软件/硬件身份、安装公钥、独立验证</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：待实现</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：生产未接公钥部署或独立向导；代理公钥配对不是SSH登录公钥安装</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：docs/REQUIREMENTS.md §服务器专属密钥与 onboarding</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：10 待实现 / 登录公钥安装</p>
+      </div>
+    </div>
+    <div data-name="待实现" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">待实现</p>
+      <div data-name="planned-migration" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">导入导出与加密备份</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：需求：配置迁移</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：计划来源选择、预览、冲突处理、恢复验证</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：待实现</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：OpenSSH/FinalShell导入、完整备份UI未实现</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：docs/REQUIREMENTS.md §导入 / 导出与本地加密备份</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：10 待实现 / 配置迁移与备份</p>
+      </div>
+      <div data-name="planned-terminal-extras" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">终端增强与其他连接</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：需求：终端工具/连接类型</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：计划tmux会话、串口、远程桌面及更完整变量体系</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：待实现</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不要把现有PTY、SSH保活或参数历史误称上述功能</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：docs/REQUIREMENTS.md §tmux、串口、剪贴板与连接恢复</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：10 待实现 / 终端增强与完整变量</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

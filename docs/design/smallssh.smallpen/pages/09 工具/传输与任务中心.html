@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>传输与任务中心</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1100px] h-[680px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+        <p data-name="标题文字" class="w-full text-text type-section">全局任务</p>
+        <sp-use component="图标按钮" data-name="关闭弹窗">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="任务内容" class="flex flex-col gap-[8px] w-full">
+        <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
+          <sp-use component="按钮" props="样式: 普通" data-name="传输">
+            <p data-name="文字">传输</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="服务器操作">
+            <p data-name="文字">服务器操作</p>
+          </sp-use>
+        </div>
+        <div data-name="数据表" class="flex flex-col gap-[2px] w-full">
+          <div data-name="表头" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-muted type-detail">任务</p>
+            <p data-name="列1" class="w-[110px] text-muted type-detail">进度</p>
+            <p data-name="列2" class="w-[110px] text-muted type-detail">状态</p>
+            <p data-name="列3" class="w-[110px] text-muted type-detail">操作</p>
+          </div>
+          <div data-name="行0" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-text type-body">下载 nginx.conf</p>
+            <p data-name="列1" class="w-[110px] text-text type-body">100%</p>
+            <p data-name="列2" class="w-[110px] text-text type-body">完成</p>
+            <p data-name="列3" class="w-[110px] text-text type-body">打开位置</p>
+          </div>
+          <div data-name="行1" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-text type-body">下载 assets</p>
+            <p data-name="列1" class="w-[110px] text-text type-body">42% · 8 MiB/s</p>
+            <p data-name="列2" class="w-[110px] text-text type-body">运行中</p>
+            <p data-name="列3" class="w-[110px] text-text type-body">暂停</p>
+          </div>
+          <div data-name="行2" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-text type-body">更新 site</p>
+            <p data-name="列1" class="w-[110px] text-text type-body">等待复核</p>
+            <p data-name="列2" class="w-[110px] text-text type-body">待处理</p>
+            <p data-name="列3" class="w-[110px] text-text type-body">查看</p>
+          </div>
+        </div>
+      </div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="关闭">
+          <p data-name="文字">关闭</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

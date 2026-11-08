@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>安全与解锁</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1080px] h-[760px] bg-canvas">
+  <div data-name="设置窗口" class="w-[1080px] h-[760px] bg-canvas">
+    <div data-name="设置导航" class="flex flex-col gap-[4px] pr-[12px] pb-[12px] pl-[12px] left-[8px] top-[8px] w-[200px] h-[744px] bg-surface rounded-[12px]">
+      <div data-name="设置标题" class="flex flex-row items-center gap-[8px] pl-[58px] w-full h-[32px]">
+        <p data-name="标题" class="w-full text-text type-section">设置</p>
+      </div>
+      <sp-use component="导航项" data-name="工作区" class="w-full">
+        <p data-name="标签">工作区</p>
+        <div data-name="图标">
+          <p data-name="字标">工</p>
+        </div>
+      </sp-use>
+      <sp-use component="导航项" props="状态: 选中" data-name="安全与解锁" class="w-full">
+        <p data-name="标签">安全与解锁</p>
+        <div data-name="图标">
+          <p data-name="字标">安</p>
+        </div>
+      </sp-use>
+      <sp-use component="导航项" data-name="运行与后台" class="w-full">
+        <p data-name="标签">运行与后台</p>
+        <div data-name="图标">
+          <p data-name="字标">运</p>
+        </div>
+      </sp-use>
+      <sp-use component="导航项" data-name="授权中心" class="w-full">
+        <p data-name="标签">授权中心</p>
+        <div data-name="图标">
+          <p data-name="字标">授</p>
+        </div>
+      </sp-use>
+    </div>
+    <div data-name="设置内容" class="flex flex-col gap-[8px] pr-[12px] pb-[12px] pl-[12px] left-[216px] top-[8px] w-[856px] h-[744px] bg-surface rounded-[12px]">
+      <div data-name="分类标题" class="flex flex-row items-center gap-[8px] w-full h-[32px]">
+        <p data-name="标题" class="w-full text-text type-section">安全与解锁</p>
+        <sp-use component="图标按钮" data-name="关闭设置">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="安全设置" class="flex flex-col gap-[8px] w-full">
+        <div data-name="偏好设置" class="flex flex-col p-[16px] w-full">
+          <sp-use component="设置行" data-name="闲置自动锁定" class="w-full">
+            <p data-name="标签">闲置自动锁定</p>
+            <p data-name="当前值">关闭</p>
+          </sp-use>
+          <sp-use component="设置行" data-name="系统验证" class="w-full">
+            <p data-name="标签">系统验证</p>
+            <p data-name="当前值">Touch ID 已启用</p>
+          </sp-use>
+        </div>
+        <div data-name="字段 主密码" class="flex flex-row items-center gap-[8px] w-full">
+          <p data-name="标签" class="w-[116px] text-text type-body">主密码</p>
+          <sp-use component="输入框" data-name="值" class="w-full">
+            <p data-name="值">••••••••</p>
+          </sp-use>
+        </div>
+        <div data-name="验证动作" class="flex flex-row items-center gap-[8px] w-full">
+          <sp-use component="按钮" props="样式: 普通" data-name="重新检测">
+            <p data-name="文字">重新检测</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="停用系统验证">
+            <p data-name="文字">停用系统验证</p>
+          </sp-use>
+        </div>
+        <div data-name="本机代理身份" class="flex flex-col gap-[12px] w-full">
+          <p data-name="标题" class="w-full text-text type-section">本机代理身份</p>
+          <p data-name="身份" class="w-full text-success type-body">本机 CLI 已配对</p>
+          <sp-use component="按钮" props="样式: 普通" data-name="本机 CLI 配对" data-click="08 设置/本机 CLI 配对确认">
+            <p data-name="文字">配对 / 修复本机 CLI</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="复制代理公钥">
+            <p data-name="文字">复制代理公钥</p>
+          </sp-use>
+        </div>
+      </div>
+    </div>
+    <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
+  </div>
+</body>
+</html>

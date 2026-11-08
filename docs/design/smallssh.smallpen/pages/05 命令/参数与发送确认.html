@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>参数与发送确认</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[960px] h-[660px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+        <p data-name="标题文字" class="w-full text-text type-section">查看容器</p>
+        <sp-use component="图标按钮" data-name="关闭弹窗">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="运行表单" class="flex flex-col gap-[8px] w-full">
+        <div data-name="字段 发送到" class="flex flex-row items-center gap-[8px] w-full">
+          <p data-name="标签" class="w-[116px] text-text type-body">发送到</p>
+          <sp-use component="输入框" data-name="值" class="w-full">
+            <p data-name="值">Web 生产环境 · 当前终端</p>
+          </sp-use>
+        </div>
+        <div data-name="参数输入" class="flex flex-row items-center gap-[8px] w-full">
+          <div data-name="字段 ContainerID" class="flex flex-row items-center gap-[8px] w-full">
+            <p data-name="标签" class="w-[116px] text-text type-body">ContainerID</p>
+            <sp-use component="输入框" data-name="值" class="w-full">
+              <p data-name="值">100</p>
+            </sp-use>
+          </div>
+          <sp-use component="按钮" props="样式: 普通" data-name="历史">
+            <p data-name="文字">历史</p>
+          </sp-use>
+        </div>
+        <p data-name="预览" class="w-full text-accent type-section">pct config 100</p>
+        <p data-name="选项" class="w-full text-muted type-body">发送时询问：开</p>
+      </div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消">
+          <p data-name="文字">取消</p>
+        </sp-use>
+        <sp-use component="按钮" props="样式: 普通" data-name="只填入终端">
+          <p data-name="文字">只填入终端</p>
+        </sp-use>
+        <sp-use component="按钮" data-name="发送并执行">
+          <p data-name="文字">发送并执行</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

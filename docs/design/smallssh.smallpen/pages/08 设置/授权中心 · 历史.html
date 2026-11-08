@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>授权中心 · 历史</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1080px] h-[760px] bg-canvas">
+  <div data-name="设置窗口" class="w-[1080px] h-[760px] bg-canvas">
+    <div data-name="设置导航" class="flex flex-col gap-[4px] pr-[12px] pb-[12px] pl-[12px] left-[8px] top-[8px] w-[200px] h-[744px] bg-surface rounded-[12px]">
+      <div data-name="设置标题" class="flex flex-row items-center gap-[8px] pl-[58px] w-full h-[32px]">
+        <p data-name="标题" class="w-full text-text type-section">设置</p>
+      </div>
+      <sp-use component="导航项" data-name="工作区" class="w-full">
+        <p data-name="标签">工作区</p>
+        <div data-name="图标">
+          <p data-name="字标">工</p>
+        </div>
+      </sp-use>
+      <sp-use component="导航项" data-name="安全与解锁" class="w-full">
+        <p data-name="标签">安全与解锁</p>
+        <div data-name="图标">
+          <p data-name="字标">安</p>
+        </div>
+      </sp-use>
+      <sp-use component="导航项" data-name="运行与后台" class="w-full">
+        <p data-name="标签">运行与后台</p>
+        <div data-name="图标">
+          <p data-name="字标">运</p>
+        </div>
+      </sp-use>
+      <sp-use component="导航项" props="状态: 选中" data-name="授权中心" class="w-full">
+        <p data-name="标签">授权中心</p>
+        <div data-name="图标">
+          <p data-name="字标">授</p>
+        </div>
+      </sp-use>
+    </div>
+    <div data-name="设置内容" class="flex flex-col gap-[8px] pr-[12px] pb-[12px] pl-[12px] left-[216px] top-[8px] w-[856px] h-[744px] bg-surface rounded-[12px]">
+      <div data-name="分类标题" class="flex flex-row items-center gap-[8px] w-full h-[32px]">
+        <p data-name="标题" class="w-full text-text type-section">授权中心</p>
+        <sp-use component="图标按钮" data-name="关闭设置">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="授权内容" class="flex flex-col gap-[12px] w-full">
+        <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
+          <sp-use component="按钮" props="样式: 轻量" data-name="待处理">
+            <p data-name="文字">待处理</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 轻量" data-name="活动">
+            <p data-name="文字">活动</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="历史">
+            <p data-name="文字">历史</p>
+          </sp-use>
+        </div>
+        <sp-use component="输入框" data-name="输入" class="w-full">
+          <p data-name="值">搜索申请方、服务器或操作</p>
+        </sp-use>
+        <div data-name="数据表" class="flex flex-col gap-[2px] w-full">
+          <div data-name="表头" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-muted type-detail">时间</p>
+            <p data-name="列1" class="w-[110px] text-muted type-detail">操作</p>
+            <p data-name="列2" class="w-[110px] text-muted type-detail">结果</p>
+            <p data-name="列3" class="w-[110px] text-muted type-detail">服务器</p>
+          </div>
+          <div data-name="行0" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-text type-body">09:30</p>
+            <p data-name="列1" class="w-[110px] text-text type-body">exec uname -a</p>
+            <p data-name="列2" class="w-[110px] text-text type-body">完成</p>
+            <p data-name="列3" class="w-[110px] text-text type-body">Web 生产环境</p>
+          </div>
+          <div data-name="行1" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+            <p data-name="列0" class="w-full text-text type-body">09:28</p>
+            <p data-name="列1" class="w-[110px] text-text type-body">会话批准</p>
+            <p data-name="列2" class="w-[110px] text-text type-body">允许</p>
+            <p data-name="列3" class="w-[110px] text-text type-body">Web 生产环境</p>
+          </div>
+        </div>
+        <sp-use component="按钮" props="样式: 普通" data-name="加载更多">
+          <p data-name="文字">加载更多</p>
+        </sp-use>
+      </div>
+    </div>
+    <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
+  </div>
+</body>
+</html>

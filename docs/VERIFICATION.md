@@ -2575,3 +2575,17 @@ SmallPen 通过 CLI 原子修改 18 张工作区画布的重复顶栏按钮，�
 外部配置节点按要求调用后长时间停在探索，两次调用均未落码并已终止；过滤日志为 `build/logs/delegate-local-files-20261108.log` 与 `delegate-local-files-retry-20261108.log`。本机按钮改由已授权的 GPT 6.1 Terra worker 落码，主 agent 补齐焦点、翻译并统一验收；菜单实现单独委派，未读取或更改节点配置。
 
 限制：本轮行为与截图证据是本机 headless UI Tester、合成服务器/文件夹具；没有真实服务器凭据或原生鼠标交互验收，没有自动启动、退出或激活正在使用的应用。菜单自己的区域仍接收自己的点击；已打开菜单外的可见行可以直接再右键。SmallPen 静态页面不等同于运行时交互或逐像素一致。构建/安装二进制指纹和本地提交记录于 `build/logs/file-interactions-20261108-summary.json`。
+
+
+## 2026-11-08 — 切换 SmallPen 0.2 HTML 设计源
+
+按用户要求读取已安装 `@smallpen/cli 0.2.0-alpha.1` 自带的 `smallpen-ui-design` Skill，并将正式 `docs/design/smallssh.smallpen/` 从旧 JSON 包切换为新版 HTML 包。使用 SmallPen 自身的 HTML 编写器生成副本、重新解码并检查后再切换；旧目录保留在 `build/authoring/smallpen-v2-20261108/legacy.smallpen/` 与 `previous-live.smallpen/`，没有安装依赖、修改全局配置或更新 SmallSSH 安装包。
+
+保留 66 页、11 个组件、23 个变体、39 个 Token、26 条原型跳转、1 个起点与 4 个字体；正式源共 83 个文件、815,524 字节。两个主题的有效 Token 值、原型来源/目标和字体字节均与旧源相同，见 `build/logs/smallpen-v2-preservation-20261108.json`。`AGENTS.md`、DESIGN.md 与 pages.json 同步新版维护方式及实际页面路径；默认标签、临时画布与命名保存快捷入口的下一版约定记为待设计和实施，本轮未改应用行为或既有未提交的 Go 修复。
+
+- 正式源修订：`e43c5dd0d71b136127271a470d17b2a1dc59b654ef2d3ffdbe851703209231e6`。结构检查通过，0 error；941 条 `literal_matches_token` 为旧稿字面值复用 Token 的整理建议，另有 5 个未使用 Token，没有仅凭值相同批量改绑。证据：`build/logs/smallpen-v2-check-20261108.json`。
+- 明暗主题共 178 个渲染目标组合（各 89 项）完成，无渲染 warning/error；14 条 info 为已有设置原生控制或菜单叠放，667 项跳过且 coverage.complete=false。完整报告：`build/logs/smallpen-v2-render-20261108.json`。已目视抽查浅色解锁、连接、设置及深色工作台，使用临时 CLI PNG，没有增加导出图库。
+- 本地 Web 服务用新版实现重启，保留 `127.0.0.1:43128`。后端直接读取正式目录，修订相同、66 页、readOnly=false、projectionErrors=0；证据：`build/logs/smallpen-v2-service-20261108.json`。新入口见 `build/logs/smallpen-v2-web-20261108.log`。
+- 必需仓库 gate：`build/logs/check-20261108-232626.log`（`-serial`）全部通过，含 vendor 补丁、576 个 Go 文件格式、vet 和全仓库测试；没有改动 vendor。
+
+限制：迁移、结构和渲染证据来自本机 CLI。隐藏浏览器检查超时，未完成 SmallPen 桌面交互或 CLI/App 逐像素验收；没有自动将任何窗口带到前台。汇总：`build/logs/smallpen-v2-summary-20261108.json`。

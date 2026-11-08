@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>硬件认证</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1000px] h-[820px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+        <p data-name="标题文字" class="w-full text-text type-section">新建连接</p>
+        <sp-use component="图标按钮" data-name="关闭弹窗">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="分类与表单" class="flex flex-row items-center gap-[16px] w-full h-full">
+        <div data-name="连接分类" class="flex flex-col gap-[8px] w-[144px] h-full">
+          <sp-use component="导航项" props="状态: 选中" data-name="常规" class="w-full">
+            <p data-name="标签">常规</p>
+            <div data-name="图标">
+              <p data-name="字标">常</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="加速与代理" class="w-full">
+            <p data-name="标签">加速与代理</p>
+            <div data-name="图标">
+              <p data-name="字标">加</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="终端设置" class="w-full">
+            <p data-name="标签">终端设置</p>
+            <div data-name="图标">
+              <p data-name="字标">终</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="访问策略" class="w-full">
+            <p data-name="标签">访问策略</p>
+            <div data-name="图标">
+              <p data-name="字标">访</p>
+            </div>
+          </sp-use>
+        </div>
+        <div data-name="表单内容" class="flex flex-col gap-[16px] w-full h-full">
+          <div data-name="连接信息" class="flex flex-col gap-[12px] w-full">
+            <p data-name="标题" class="w-full text-text type-section">连接信息</p>
+            <div data-name="字段组" class="flex flex-col gap-[12px] w-full">
+              <div data-name="字段 名称" class="flex flex-row items-center gap-[8px] w-full">
+                <p data-name="标签" class="w-[116px] text-text type-body">名称</p>
+                <sp-use component="输入框" data-name="值" class="w-full">
+                  <p data-name="值">Web 生产环境</p>
+                </sp-use>
+              </div>
+              <div data-name="字段 服务器地址" class="flex flex-row items-center gap-[8px] w-full">
+                <p data-name="标签" class="w-[116px] text-text type-body">服务器地址</p>
+                <sp-use component="输入框" data-name="值" class="w-full">
+                  <p data-name="值">192.0.2.10        端口 22</p>
+                </sp-use>
+              </div>
+              <div data-name="字段 分组" class="flex flex-row items-center gap-[8px] w-full">
+                <p data-name="标签" class="w-[116px] text-text type-body">分组</p>
+                <sp-use component="输入框" data-name="值" class="w-full">
+                  <p data-name="值">生产环境 · 可输入新分组</p>
+                </sp-use>
+              </div>
+            </div>
+          </div>
+          <div data-name="登录身份" class="flex flex-col gap-[12px] w-full">
+            <p data-name="标题" class="w-full text-text type-section">登录身份</p>
+            <div data-name="字段组" class="flex flex-col gap-[12px] w-full">
+              <div data-name="字段 用户名" class="flex flex-row items-center gap-[8px] w-full">
+                <p data-name="标签" class="w-[116px] text-text type-body">用户名</p>
+                <sp-use component="输入框" data-name="值" class="w-full">
+                  <p data-name="值">demo</p>
+                </sp-use>
+              </div>
+              <div data-name="字段 登录方式" class="flex flex-row items-center gap-[8px] w-full">
+                <p data-name="标签" class="w-[116px] text-text type-body">登录方式</p>
+                <sp-use component="输入框" data-name="值" class="w-full">
+                  <p data-name="值">硬件密钥（PKCS#11）</p>
+                </sp-use>
+              </div>
+            </div>
+          </div>
+          <div data-name="字段组" class="flex flex-col gap-[12px] w-full">
+            <div data-name="字段 PKCS#11 模块" class="flex flex-row items-center gap-[8px] w-full">
+              <p data-name="标签" class="w-[116px] text-text type-body">PKCS#11 模块</p>
+              <sp-use component="输入框" data-name="值" class="w-full">
+                <p data-name="值">/example/provider.dylib</p>
+              </sp-use>
+            </div>
+            <div data-name="字段 令牌序列号" class="flex flex-row items-center gap-[8px] w-full">
+              <p data-name="标签" class="w-[116px] text-text type-body">令牌序列号</p>
+              <sp-use component="输入框" data-name="值" class="w-full">
+                <p data-name="值">EXAMPLE0001</p>
+              </sp-use>
+            </div>
+            <div data-name="字段 硬件 PIN" class="flex flex-row items-center gap-[8px] w-full">
+              <p data-name="标签" class="w-[116px] text-text type-body">硬件 PIN</p>
+              <sp-use component="输入框" data-name="值" class="w-full">
+                <p data-name="值">••••••</p>
+              </sp-use>
+            </div>
+          </div>
+          <sp-use component="按钮" props="样式: 普通" data-name="读取令牌 / 公钥">
+            <p data-name="文字">读取令牌 / 公钥</p>
+          </sp-use>
+          <p data-name="设备" class="w-full text-muted type-detail">PIV 令牌 · 选择此公钥</p>
+        </div>
+      </div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消">
+          <p data-name="文字">取消</p>
+        </sp-use>
+        <sp-use component="按钮" data-name="保存并连接">
+          <p data-name="文字">保存并连接</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>独立文件编辑</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[900px] h-[680px] bg-canvas">
+  <div data-name="文件独立窗口" class="flex flex-col w-full h-full">
+    <div data-name="文件标题栏" class="flex flex-row items-center gap-[8px] pr-[8px] w-full h-titlebar bg-surface">
+      <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
+      <div data-name="文件身份" class="flex flex-col w-full">
+        <p data-name="文件名" class="w-full text-text type-section">nginx.conf</p>
+        <p data-name="来源" class="w-full text-muted type-detail">Web 生产环境 · /etc/nginx</p>
+      </div>
+      <sp-use component="图标按钮" data-name="保存文件">
+        <p data-name="图标"></p>
+      </sp-use>
+      <sp-use component="图标按钮" data-name="更多文件操作">
+        <p data-name="图标"></p>
+      </sp-use>
+      <sp-use component="图标按钮" data-name="关闭文件">
+        <p data-name="图标"></p>
+      </sp-use>
+    </div>
+    <div data-name="编辑区" class="flex flex-col w-full h-full">
+      <div data-name="代码区" class="flex flex-col gap-[8px] px-[24px] w-full h-full bg-subtle">
+        <p data-name="代码" class="w-full text-text type-code"> 1  user nginx;<br> 2  worker_processes auto;<br> 3<br> 4  events {<br> 5      worker_connections 1024;<br> 6  }</p>
+        <div data-name="编辑留白" class="flex flex-col gap-[8px] w-full h-full"></div>
+      </div>
+      <div data-name="状态栏" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[24px] bg-surface">
+        <p data-name="行列" class="w-full text-muted type-detail">6 行 · 第 1 行，第 1 列</p>
+        <p data-name="编码" class="w-[160px] text-muted type-detail">UTF-8 · LF · 76 B</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

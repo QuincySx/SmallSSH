@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>页面地图 1</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1400px] h-[1820px] bg-canvas">
+  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+    <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
+    <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
+    <div data-name="主窗锁定页" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">主窗锁定页</p>
+      <div data-name="vault-create" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">创建本机保险库</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：首次启动且无本机保险库</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：输入并确认主密码；创建保险库</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：密码不一致、创建中、错误</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：非服务器密码；不是公钥安装向导</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/locked.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：01 访问 / 创建保险库</p>
+      </div>
+      <div data-name="vault-unlock" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">解锁保险库</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：启动已存在的保险库或手动锁定后</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：主密码或已启用系统验证解锁；切换密码方式</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：系统验证就绪、密码输入、密码回退；验证中、取消、重试、失败</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：系统认证依平台与设备；锁定后关闭会话</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/locked.go; internal/desktop/unlock_auth.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：01 访问 / 解锁、01 访问 / 系统验证解锁、01 访问 / 系统验证密码回退</p>
+      </div>
+    </div>
+    <div data-name="主窗口" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">主窗口</p>
+      <div data-name="workspace" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">工作台</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：解锁成功</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：服务器侧栏、顶栏真实终端标签、单一小窗开关（位置在小窗菜单设置）、全局任务、设置；缩放、拖分栏</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：空服务器、未选择、已选择无会话、窄窗回退、锁定</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不等于独立设置或工具窗口</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件</p>
+      </div>
+    </div>
+    <div data-name="主窗侧栏/紧凑栏" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">主窗侧栏/紧凑栏</p>
+      <div data-name="server-rail" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">服务器列表</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：工作台左侧</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：添加、搜索、分组展开；单击选择、双击新终端；右键连接、文件、编辑、AI策略、备注、隧道、删除</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：无连接、搜索无结果、折叠、连接中可取消</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：收藏及拖动排序未实现</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_rail.go; internal/desktop/layout.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件</p>
+      </div>
+    </div>
+    <div data-name="主窗顶栏标签+终端面板" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">主窗顶栏标签+终端面板</p>
+      <div data-name="terminal" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">终端与会话组</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：双击服务器或新建终端</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：终端与独立功能区共用标签；拖动排序、跨组、四向递归拆分与合并</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：排队、连接中、取消、失败重试、断开、主机指纹变化</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：分组不是多个独立工具实例；不提供批量广播</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/connection_pending.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件、02 工作台 / 连接中、02 工作台 / 连接失败、02 工作台 / 双终端分组</p>
+      </div>
+    </div>
+    <div data-name="主窗终端面板" class="flex flex-col gap-[12px] w-full">
+      <p data-name="标题" class="w-full text-text type-section">主窗终端面板</p>
+      <div data-name="terminal-empty" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">终端空态</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：无活动终端</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：无服务器引导添加；有服务器未选引导搜索；选定后连接终端</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：无服务器、未选/过期选择、已选</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不自动连接；有效性来自完整服务器列表</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/terminal_group_view.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 未选择服务器</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

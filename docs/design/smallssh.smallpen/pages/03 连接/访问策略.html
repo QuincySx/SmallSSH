@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>访问策略</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[1000px] h-[820px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+        <p data-name="标题文字" class="w-full text-text type-section">新建连接</p>
+        <sp-use component="图标按钮" data-name="关闭弹窗">
+          <p data-name="图标"></p>
+        </sp-use>
+      </div>
+      <div data-name="分类与表单" class="flex flex-row items-center gap-[16px] w-full h-full">
+        <div data-name="连接分类" class="flex flex-col gap-[8px] w-[144px] h-full">
+          <sp-use component="导航项" data-name="常规" class="w-full">
+            <p data-name="标签">常规</p>
+            <div data-name="图标">
+              <p data-name="字标">常</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="加速与代理" class="w-full">
+            <p data-name="标签">加速与代理</p>
+            <div data-name="图标">
+              <p data-name="字标">加</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="终端设置" class="w-full">
+            <p data-name="标签">终端设置</p>
+            <div data-name="图标">
+              <p data-name="字标">终</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" props="状态: 选中" data-name="访问策略" class="w-full">
+            <p data-name="标签">访问策略</p>
+            <div data-name="图标">
+              <p data-name="字标">访</p>
+            </div>
+          </sp-use>
+        </div>
+        <div data-name="表单内容" class="flex flex-col gap-[16px] w-full h-full">
+          <div data-name="访问选项" class="flex flex-col gap-[8px] w-full">
+            <p data-name="允许访问" class="w-full text-text type-body">☑  允许 AI 访问此服务器</p>
+            <div data-name="关键操作" class="flex flex-row items-center gap-[8px] w-full">
+              <p data-name="保护开关" class="w-full text-text type-body">☑  保护关键操作</p>
+              <sp-use component="按钮" props="样式: 普通" data-name="编辑保护路径" data-click="03 连接/保护路径编辑器">
+                <p data-name="文字">保护路径…</p>
+              </sp-use>
+            </div>
+          </div>
+          <p data-name="说明" class="w-full text-muted type-detail">授权不能绕过服务器策略；命令护栏仅作防误操作。</p>
+        </div>
+      </div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消">
+          <p data-name="文字">取消</p>
+        </sp-use>
+        <sp-use component="按钮" data-name="保存并连接">
+          <p data-name="文字">保存并连接</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

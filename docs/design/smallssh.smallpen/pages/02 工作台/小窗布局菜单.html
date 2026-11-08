@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>小窗布局菜单</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[560px] h-[420px] bg-canvas">
+  <div data-name="菜单承载" class="flex flex-col items-center justify-center gap-[8px] w-full h-full">
+    <div data-name="布局菜单" class="flex flex-col gap-[8px] p-[12px] w-[300px] bg-surface rounded-panel">
+      <p data-name="标题" class="w-full text-text type-section">工具区布局</p>
+      <div data-name="停靠方向" class="flex flex-row items-center gap-[8px] w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="底部" data-click="02 工作台/工具停靠底部" class="h-[32px]">
+          <p data-name="文字">底部</p>
+        </sp-use>
+        <sp-use component="按钮" props="样式: 轻量" data-name="右侧" data-click="02 工作台/工具停靠右侧" class="h-[32px]">
+          <p data-name="文字">右侧</p>
+        </sp-use>
+        <sp-use component="按钮" props="样式: 轻量" data-name="系统窗口" class="h-[32px]">
+          <p data-name="文字">系统窗口</p>
+        </sp-use>
+      </div>
+      <sp-use component="按钮" props="样式: 轻量" data-name="移到画布" data-click="02 工作台/画布与功能开关" class="h-[32px]">
+        <p data-name="文字">移到画布</p>
+      </sp-use>
+      <sp-use component="按钮" props="样式: 轻量" data-name="放大工具面板" class="h-[32px]">
+        <p data-name="文字">放大工具面板</p>
+      </sp-use>
+      <sp-use component="按钮" props="样式: 轻量" data-name="收起工具面板" class="h-[32px]">
+        <p data-name="文字">收起工具面板</p>
+      </sp-use>
+    </div>
+  </div>
+</body>
+</html>

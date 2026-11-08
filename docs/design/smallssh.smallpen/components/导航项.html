@@ -1,0 +1,11 @@
+<sp-component name="导航项" props="状态: 普通 | 选中">
+  <div class="flex flex-row items-center gap-space-sm px-space-sm w-[184px] h-field bg-[#00000000] rounded-control">
+    <div data-name="图标" class="flex flex-row items-center justify-center w-[24px] h-[24px] bg-accentsoft rounded-[7px]">
+      <p data-name="字标" class="w-full text-accent type-detail leading-[16] text-center">S</p>
+    </div>
+    <p data-name="标签" class="w-full text-text type-body leading-[20]">导航</p>
+  </div>
+  <sp-variant when="状态: 选中" class="bg-accentsoft">
+    <p data-name="标签" class="text-accent"></p>
+  </sp-variant>
+</sp-component>

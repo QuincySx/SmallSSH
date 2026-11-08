@@ -674,328 +674,408 @@
     {
       "name": "01 访问 / 创建保险库",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/01 访问/创建保险库.html"
     },
     {
       "name": "01 访问 / 解锁",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/01 访问/解锁.html"
     },
     {
       "name": "02 工作台 / 终端与底部文件",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/终端与底部文件.html"
     },
     {
       "name": "02 工作台 / 未选择服务器",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/02 工作台/未选择服务器.html"
     },
     {
       "name": "02 工作台 / 连接中",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/02 工作台/连接中.html"
     },
     {
       "name": "02 工作台 / 连接失败",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/02 工作台/连接失败.html"
     },
     {
       "name": "02 工作台 / 双终端分组",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/双终端分组.html"
     },
     {
       "name": "03 连接 / 常规与密码",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/常规与密码.html"
     },
     {
       "name": "03 连接 / 硬件认证",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/硬件认证.html"
     },
     {
       "name": "03 连接 / 加速与代理",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/加速与代理.html"
     },
     {
       "name": "03 连接 / 编码与保活",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/编码与保活.html"
     },
     {
       "name": "03 连接 / 访问策略",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/访问策略.html"
     },
     {
       "name": "03 连接 / 核对服务器身份",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/核对服务器身份.html"
     },
     {
       "name": "04 文件 / 文件大标签",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/文件大标签.html"
     },
     {
       "name": "04 文件 / 本机与服务器",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/本机与服务器.html"
     },
     {
       "name": "04 文件 / 独立文件编辑",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/独立文件编辑.html"
     },
     {
       "name": "04 文件 / 文件加载与失败",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/文件加载与失败.html"
     },
     {
       "name": "04 文件 / 文件属性与权限",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/文件属性与权限.html"
     },
     {
       "name": "04 文件 / 传输目标确认",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/传输目标确认.html"
     },
     {
       "name": "04 文件 / 批量删除确认",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/批量删除确认.html"
     },
     {
       "name": "05 命令 / 命令列表",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/05 命令/命令列表.html"
     },
     {
       "name": "05 命令 / 编辑命令模板",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/05 命令/编辑命令模板.html"
     },
     {
       "name": "05 命令 / 参数与发送确认",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/05 命令/参数与发送确认.html"
     },
     {
       "name": "06 状态 / 资源概览",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/06 状态/资源概览.html"
     },
     {
       "name": "06 状态 / 资源详情",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/06 状态/资源详情.html"
     },
     {
       "name": "06 状态 / 进程",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/06 状态/进程.html"
     },
     {
       "name": "06 状态 / 自启服务",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/06 状态/自启服务.html"
     },
     {
       "name": "06 状态 / 系统信息",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/06 状态/系统信息.html"
     },
     {
       "name": "06 状态 / 端口与对外连接",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/06 状态/端口与对外连接.html"
     },
     {
       "name": "07 Docker / 容器",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/07 Docker/容器.html"
     },
     {
       "name": "07 Docker / 镜像",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/07 Docker/镜像.html"
     },
     {
       "name": "07 Docker / Compose 项目",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/07 Docker/Compose 项目.html"
     },
     {
       "name": "07 Docker / 容器日志与详情",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/07 Docker/容器日志与详情.html"
     },
     {
       "name": "07 Docker / Compose 更新确认",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/07 Docker/Compose 更新确认.html"
     },
     {
       "name": "08 设置 / 工作区",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/工作区.html"
     },
     {
       "name": "08 设置 / 安全与解锁",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/安全与解锁.html"
     },
     {
       "name": "08 设置 / 运行与后台",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/运行与后台.html"
     },
     {
       "name": "08 设置 / 授权中心 · 待处理",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 待处理.html"
     },
     {
       "name": "08 设置 / 授权中心 · 活动",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 活动.html"
     },
     {
       "name": "08 设置 / 授权中心 · 历史",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 历史.html"
     },
     {
       "name": "08 设置 / 本机 CLI 配对确认",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/本机 CLI 配对确认.html"
     },
     {
       "name": "09 工具 / SSH 隧道",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/09 工具/SSH 隧道.html"
     },
     {
       "name": "09 工具 / 服务器备注",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/09 工具/服务器备注.html"
     },
     {
       "name": "09 工具 / 传输与任务中心",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/09 工具/传输与任务中心.html"
     },
     {
       "name": "10 待实现 / 登录公钥安装",
       "status": "planned",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/10 待实现/登录公钥安装.html"
     },
     {
       "name": "10 待实现 / 配置迁移与备份",
       "status": "planned",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/10 待实现/配置迁移与备份.html"
     },
     {
       "name": "10 待实现 / 终端增强与完整变量",
       "status": "planned",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/10 待实现/终端增强与完整变量.html"
     },
     {
       "name": "00 页面目录 / 页面地图 1",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 1.html"
     },
     {
       "name": "00 页面目录 / 页面地图 2",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 2.html"
     },
     {
       "name": "00 页面目录 / 页面地图 3",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 3.html"
     },
     {
       "name": "00 页面目录 / 页面地图 4",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 4.html"
     },
     {
       "name": "00 页面目录 / 页面地图 5",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 5.html"
     },
     {
       "name": "00 页面目录 / 页面地图 6",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 6.html"
     },
     {
       "name": "00 页面目录 / 页面地图 7",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/00 页面目录/页面地图 7.html"
     },
     {
       "name": "01 访问 / 系统验证解锁",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/01 访问/系统验证解锁.html"
     },
     {
       "name": "01 访问 / 系统验证密码回退",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/01 访问/系统验证密码回退.html"
     },
     {
       "name": "02 工作台 / 小窗布局菜单",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/02 工作台/小窗布局菜单.html"
     },
     {
       "name": "02 工作台 / 四个混合分栏",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/四个混合分栏.html"
     },
     {
       "name": "02 工作台 / 六个混合分栏",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/六个混合分栏.html"
     },
     {
       "name": "02 工作台 / 工具停靠右侧",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/工具停靠右侧.html"
     },
     {
       "name": "02 工作台 / 工具停靠底部",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/工具停靠底部.html"
     },
     {
       "name": "03 连接 / 保护路径编辑器",
       "status": "source-mapped",
-      "presentation": "tabs-or-window"
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/03 连接/保护路径编辑器.html"
     },
     {
       "name": "02 工作台 / 画布与功能开关",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/画布与功能开关.html"
     },
     {
       "name": "02 工作台 / 画布与标签混排",
       "status": "source-mapped",
-      "presentation": "canvas"
+      "presentation": "canvas",
+      "file": "smallssh.smallpen/pages/02 工作台/画布与标签混排.html"
     },
     {
       "name": "02 工作台 / 标签聚合",
       "status": "source-mapped",
-      "presentation": "tabs"
+      "presentation": "tabs",
+      "file": "smallssh.smallpen/pages/02 工作台/标签聚合.html"
+    },
+    {
+      "name": "04 文件 / 列表右键与打开反馈",
+      "status": "source-mapped",
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/列表右键与打开反馈.html"
     }
   ],
-  "scope": "source-mapped: 按正式源码核对的页面结构记录；planned: 待实现需求。均不代替功能验收。"
+  "scope": "source-mapped: 按正式源码核对的页面结构记录；planned: 待实现需求。均不代替功能验收。",
+  "design_source": {
+    "package": "smallssh.smallpen",
+    "format": "HTML + tokens.css",
+    "cli": "0.2.0-alpha.1",
+    "themes": [
+      "appearance/light",
+      "appearance/dark"
+    ]
+  }
 }
