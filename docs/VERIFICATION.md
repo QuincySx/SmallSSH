@@ -2589,3 +2589,15 @@ SmallPen 通过 CLI 原子修改 18 张工作区画布的重复顶栏按钮，�
 - 必需仓库 gate：`build/logs/check-20261108-232626.log`（`-serial`）全部通过，含 vendor 补丁、576 个 Go 文件格式、vet 和全仓库测试；没有改动 vendor。
 
 限制：迁移、结构和渲染证据来自本机 CLI。隐藏浏览器检查超时，未完成 SmallPen 桌面交互或 CLI/App 逐像素验收；没有自动将任何窗口带到前台。汇总：`build/logs/smallpen-v2-summary-20261108.json`。
+
+
+## 2026-11-09 — SmallPen 0.2.0-alpha.2 重新检查
+
+读取当前安装版 `@smallpen/cli 0.2.0-alpha.2` 自带的 `smallpen-ui-design` Skill 与 format/classes help，按用户要求重新检查正式设计源。`changes --since` 显示无设计变化；83 个源文件逐一 SHA-256 比较一致，修订仍为 `e43c5dd0d71b136127271a470d17b2a1dc59b654ef2d3ffdbe851703209231e6`。本轮未改正式页面或组件。
+
+- 结构检查：66 页、11 个组件、23 个变体、39 个 Token，0 error、32 warning（20 条 repeated_raw_value、12 条 typography_overridden），5 个未使用 Token。新版检查规则不同，不能与 alpha.1 的 941 条建议直接比较数量。报告：`build/logs/smallpen-alpha2-check-20261109.json`。
+- 明暗主题共 178 个目标组合全部完成、无目标失败，但视觉未通过：326 条 warning（240 条 outside_root、86 条 content_overflow）涉及 48 个目标，另有 14 条既有 possible_overlap info；690 项检查跳过，coverage.complete=false。完整分页诊断已合并到 `build/logs/smallpen-alpha2-issues-complete-20261109.json`，总报告为 `build/logs/smallpen-alpha2-render-20261109.json`。不能把 CLI 退出码 0 或 dataStatus=valid 当成视觉通过。
+- 根因对照：旧稿 11 个文件中共 19 处 `leading-[16]`、`leading-[20]`、`leading-[30]` 等无单位行高，新版按 CSS 倍数行高解释。仅在 `build/authoring/smallpen-alpha2-20261109/unit-check.smallpen/` 副本加上 px 后，重新完成同样 178 个组合，326 条溢出 warning 全部消失，剩 14 条已有叠放 info；结构层 32 条 warning 仍在。候选修订 `74d0e7a40440a3cc8c3fe3a8ab833ec8beb13ff9517391c7fb82c3429da6b09a`，报告 `build/logs/smallpen-alpha2-unit-probe-render-20261109.json`。已目视比较正式源与副本的六格浅色 PNG，确认原稿状态卡数值出界、补单位后恢复；副本未替换正式源。
+- 语法与标识：最新版仍使用 sp-component、sp-use、sp-variant 三种特殊标签。独立 draft 试验中固定英文 data-name 通过；id 与 data-id 各报 unknown_attribute，因此当前 CLI 仍不支持作者直接保存独立 ID。试验报告为 `build/logs/smallpen-alpha2-english-name-probe-20261109.json` 与 `smallpen-alpha2-independent-id-probe-20261109.json`，均未写入正式包。
+
+本轮为 SmallPen 复核与临时副本对照，未改 Go 代码，未重跑 Go gate，也未打开或激活桌面窗口；CLI 原生 PNG 与自动检查不等同于 SmallPen App 交互验收。汇总与来源指纹：`build/logs/smallpen-alpha2-summary-20261109.json`。
