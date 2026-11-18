@@ -4,7 +4,7 @@ A cross-platform SSH workbench: terminal, SFTP file management, server metrics, 
 
 **English** | [简体中文](README.zh-CN.md)
 
-[Editable SmallPen design and page map](docs/design/DESIGN.md)
+![SmallSSH workspace with a terminal and server metrics](docs/screenshots/workspace.png)
 
 - **Terminal** — Ghostty rendering (libghostty-vt), tabs and two panes, 32 MiB scrollback, per-connection UTF-8 / GB18030 / GBK and backspace settings
 - **Connections** — HTTP(S) / SOCKS5 proxies, pinned SSH relays, handshake measurements, keepalive, and local / remote / dynamic TCP tunnels
@@ -15,6 +15,19 @@ A cross-platform SSH workbench: terminal, SFTP file management, server metrics, 
 - **Vault** — master-password encrypted, with Touch ID (Secure Enclave) unlock on macOS
 - **Platforms** — macOS, Windows and Linux, plus a CLI over the same broker
 
+<details>
+<summary>SFTP and audit screenshots</summary>
+
+**SFTP file manager**
+
+![Remote directory tree and file list](docs/screenshots/sftp.png)
+
+**Authorization and audit**
+
+![Audit records with the operation details and related approval](docs/screenshots/audit.png)
+
+</details>
+
 ## Quick start
 
 ```sh
@@ -22,8 +35,8 @@ go run ./tools build -platform darwin/arm64   # or linux/amd64, windows/amd64
 open build/darwin-arm64/SmallSSH.app          # first launch creates the vault (master password, 12+ bytes)
 ```
 
-1. `＋` in the sidebar creates a connection: host, user, password or key. The first save **reads the target fingerprint without authenticating to the target**; configured SSH relays authenticate separately
-2. Verify the fingerprint, then *Trust and connect*. Double-clicking a connection opens a new terminal every time
+1. Select `＋` in the sidebar to enter the host, user, password or key. Save stores the connection for later.
+2. Double-click the saved connection to open a terminal. When prompted, verify the host fingerprint and select *Trust and connect*.
 3. *Files* follows the active terminal; *Server status* starts collecting on connect
 4. *Approvals* handles AI/CLI requests; *Settings → Security & unlock* enables system verification
 
@@ -41,14 +54,14 @@ Once the desktop app unlocks the vault, the CLI talks to the same local broker w
 
 ```sh
 smallssh hosts
-smallssh exec server-id                # approve once, one command per line; :quit exits
+smallssh exec server-id                # guarded: low runs, medium reviewed, high denied; :quit exits
 smallssh get server-id /srv/config.txt ./config.txt
 smallssh pending && smallssh approve REQUEST_ID
 ```
 
 Use `smallssh exec server-id 'uname -a'` for a single approved operation. Continuous mode keeps the same CLI process alive; exit, disconnect or restart requires fresh approval. Lines are separate remote commands and do not share `cd` or environment changes. AI integrations can use the JSON-lines `session serve` interface.
 
-Without a desktop session, `smallssh agent` starts the broker in one terminal and approvals happen in another. The full command set, delegated sessions and the authorization model are in [docs/CLI.md](docs/CLI.md).
+Without a desktop session, `smallssh agent` unlocks the shared `smallsshd` backend from one terminal and approvals happen in another. Desktop and CLI use the same backend; only `smallsshd` contains the SSH and proxy runtime. The full command set, delegated sessions and the authorization model are in [docs/CLI.md](docs/CLI.md).
 
 ## Documentation
 
@@ -60,12 +73,9 @@ The docs are written in Chinese for now.
 | [CLI](docs/CLI.md) | Commands, delegated sessions, approvals |
 | [ARCHITECTURE](docs/ARCHITECTURE.md) | Layers, threading, IPC, native interop |
 | [COMPONENTS](docs/COMPONENTS.md) | UI components and interaction rules |
+| [DESIGN](docs/design/DESIGN.md) | Editable desktop design and page map |
 | [SECURITY](docs/SECURITY.md) | Trust boundaries for keys, system unlock, approvals and audit |
-| [DELEGATION](docs/DELEGATION.md) | Sub-authorization, renewal, revocation |
-| [FEATURES](docs/FEATURES.md) | What is implemented and what is not |
-| [SERVER-MANAGEMENT](docs/SERVER-MANAGEMENT.md) | Metrics, processes, services, Docker workflows |
-| [SERVICE-CATALOG](docs/SERVICE-CATALOG.md) | How services are recognized and presented |
-| [LOCALIZATION](docs/LOCALIZATION.md) | Strings and language switching |
+| [REQUIREMENTS](docs/REQUIREMENTS.md) | Product requirements, delivery status and open items |
 | [DEVELOPMENT](docs/DEVELOPMENT.md) | Task entry points, artifacts, dependency upgrades, CI |
 | [VERIFICATION](docs/VERIFICATION.md) | Evidence and known limits, appended per round |
 

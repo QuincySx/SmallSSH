@@ -104,7 +104,7 @@ SSH 教程让用户在 FinalShell 中登记本地监听端口和目标 SSH 地�
 
 ## 本项目对照待核对清单
 
-本地现状由 [FEATURES.md](FEATURES.md) 维护，实现和演进约束由 [CORE-SPLIT-PLAN.md](CORE-SPLIT-PLAN.md) 维护。主代理应结合代码和统一验证入口填写映射，不依据本研究推断实现状态：
+本地现状由 [FEATURES.md](../REQUIREMENTS.md) 维护，实现和演进约束由 [CORE-SPLIT-PLAN.md](CORE-SPLIT-PLAN.md) 维护。主代理应结合代码和统一验证入口填写映射，不依据本研究推断实现状态：
 
 - [ ] 将竞品“已明确功能”逐组映射到已实现、部分实现、未实现或不引入；每项保留具体差异。
 - [ ] 双边 UDP 加速单列：本机端、远端端、可靠传输、配置 / 状态、停用 / 退出 / 断线清理及测试证据。

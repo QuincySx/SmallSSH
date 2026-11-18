@@ -4,7 +4,7 @@
 
 跨平台 SSH 工作台：终端、SFTP 文件管理、服务器状态、Docker / Compose，外加一个按操作或有期限会话获得所有者批准的 AI / CLI 代理。Go + MyGo 原生界面，无账号、无凭据托管。开发预览，尚未发布。
 
-[可编辑 SmallPen 设计与页面目录](docs/design/DESIGN.md)
+![SmallSSH 工作台，包含终端和服务器状态](docs/screenshots/workspace.png)
 
 - **终端**：Ghostty 渲染（libghostty-vt），多标签、双分栏，32 MiB 回滚；每连接可选 UTF-8 / GB18030 / GBK 与退格序列
 - **连接路线**：HTTP(S) / SOCKS5 代理、自有 SSH 中转、握手耗时比较、保活及本地 / 远程 / 动态 TCP 隧道
@@ -15,6 +15,19 @@
 - **保险库**：主密码加密；macOS 可用 Touch ID（Secure Enclave）解锁
 - **平台**：macOS、Windows、Linux，附带同源 CLI
 
+<details>
+<summary>SFTP 与审计截图</summary>
+
+**SFTP 文件管理**
+
+![远端目录树和文件列表](docs/screenshots/sftp.png)
+
+**授权与审计**
+
+![审计记录、操作详情和关联授权](docs/screenshots/audit.png)
+
+</details>
+
 ## 快速开始
 
 ```sh
@@ -22,8 +35,8 @@ go run ./tools build -platform darwin/arm64   # 或 linux/amd64、windows/amd64
 open build/darwin-arm64/SmallSSH.app           # 首次打开创建保险库（主密码 ≥ 12 字节）
 ```
 
-1. 左侧「＋」新建连接：地址、用户名、密码或私钥。首次保存**读取目标指纹，不认证目标**；若配置 SSH 中转，则先独立认证中转
-2. 核对指纹后「信任并连接」进入终端；双击左侧连接每次新开一个终端
+1. 从左侧「＋」新建连接，填写地址、用户名和密码或私钥。点「保存」写入连接配置。
+2. 双击已保存的连接打开终端。出现身份确认时，核对服务器指纹，再选择「信任并连接」。
 3. 「文件」跟随当前终端；「服务器状态」随连接自动采集
 4. 「授权中心」处理 AI / CLI 的访问申请；「设置 → 安全与解锁」启用系统验证
 
@@ -58,12 +71,9 @@ smallssh pending && smallssh approve REQUEST_ID
 | [CLI 与 AI 使用](docs/CLI.md) | 命令、委托会话、审批 |
 | [架构](docs/ARCHITECTURE.md) | 分层、线程模型、IPC、原生接入 |
 | [组件](docs/COMPONENTS.md) | UI 组件与交互约定 |
+| [桌面设计](docs/design/DESIGN.md) | 可编辑设计源和页面目录 |
 | [安全与边界](docs/SECURITY.md) | 密钥、系统解锁、审批与审计的信任边界 |
-| [授权委托](docs/DELEGATION.md) | 子授权、续期与撤销 |
-| [功能进度](docs/FEATURES.md) | 已实现 / 未实现 |
-| [服务器管理](docs/SERVER-MANAGEMENT.md) | 资源、进程、服务与 Docker 工作流 |
-| [服务目录](docs/SERVICE-CATALOG.md) | 服务识别与展示规则 |
-| [本地化](docs/LOCALIZATION.md) | 文案与语言切换 |
+| [产品需求](docs/REQUIREMENTS.md) | 已交付能力、待办与验收要求 |
 | [开发、构建与发布](docs/DEVELOPMENT.md) | 任务入口、产物、依赖升级、CI |
 | [验收记录](docs/VERIFICATION.md) | 按轮追加的证据与已知边界 |
 
