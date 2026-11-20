@@ -28,11 +28,20 @@ func TestVaultLandingCenteredAndControlsFitAcrossStates(t *testing.T) {
 				t.Fatal("vault card is not centered or exceeds minimum window", variant, dark, card)
 			}
 			if variant == "system" {
-				if tt.HasText("主密码") || tt.HasText("确认解锁") || card.H > 230 {
+				if _, inputPresent := tt.Find("主密码"); inputPresent || tt.HasText("确认解锁") || card.H > 230 {
 					t.Fatal("system-ready landing did not stay compact", dark, card)
 				}
 				method, _ := tt.Find("触控 ID")
+				if method.W != 40 || method.H != 40 {
+					t.Fatal("system verification does not reserve its 40-point slot", method)
+				}
 				if err := tt.Click("触控 ID"); err != nil {
+					t.Fatal(err)
+				}
+				if a.unlockState.passwordMode {
+					t.Fatal("the fingerprint action opened the password form")
+				}
+				if err := tt.Click("改用保险库主密码"); err != nil {
 					t.Fatal(err)
 				}
 				card, _ = tt.Find("保险库卡片")
@@ -40,7 +49,7 @@ func TestVaultLandingCenteredAndControlsFitAcrossStates(t *testing.T) {
 					t.Fatal("system method did not expand the password form")
 				}
 				action, ok := tt.Find("触控 ID")
-				if !ok || math.Abs(float64(action.X+action.W-method.X-method.W)) > 1 || action.H < 32 {
+				if !ok || math.Abs(float64(action.X+action.W-method.X-method.W)) > 1 || action.W != 40 || action.H != 40 {
 					t.Fatal("expanded fingerprint action moved away from its original slot", method, action)
 				}
 			}
@@ -94,6 +103,57 @@ func TestVaultLandingEnterExpandsPasswordWithoutAuthentication(t *testing.T) {
 	}
 }
 
+func TestPlatformAuthenticationActionsUseTheirOwnLabels(t *testing.T) {
+	t.Setenv("MYGO_LOCALE", "en")
+	for _, platform := range []struct {
+		name, action, hint string
+	}{
+		{name: "Windows Hello", action: "Windows Hello"},
+		{name: systemauth.LinuxFingerprintName, action: "Fingerprint", hint: "Place your finger on the fingerprint reader"},
+	} {
+		t.Run(platform.name, func(t *testing.T) {
+			a, request := reviewFixture("full")
+			a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: platform.name}
+			state := &approvalPromptState{}
+			calls := 0
+			approval := ui.NewTester(func(c *ui.Context) {
+				a.approvalPrompt(c, request, state, func(allow, system bool) {
+					if !allow || !system {
+						t.Fatal("system action selected the vault password")
+					}
+					calls++
+					state.busy, state.systemAttempt = true, true
+				}, func() {})
+			}, 380, approvalWindowHeight)
+			approval.SetLocale("en")
+			for _, label := range []string{"Use Password", platform.action, "Deny"} {
+				bounds, ok := approval.Find(label)
+				if !ok || bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.W > 380 || bounds.Y+bounds.H > float32(approvalWindowHeight) {
+					t.Fatalf("%s is outside the approval window: %v", label, bounds)
+				}
+			}
+			if err := approval.Click(platform.action); err != nil || calls != 1 || state.passwordMode {
+				t.Fatalf("system action did not start the selected method: calls=%d, %v", calls, err)
+			}
+			if platform.hint != "" && !approval.HasText(platform.hint) {
+				t.Fatal("the fingerprint reader instruction is missing")
+			}
+			if err := approval.Click("Use the vault password instead"); err != nil || !state.passwordMode || state.systemAttempt {
+				t.Fatalf("approval could not switch to its vault password: %v", err)
+			}
+
+			locked := ui.NewTester(a.lockedView, 1000, 760)
+			locked.SetLocale("en")
+			if !locked.HasText(platform.action) || locked.HasText("Touch ID") {
+				t.Fatal("the lock screen did not offer the platform's system action")
+			}
+			if err := locked.Click("Use the vault password instead"); err != nil || !a.unlockState.passwordMode || !locked.HasText(platform.action) {
+				t.Fatalf("unlock did not offer both routes after opening the password field: %v", err)
+			}
+		})
+	}
+}
+
 func TestVaultLandingPasswordChoiceSurvivesSystemStatusArrival(t *testing.T) {
 	a := &app{ctx: context.Background()}
 	tt := ui.NewTester(a.view, 1000, 760)
@@ -102,6 +162,21 @@ func TestVaultLandingPasswordChoiceSurvivesSystemStatusArrival(t *testing.T) {
 	tt.Frame()
 	if !a.unlockState.passwordMode || !tt.HasText("主密码") || a.pass != "isolated-password-choice" {
 		t.Fatal("asynchronous system status hid or reset an edited password")
+	}
+}
+
+func TestVaultLandingCancelStopsVerificationAndLeavesVaultLocked(t *testing.T) {
+	a := &app{ctx: context.Background(), authStatus: systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}}
+	state := a.ensureUnlockState()
+	cancelled := 0
+	state.busy, state.systemAttempt, a.busy = true, true, true
+	state.cancel = func() { cancelled++ }
+	tt := ui.NewTester(a.view, 1000, 760)
+	if err := tt.Click("取消验证"); err != nil {
+		t.Fatal(err)
+	}
+	if cancelled != 1 || a.busy || a.online || !state.autoAttempted || !tt.HasText("触控 ID") || tt.HasText("取消验证") {
+		t.Fatal("cancel did not return to the lock screen with manual authentication available")
 	}
 }
 

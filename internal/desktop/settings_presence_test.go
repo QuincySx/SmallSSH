@@ -39,9 +39,6 @@ func TestPresenceSettingsTesterPersistsChoices(t *testing.T) {
 	if b.behavior.BackgroundMode != "application" || !b.behavior.ShowTrayIcon || behaviorEnabled(b.behavior.ShowDockIcon) {
 		t.Fatal("settings did not reload", b.behavior)
 	}
-	if _, ok := tt.Find("独立安全后台尚未接入。"); !ok {
-		t.Fatal("service status missing")
-	}
 }
 
 func TestPresenceSettingsRejectsLosingLastEntry(t *testing.T) {
@@ -52,8 +49,17 @@ func TestPresenceSettingsRejectsLosingLastEntry(t *testing.T) {
 	if err := tt.Click("Dock 图标开关"); err != nil {
 		t.Fatal(err)
 	}
-	if !behaviorEnabled(a.behavior.ShowDockIcon) || a.status == "" || len(events) != 0 {
+	if !behaviorEnabled(a.behavior.ShowDockIcon) || a.presence.saveError == "" || len(events) != 0 {
 		t.Fatal("lost recovery entry", events)
+	}
+	if err := tt.Click("关闭后台设置提示"); err != nil || a.presence.saveError != "" {
+		t.Fatal("save error cannot be dismissed", err)
+	}
+	// An unrelated app-wide status never shows up as this page's error.
+	a.status = "传输完成"
+	tt.Frame()
+	if tt.HasText("传输完成") {
+		t.Fatal("global status leaked into background settings")
 	}
 }
 

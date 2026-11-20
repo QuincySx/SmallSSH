@@ -1,12 +1,15 @@
 package desktop
 
 import (
+	"math"
 	"slices"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/desktop/components"
+	"sshclient/internal/protocol"
 	"sshclient/internal/vault"
 )
 
@@ -23,9 +26,14 @@ type connectionRailModel struct {
 	closed      map[string]bool
 	searchInput ui.Handle
 	focusSearch bool
+	loading     bool
+	loadFailed  bool
+	pending     []vault.Summary
 }
 
 const connectionRailItemHeight = 36
+const connectionRailGroupHeight = 20
+const connectionSidebarInset float32 = 6
 
 func (a *app) focusConnectionSearch(c *ui.Context) {
 	a.sidebarHidden = false
@@ -82,22 +90,18 @@ func (m *connectionRailModel) sameClosedGroups(groups map[string]*bool) bool {
 // state, so changing width never inserts or removes rows above an avatar.
 func connectionRailRows(connections []vault.Summary, search string, closed map[string]bool) []connectionRailRow {
 	grouped := make(map[string][]vault.Summary)
+	groups := []string{}
 	search = strings.ToLower(search)
 	for _, d := range connections {
 		if search != "" && !strings.Contains(strings.ToLower(d.Name+" "+d.Host+" "+d.Group+" "+d.ID), search) {
 			continue
 		}
 		group := d.Group
-		if group == "" {
-			group = "未分组"
+		if _, exists := grouped[group]; !exists {
+			groups = append(groups, group)
 		}
 		grouped[group] = append(grouped[group], d)
 	}
-	groups := make([]string, 0, len(grouped))
-	for group := range grouped {
-		groups = append(groups, group)
-	}
-	sort.Strings(groups)
 	rows := make([]connectionRailRow, 0, len(connections)+len(groups))
 	for _, group := range groups {
 		rows = append(rows, connectionRailRow{group: group, header: true})
@@ -115,29 +119,79 @@ func connectionRailTooltip(d vault.Summary) string {
 	return d.Name + "\n" + d.User + "@" + d.Host
 }
 
+func (a *app) wakePoll() {
+	select {
+	case a.pollWake <- struct{}{}:
+	default:
+	}
+}
+
+func (a *app) applyConnectionSnapshot(epoch, orderVersion uint64, h protocol.Message, err error) {
+	if !a.online || a.epoch.Load() != epoch || a.connectionOrderVersion.Load() != orderVersion || a.connectionRailCache.pending != nil {
+		return
+	}
+	if err != nil {
+		if a.connectionRailCache.loading {
+			a.connectionRailCache.loadFailed = true
+		}
+		return
+	}
+	a.connectionRailCache.loading, a.connectionRailCache.loadFailed = false, false
+	a.hosts, a.connections, a.routes = h.Hosts, h.Connections, h.Routes
+	if a.page != 0 && a.selected == "" && len(a.hosts) > 0 {
+		a.switchHost(hostID(a.hosts[0]))
+	}
+}
+
 func (a *app) connectionRail(c *ui.Context) { a.connectionSidebar(c, true) }
 
+func (a *app) connectionRailLoading(c *ui.Context, compact bool) {
+	if a.connectionRailCache.loadFailed {
+		label := tr(c, "无法加载连接，正在重试…")
+		row := ui.Row(c).FillWidth().Height(36).Padding(0, connectionSidebarInset).AlignItems(ui.Center).Gap(6).Label(label).Tooltip(label)
+		row.Children(func() {
+			ui.Spinner(c).Size(12, 12).Shrink(0)
+			if !compact {
+				ui.Text(c, label).FontSize(11).TextColor(c.Theme().TextMuted).Wrap()
+			}
+		})
+		return
+	}
+	theme := c.Theme()
+	strength := float32(.46)
+	if !c.Preferences().ReduceMotion {
+		c.After(50 * time.Millisecond)
+		phase := float64(c.Now().UnixMilli()%1400) / 1400
+		strength += .16 * float32(math.Sin(phase*2*math.Pi))
+	}
+	color := theme.Surface.Mix(theme.Border, strength)
+	ui.Column(c).FillWidth().Padding(0, connectionSidebarInset).Gap(2).Label(tr(c, "正在加载连接…")).Children(func() {
+		ui.Row(c).FillWidth().Height(connectionRailGroupHeight).AlignItems(ui.Center).Padding(0, 8).Children(func() {
+			ui.Box(c).Width(53).MaxWidthPercent(100).Height(7).Radius(4).Background(color)
+		})
+		for _, width := range []float32{94, 72, 84} {
+			ui.Row(c).FillWidth().Height(connectionRailItemHeight).Padding(0, 4).AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Box(c).Size(28, 28).Radius(7).Shrink(0).Background(color)
+				if !compact {
+					ui.Box(c).Width(width).MinWidth(0).Height(10).Radius(5).Background(color)
+				}
+			})
+		}
+	})
+}
+
 func (a *app) connectionSidebar(c *ui.Context, compact bool) {
-	// The same keyed list owns the scroller at either width. The action,
-	// search and group rows also keep their height when labels disappear.
+	// The same keyed list owns the scroller at either width. Search and group
+	// rows keep their height when labels disappear.
 	label := tr(c, "连接侧栏")
 	if compact {
 		label = tr(c, "连接窄栏")
 	}
-	inset := float32(0)
-	if compact {
-		inset = 6
-	}
+	inset := connectionSidebarInset
 	c.Key("connection-sidebar")
 	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Gap(0).
-		Background(c.Theme().Background).Label(label).
+		Padding(inset, 0, 0, 0).Radius(components.PanelRadius).Clip().Background(c.Theme().Surface).Label(label).
 		Disabled(a.page == 0 && a.connection.phase == "save").Children(func() {
-		c.Key("connection-sidebar-actions")
-		ui.Column(c).FillWidth().Height(36).Shrink(0).Padding(0, inset).Label(tr(c, "连接栏标题")).Children(func() {
-			if components.NavigationIcon(c, "new-connection", tr(c, "新建连接"), components.PlusIcon, false, compact).Height(components.HeaderHeight).Clicked() {
-				a.navigate(a.newConnection)
-			}
-		})
 		c.Key("connection-sidebar-search-row")
 		ui.Column(c).FillWidth().Height(36).Shrink(0).Padding(0, inset).Justify(ui.Center).Label(tr(c, "连接搜索栏")).Children(func() {
 			if compact {
@@ -155,7 +209,25 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 				}
 			}
 		})
-		rows := a.connectionRailCache.rowsFor(a.connections, a.search, a.groups)
+		if a.connectionRailCache.loading && len(a.connections) == 0 {
+			a.connectionRailLoading(c, compact)
+			return
+		}
+		connections := a.connections
+		if a.connectionRailCache.pending != nil {
+			connections = a.connectionRailCache.pending
+		}
+		rows := a.connectionRailCache.rowsFor(connections, a.search, a.groups)
+		a.connectionRailList.DragRows = nil
+		if a.connectionRailCache.pending == nil && a.page != 0 {
+			a.connectionRailList.DragRows = func(indices []int) any {
+				if len(indices) != 1 || indices[0] < 0 || indices[0] >= len(rows) {
+					return nil
+				}
+				r := rows[indices[0]]
+				return connectionDrag{Revision: vault.ConnectionOrderRevision(a.connections), ID: r.connection.ID, Group: r.group, Header: r.header}
+			}
+		}
 		a.connectionRailList.Key = func(i int) any {
 			if rows[i].header {
 				return "group:" + rows[i].group
@@ -184,7 +256,7 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 					a.groups[r.group] = open
 				}
 				c.Key("connection-group:" + r.group)
-				header := ui.ButtonBase(c).FillWidth().MinWidth(0).Height(20).Shrink(0).
+				header := ui.ButtonBase(c).FillWidth().MinWidth(0).Height(connectionRailGroupHeight).Shrink(0).
 					Padding(0, 8).Gap(4).AlignItems(ui.Center).Label(tr(c, "连接分组：") + groupLabel).Tooltip(groupLabel)
 				header.Children(func() {
 					if compact {
@@ -202,6 +274,7 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 						ui.Text(c, groupLabel).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted).Grow(1).MinWidth(0)
 					}
 				})
+				a.connectionDropTarget(c, header, r)
 				if header.Clicked() {
 					*open = !*open
 					a.connectionRailList.Focus(c)
@@ -212,11 +285,9 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 			d := r.connection
 			item := components.NavigationItem(c, "connection:"+d.ID, d.Name, a.selected == d.ID, compact, func() {
 				avatar := ui.Box(c).Size(28, 28).Shrink(0)
-				if !compact {
-					avatar.MarginStart(12)
-				}
 				avatar.Children(func() { components.ConnectionAvatar(c, d.ID) })
 			}).Height(connectionRailItemHeight).Tooltip(connectionRailTooltip(d))
+			a.connectionDropTarget(c, item, r)
 			if item.DoubleClicked() {
 				a.selected = previous
 				a.navigate(func() { a.switchHost(d.ID); a.openShellMode(true) })
@@ -233,8 +304,13 @@ func (a *app) connectionSidebar(c *ui.Context, compact bool) {
 		up := list.Shortcut(0, ui.KeyUp)
 		home := list.Shortcut(0, ui.KeyHome)
 		end := list.Shortcut(0, ui.KeyEnd)
-		// Enter keeps selection; connecting needs a double click or menu action.
-		list.Shortcut(0, ui.KeyEnter)
+		// Enter opens a new terminal for the selected server, as a double
+		// click does, through the same unsaved-connection guard.
+		if list.Shortcut(0, ui.KeyEnter) {
+			if id := a.selected; slices.ContainsFunc(rows, func(r connectionRailRow) bool { return !r.header && r.connection.ID == id }) {
+				a.navigate(func() { a.switchHost(id); a.openShellMode(true) })
+			}
+		}
 		if down || up || home || end {
 			at := slices.IndexFunc(rows, func(r connectionRailRow) bool { return !r.header && r.connection.ID == a.selected })
 			to, step := at+1, 1
@@ -270,12 +346,51 @@ func (a *app) connectionContextMenu(m *ui.Menu, d vault.Summary, previous string
 		a.selected = previous
 		a.navigate(func() { a.switchHost(d.ID); a.openShellMode(true) })
 	}
-	if m.Item(tr(nil, "连接终端")).Chosen() {
-		a.selected = previous
-		a.navigate(func() { a.switchHost(d.ID); a.openShell() })
-	}
-	if m.Item(tr(nil, "SSH 隧道…")).Chosen() {
+	m.Submenu(tr(nil, "终端连接"), func(menu *ui.Menu) {
+		connect := func(route connectcfg.RouteSelection) {
+			a.selected = previous
+			a.navigate(func() {
+				a.switchHost(d.ID)
+				a.openShellForHostAfter(d.ID, true, nil, route)
+			})
+		}
+		if menu.Item(tr(nil, "使用默认线路")).Chosen() {
+			connect(connectcfg.RouteSelection{})
+		}
+		if menu.Item(tr(nil, "本次直连")).Chosen() {
+			connect(connectcfg.RouteSelection{Mode: "direct"})
+		}
+		live := a.liveConnectionRoutes(d.ID)
+		if len(live) > 0 {
+			menu.Separator()
+		}
+		for _, choice := range live {
+			if menu.Item(choice.label).ID(choice.route.Key()).Chosen() {
+				connect(choice.route)
+			}
+		}
+		relays := a.relayServerOptions(d.ID)
+		if len(a.routes) > 0 || len(relays) > 0 {
+			menu.Separator()
+		}
+		if len(relays) > 0 {
+			relayServerMenu(nil, menu, relays, connect)
+		}
+		for _, route := range a.routes {
+			label := route.Name
+			if route.Relay != "" {
+				label += " · " + tr(nil, "SSH 跳板机")
+			}
+			if menu.Item(label).Chosen() {
+				connect(connectcfg.RouteSelection{Mode: "saved", ID: route.ID})
+			}
+		}
+	})
+	if m.Item(tr(nil, "新建端口转发…")).Chosen() {
 		a.openTunnels(d.ID)
+	}
+	if m.Item(tr(nil, "VNC 远程桌面…")).Chosen() {
+		a.openVNC(d.ID)
 	}
 	if m.Item(tr(nil, "编辑连接")).Chosen() {
 		a.selected = previous
@@ -298,13 +413,8 @@ func (a *app) connectionContextMenu(m *ui.Menu, d vault.Summary, previous string
 }
 
 func (a *app) connectionGroupLabel(c *ui.Context, group string) string {
-	if group != "未分组" {
-		return group
+	if group == "" {
+		return tr(c, "未分组")
 	}
-	for _, connection := range a.connections {
-		if connection.Group == group {
-			return group
-		}
-	}
-	return tr(c, "未分组")
+	return group
 }

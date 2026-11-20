@@ -3,16 +3,16 @@
   "sourceSHA256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
   "family": "SmallSSH UI",
   "license": "OFL-1.1",
-  "derivation": "Noto Sans SC variable font instantiated at 400, subset to design text, renamed. Original outlines and typographic metrics retained.",
+  "derivation": "Noto Sans SC variable font instantiated at weights 400 and 700, subset to design text, renamed. Original outlines and typographic metrics retained.",
   "missing_symbols": "",
   "files": [
     {
-      "file": "SmallSSHUI-Regular.woff",
+      "file": "SmallSSHUI-400.woff",
       "weight": 400,
       "sha256": "4c14bedc7351d9363857ad7771addbe0eae358531566352474f6a8b21cb06564"
     },
     {
-      "file": "SmallSSHUI-Bold.woff",
+      "file": "SmallSSHUI-700.woff",
       "weight": 700,
       "sha256": "cdcf61220e4494dfb85ffed2a9c5bb4dcba8a1d6fd82654d55e4f41e5cff1296"
     }

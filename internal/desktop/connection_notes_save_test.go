@@ -53,7 +53,6 @@ func TestConnectionNotesPendingRetryRestoredManualOverwritesUncertainRemoteNote(
 
 	p, originalNote := seedConnectionNotesRPC(t, h)
 	openConnectionNotesForSaveTest(t, h, p.ID)
-	h.a.connection.connect = false
 	h.ui.Frame()
 	if _, ok := h.ui.Find("保存连接"); !ok {
 		t.Fatalf("save label with connect disabled: %v", h.ui.Texts())
@@ -86,7 +85,7 @@ func TestConnectionNotesPendingRetryRestoredManualOverwritesUncertainRemoteNote(
 	if pending == nil {
 		t.Fatalf("save did not reach pending note state: phase=%q errors=%v", h.a.connection.phase, h.a.connection.errors)
 	}
-	if pending.connect || pending.id != p.ID || pending.summary.Name != savedName {
+	if pending.id != p.ID || pending.summary.Name != savedName {
 		t.Fatalf("pending note = %#v, want saved profile %q without connecting", pending, p.ID)
 	}
 	if !reflect.DeepEqual(h.a.formNoteOriginal, originalNote) {
@@ -195,7 +194,6 @@ func TestConnectionNotesSavePendingRetryDoesNotReplayProfile(t *testing.T) {
 	h.a.editConnection()
 	waitConnectionNotesLoadedForSaveTest(t, h)
 
-	h.a.connection.connect = false
 	const savedName = "profile saved before note failure"
 	h.input("名称", savedName)
 	h.a.connection.replace = true
@@ -249,9 +247,6 @@ func TestConnectionNotesSavePendingRetryDoesNotReplayProfile(t *testing.T) {
 	pending := h.a.connection.pendingNote
 	if pending == nil {
 		t.Fatalf("save did not reach pending note state: phase=%q errors=%v", h.a.connection.phase, h.a.connection.errors)
-	}
-	if pending.connect {
-		t.Fatal("pending note unexpectedly requested a connection")
 	}
 	if pending.summary.Name != savedName || pending.id != p.ID {
 		t.Fatalf("pending note = %#v, want saved profile %q", pending, p.ID)
@@ -330,9 +325,6 @@ func TestConnectionNotesSavePendingRetryDoesNotReplayProfile(t *testing.T) {
 	}
 	_ = h.ui.Click("保存后连接")
 	h.ui.Frame()
-	if h.a.connection.connect {
-		t.Fatal("disabled save-and-connect control changed connection request")
-	}
 	if !reflect.DeepEqual(*h.a.connection.pendingNote, pendingBefore) {
 		t.Fatal("pending retry payload changed with draft controls")
 	}
@@ -448,7 +440,6 @@ func TestConnectionNotesPendingCloseRequiresConfirmation(t *testing.T) {
 	authsBefore := h.fixture.Auths.Load()
 	openConnectionNotesForSaveTest(t, h, p.ID)
 
-	h.a.connection.connect = false
 	const savedName = "profile saved before pending close"
 	const draftManual = "pending manual draft must survive close prompt"
 	longDetails := strings.Repeat("注", 16385)
@@ -472,9 +463,6 @@ func TestConnectionNotesPendingCloseRequiresConfirmation(t *testing.T) {
 	pending := h.a.connection.pendingNote
 	if pending == nil {
 		t.Fatalf("save did not reach pending note state: phase=%q errors=%v", h.a.connection.phase, h.a.connection.errors)
-	}
-	if pending.connect {
-		t.Fatal("pending note unexpectedly requested a connection")
 	}
 	if pending.id != p.ID || pending.summary.Name != savedName {
 		t.Fatalf("pending note = %#v, want saved profile %q", pending, p.ID)
@@ -572,193 +560,41 @@ func TestConnectionNotesPendingCloseRequiresConfirmation(t *testing.T) {
 	}
 }
 
-func TestConnectionNotesRetryAfterSSHFailureUnfreezesEditor(t *testing.T) {
+func TestConnectionNotesRetryRemainsOfflineEvenWithInvalidCredentials(t *testing.T) {
 	h := newConnectionFlowHarness(t)
-	t.Cleanup(h.a.resetConnectionEditor)
-
 	p, originalNote := seedConnectionNotesRPC(t, h)
-	authsBefore := h.fixture.Auths.Load()
 	openConnectionNotesForSaveTest(t, h, p.ID)
-
-	const savedName = "profile saved before failed SSH"
-	const wrongPassword = "definitely wrong fixture password"
-	const manual = "manual saved with the retried note"
-	longDetails := strings.Repeat("界", 16385)
-	h.input("名称", savedName)
-	h.input("服务器备注", manual)
-	h.a.formNote.Details = longDetails
+	before := h.fixture.Auths.Load()
+	h.input("名称", "saved locally")
+	h.input("服务器备注", "retried manual note")
+	h.a.formNote.Details = strings.Repeat("界", 16385)
 	h.a.connection.replace = true
 	h.ui.Frame()
-	h.input("服务器密码", wrongPassword)
-	h.a.connection.connect = true
-	h.ui.Frame()
-
-	h.click("保存并连接")
-	h.wait(func() bool {
-		if h.a.connection.pendingNote != nil {
-			return true
-		}
-		if h.a.connection.phase != "" {
-			return false
-		}
-		return h.a.connection.errors["note"] != "" ||
-			h.a.connection.errors["form"] != "" ||
-			h.a.connection.errors["key"] != ""
-	})
-	pending := h.a.connection.pendingNote
-	if pending == nil {
-		t.Fatalf("save did not reach pending note state: phase=%q errors=%v", h.a.connection.phase, h.a.connection.errors)
+	h.input("服务器密码", "invalid fixture password")
+	h.click("保存连接")
+	h.wait(func() bool { return h.a.connection.pendingNote != nil || h.a.connection.phase == "" })
+	if h.a.connection.pendingNote == nil || h.a.connection.errors["note"] == "" || h.fixture.Auths.Load() != before {
+		t.Fatal("note failure did not remain local", h.a.connection.errors)
 	}
-	if !pending.connect {
-		t.Fatal("pending note lost the requested SSH connection")
+	if note, err := h.server.Vault.ServerNote(p.ID); err != nil || !reflect.DeepEqual(note, originalNote) {
+		t.Fatal("failed note save mutated the existing note", err)
 	}
-	if pending.id != p.ID || pending.summary.Name != savedName {
-		t.Fatalf("pending note = %#v, want saved profile %q", pending, p.ID)
-	}
-	if h.a.page != 0 || h.a.connection.errors["note"] == "" || !h.ui.HasText("连接已保存，备注未保存") {
-		t.Fatalf("pending note state = page %d errors %v", h.a.page, h.a.connection.errors)
-	}
-	if h.fixture.Auths.Load() != authsBefore {
-		t.Fatal("pending note started SSH before the note retry")
-	}
-
-	savedProfile := h.stored(p.ID)
-	if savedProfile.Name != savedName || savedProfile.Password != wrongPassword {
-		t.Fatalf("stored profile after pending save = %#v", savedProfile)
-	}
-	savedSummary := connectionSummary(savedProfile)
-	if h.a.details == nil || !reflect.DeepEqual(*h.a.details, savedSummary) {
-		t.Fatalf("details summary = %#v, want %#v", h.a.details, savedSummary)
-	}
-	serverNote, err := h.server.Vault.ServerNote(p.ID)
-	if err != nil {
-		t.Fatalf("read note after pending save: %v", err)
-	}
-	if !reflect.DeepEqual(serverNote, originalNote) {
-		t.Fatalf("server note changed before retry: %#v", serverNote)
-	}
-
-	const retryDetails = "valid retried note details"
-	oldNoteError := h.a.connection.errors["note"]
-	h.a.formNote.Details = retryDetails
-	retryNote := h.a.formNote
+	h.a.formNote.Details = "valid retried note"
+	retry := h.a.formNote
 	h.ui.Frame()
 	h.click("重试保存备注")
-	h.wait(func() bool {
-		if noteError := h.a.connection.errors["note"]; noteError != "" && noteError != oldNoteError {
-			return true
-		}
-		if h.a.connection.pendingNote != nil {
-			return false
-		}
-		note, err := h.server.Vault.ServerNote(p.ID)
-		if err != nil || !reflect.DeepEqual(note, retryNote) {
-			return false
-		}
-		if h.a.connection.phase != "" {
-			return false
-		}
-		return h.a.connection.errors["form"] != "" || h.a.connection.errors["trust"] != ""
-	})
-
-	if noteError := h.a.connection.errors["note"]; noteError != "" {
-		t.Fatalf("note retry error = %q", noteError)
+	h.wait(func() bool { return h.a.page == 1 })
+	if h.fixture.Auths.Load() != before || len(h.a.sessions) != 0 || h.a.prompt.open {
+		t.Fatal("retry started SSH")
 	}
-	if h.a.connection.pendingNote != nil || h.a.connection.phase != "" {
-		t.Fatalf("retry remained pending: phase=%q pending=%#v", h.a.connection.phase, h.a.connection.pendingNote)
+	if note, err := h.server.Vault.ServerNote(p.ID); err != nil || !reflect.DeepEqual(note, retry) {
+		t.Fatal("retry did not persist the note", err)
 	}
-	if h.a.page != 0 {
-		t.Fatalf("page = %d after SSH failure, want editable editor", h.a.page)
+	if profile := h.stored(p.ID); profile.Name != "saved locally" || profile.Password != "invalid fixture password" {
+		t.Fatal("retry overwrote saved connection")
 	}
-	failureText := ""
-	for key, message := range h.a.connection.errors {
-		if key != "note" && message != "" {
-			failureText = message
-			break
-		}
-	}
-	if failureText == "" {
-		t.Fatalf("SSH authentication failure was not reported: %v", h.a.connection.errors)
-	}
-	if !h.ui.HasText(failureText) || !h.ui.HasText("登录未成功") {
-		t.Fatalf("SSH failure is not visible: error=%q texts=%v", failureText, h.ui.Texts())
-	}
-	if h.fixture.Auths.Load() <= authsBefore {
-		t.Fatalf("SSH authentication was not attempted: auths=%d before=%d", h.fixture.Auths.Load(), authsBefore)
-	}
-
-	storedRetryNote, err := h.server.Vault.ServerNote(p.ID)
-	if err != nil {
-		t.Fatalf("read retried note: %v", err)
-	}
-	if !reflect.DeepEqual(storedRetryNote, retryNote) {
-		t.Fatalf("retried server note = %#v, want %#v", storedRetryNote, retryNote)
-	}
-	if !reflect.DeepEqual(h.a.formNoteOriginal, retryNote) || !reflect.DeepEqual(h.a.formNote, retryNote) {
-		t.Fatalf("retried note baseline = %#v draft = %#v, want %#v", h.a.formNoteOriginal, h.a.formNote, retryNote)
-	}
-	if retryNote.Details != retryDetails || retryNote.Manual != manual {
-		t.Fatalf("retried note content = %#v", retryNote)
-	}
-	profileAfterFailure := h.stored(p.ID)
-	if profileAfterFailure.Name != savedName || profileAfterFailure.Password != wrongPassword {
-		t.Fatalf("SSH failure changed the saved profile: %#v", profileAfterFailure)
-	}
-	if h.a.details == nil || !reflect.DeepEqual(*h.a.details, connectionSummary(profileAfterFailure)) {
-		t.Fatalf("details summary after SSH failure = %#v", h.a.details)
-	}
-	if h.a.connection.replace || h.a.form.Password != "" || h.a.form.PrivateKey != "" || h.a.form.KeyPassphrase != "" || h.a.form.Network.Proxy.Password != "" || h.a.form.Hardware.PIN != "" || h.a.keyFile != "" || h.a.ownerPass != "" {
-		t.Fatalf("SSH failure left replacement enabled or input secrets: replace=%v form=%#v", h.a.connection.replace, h.a.form)
-	}
-
-	const editedAfterFailure = "editable form after SSH failure"
-	h.input("名称", editedAfterFailure)
-	if h.a.form.Name != editedAfterFailure {
-		t.Fatalf("form is not editable after SSH failure: name=%q", h.a.form.Name)
-	}
-
-	h.click("更换登录凭据")
-	h.ui.Frame()
-	if !h.ui.HasText("服务器密码") {
-		t.Fatal("replacement password field did not appear")
-	}
-	h.input("服务器密码", p.Password)
-	h.a.connection.connect = false
-	h.ui.Frame()
-	if !h.ui.HasText("保存连接") {
-		t.Fatalf("save control after disabling connect: %v", h.ui.Texts())
-	}
-
-	h.click("保存连接")
-	h.wait(func() bool {
-		if h.a.page == 1 && h.a.connection.pendingNote == nil {
-			return true
-		}
-		if h.a.connection.phase != "" {
-			return false
-		}
-		err := h.a.connection.errors["form"]
-		return (err != "" && err != failureText) || h.a.connection.errors["note"] != ""
-	})
-	if h.a.page != 1 || h.a.connection.pendingNote != nil || h.a.connection.phase != "" {
-		t.Fatalf("final save did not close the editor: page=%d phase=%q pending=%#v errors=%v", h.a.page, h.a.connection.phase, h.a.connection.pendingNote, h.a.connection.errors)
-	}
-	if h.a.connection.errors["note"] != "" || h.a.connection.errors["form"] != "" {
-		t.Fatalf("final save errors: %v", h.a.connection.errors)
-	}
-	finalProfile := h.stored(p.ID)
-	if finalProfile.Name != editedAfterFailure || finalProfile.Password != p.Password {
-		t.Fatalf("final stored profile = %#v", finalProfile)
-	}
-	finalNote, err := h.server.Vault.ServerNote(p.ID)
-	if err != nil {
-		t.Fatalf("read final note: %v", err)
-	}
-	if !reflect.DeepEqual(finalNote, retryNote) {
-		t.Fatalf("final note = %#v, want confirmed snapshot %#v", finalNote, retryNote)
-	}
-	if h.a.connection.replace || h.a.connection.replaceProxy || h.a.form.Password != "" || h.a.form.PrivateKey != "" || h.a.form.KeyPassphrase != "" || h.a.form.Network.Proxy.Password != "" || h.a.form.Hardware.PIN != "" || h.a.keyFile != "" || h.a.ownerPass != "" {
-		t.Fatalf("final save left replacement enabled or input secrets: replace=%v", h.a.connection.replace)
+	if h.a.form.Password != "" || h.a.ownerPass != "" || h.a.connection.pendingNote != nil {
+		t.Fatal("successful retry retained secrets or pending state")
 	}
 }
 

@@ -37,6 +37,9 @@ func runCheck(args []string) error {
 		fmt.Fprintf(out, "\n格式检查失败：%s\n", logPath)
 		return e
 	}
+	if e := verifyFrontendDependencies(out); e != nil {
+		return e
+	}
 	return p.run(out, logPath)
 }
 

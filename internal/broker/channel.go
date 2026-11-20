@@ -43,7 +43,7 @@ func (s *Server) handle(raw net.Conn) {
 		bucket = fmt.Sprintf("pid:%d", pid)
 	}
 	if identity != nil {
-		peer.Instance, peer.CodeID = identity.Instance, identity.CodeID
+		peer.Instance, peer.CodeID, peer.Bundle = identity.Instance, identity.CodeID, identity.AppID
 	}
 	connection := tls.Server(raw, s.tlsConfig)
 	stop := context.AfterFunc(s.ctx, func() { raw.Close() })
@@ -140,6 +140,11 @@ func (s *Server) checkChannels() {
 			r, err := s.Approvals.Get(id)
 			if err != nil && id == channel.session {
 				r, err = s.Approvals.SessionStatus(id)
+			}
+			// Let the waiting caller read a child denial. Closing the socket
+			// first turns it into a transport error and ends the parent session.
+			if err == nil && r.Status == "denied" && r.ParentID != "" {
+				continue
 			}
 			if err != nil || !(r.Status == "pending" || r.Status == "approved" || r.Status == "running" || id == channel.session && r.Status == "expired") {
 				channel.cancel()

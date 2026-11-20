@@ -32,7 +32,7 @@ func TestConnectionSectionsKeepDraftAndActionsVisible(t *testing.T) {
 			}
 			left, leftOK := tt.Find("连接分类")
 			right, rightOK := tt.Find("连接分类内容")
-			save, saveOK := tt.Find("保存并连接")
+			save, saveOK := tt.Find("保存连接")
 			if !leftOK || !rightOK || !saveOK || right.X < left.X+left.W || save.Y+save.H > float32(dimensions[1]) {
 				t.Fatal("split navigation or fixed action escaped", left, right, save)
 			}
@@ -42,13 +42,13 @@ func TestConnectionSectionsKeepDraftAndActionsVisible(t *testing.T) {
 		}
 		navigation, _ := tt.Find("连接分类")
 		button, _ := tt.Find("连接分类：常规")
-		footer, _ := tt.Find("保存并连接")
+		footer, _ := tt.Find("保存连接")
 		content, _ := tt.Find("连接分类内容")
 		tt.Scroll(content.X+content.W/2, content.Y+content.H/2, 0, 1000)
 		tt.Frame()
 		leftAfter, _ := tt.Find("连接分类")
 		buttonAfter, _ := tt.Find("连接分类：常规")
-		footerAfter, _ := tt.Find("保存并连接")
+		footerAfter, _ := tt.Find("保存连接")
 		if navigation != leftAfter || button != buttonAfter || footer != footerAfter {
 			t.Fatal("content scroll moved navigation or save")
 		}
@@ -73,7 +73,7 @@ func TestConnectionSectionKeyboardAndValidationRevealTheRelevantPage(t *testing.
 	if a.connection.section != connectionNetwork || !tt.Focused("连接分类：加速与代理") {
 		t.Fatal("keyboard category activation failed", tt.Texts())
 	}
-	if err := tt.Click("保存并连接"); err != nil {
+	if err := tt.Click("保存连接"); err != nil {
 		t.Fatal(err)
 	}
 	if a.connection.section != connectionGeneral || !tt.HasText("请检查服务器地址和端口") {
@@ -81,7 +81,7 @@ func TestConnectionSectionKeyboardAndValidationRevealTheRelevantPage(t *testing.
 	}
 	a.form.Name, a.form.Host, a.form.User, a.form.Password = "valid draft", "192.0.2.10", "example", "synthetic password"
 	a.form.Network.Proxy = connectcfg.Proxy{Mode: "socks5", Address: "invalid-address"}
-	if err := tt.Click("保存并连接"); err != nil {
+	if err := tt.Click("保存连接"); err != nil {
 		t.Fatal(err)
 	}
 	if a.connection.section != connectionNetwork || a.connection.phase != "" {
@@ -89,7 +89,7 @@ func TestConnectionSectionKeyboardAndValidationRevealTheRelevantPage(t *testing.
 	}
 	a.form.Network.Proxy = connectcfg.Proxy{}
 	a.form.Terminal.Encoding = "unsupported-encoding"
-	if err := tt.Click("保存并连接"); err != nil {
+	if err := tt.Click("保存连接"); err != nil {
 		t.Fatal(err)
 	}
 	if a.connection.section != connectionTerminal || a.connection.phase != "" {
@@ -100,7 +100,7 @@ func TestConnectionSectionKeyboardAndValidationRevealTheRelevantPage(t *testing.
 	if err := tt.Click("连接分类：加速与代理"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("保存并连接"); err != nil {
+	if err := tt.Click("保存连接"); err != nil {
 		t.Fatal(err)
 	}
 	if a.connection.section != connectionTerminal || a.connection.phase != "" {

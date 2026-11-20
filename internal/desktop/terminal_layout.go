@@ -6,7 +6,6 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
-	"sshclient/internal/desktop/components"
 )
 
 // Leaves own tabs. A branch owns only a split, so moving a view never replaces
@@ -264,7 +263,7 @@ func (a *app) newSplitTerminal(source *session) {
 			}
 			a.moveTerminalTab(added, destination, nil)
 		}
-	})
+	}, source.target.Route)
 }
 
 func (a *app) mergeTerminalViews() {
@@ -303,44 +302,42 @@ func (a *app) mergeTerminalViews() {
 	a.contentFocus = selectedTool == nil
 }
 
-func (a *app) terminalLayoutMenu(c *ui.Context) {
-	s, g, generation := a.currentTerminal(), a.activeTerminalGroup, a.generation
-	tab := a.selectedWorkspaceTab(g)
-	components.SVGButton(c, components.SplitTerminalIcon, tr(c, "终端分栏")).Tooltip(tr(c, "拖动标签到四边拆分，或合并分组")).Menu(func(m *ui.Menu) {
-		if !a.online || a.generation != generation {
-			return
-		}
-		if m.Item(tr(c, "平铺为画布")).Chosen() {
-			a.setWorkspaceCanvas(true)
-		}
-		if m.Item(tr(c, "聚合为标签")).Chosen() {
-			a.setWorkspaceCanvas(false)
-		}
-		m.Separator()
-		if m.Item(tr(c, "新建终端到另一组")).Disabled(s == nil || s.closed || a.connecting[s.host] != nil).Chosen() {
-			a.newSplitTerminal(s)
-		}
-		count := 0
-		for _, group := range a.terminalGroups() {
-			count += len(a.workspaceTabs(group))
-		}
-		if m.Item(tr(c, "移动当前标签到另一组")).Disabled(count < 2).Chosen() {
-			if len(a.terminalGroups()) == 1 {
-				a.dropWorkspaceTab(a.workspaceTabPayload(tab), g, workspaceTab{}, "right")
-			} else {
-				groups := a.terminalGroups()
-				target := groups[len(groups)-1]
-				if target == g {
-					target = groups[0]
-				}
-				a.dropWorkspaceTab(a.workspaceTabPayload(tab), target, workspaceTab{}, "")
+func (a *app) workspaceLayoutMenu(m *ui.Menu, tab workspaceTab) {
+	g, s := a.workspaceTabGroup(tab), tab.session
+	if m.Item(tr(nil, "平铺为画布")).Chosen() {
+		a.activateWorkspaceTab(g, tab)
+		a.setWorkspaceCanvas(true)
+	}
+	if m.Item(tr(nil, "聚合为标签")).Chosen() {
+		a.activateWorkspaceTab(g, tab)
+		a.setWorkspaceCanvas(false)
+	}
+	m.Separator()
+	if m.Item(tr(nil, "新建终端到另一组")).Disabled(s == nil || s.closed || a.connecting[s.host] != nil).Chosen() {
+		a.activateTerminal(s, false)
+		a.newSplitTerminal(s)
+	}
+	count := 0
+	for _, group := range a.terminalGroups() {
+		count += len(a.workspaceTabs(group))
+	}
+	if m.Item(tr(nil, "移动当前标签到另一组")).Disabled(count < 2).Chosen() {
+		if len(a.terminalGroups()) == 1 {
+			a.dropWorkspaceTab(a.workspaceTabPayload(tab), g, workspaceTab{}, "right")
+		} else {
+			groups := a.terminalGroups()
+			target := groups[len(groups)-1]
+			if target == g {
+				target = groups[0]
 			}
+			a.dropWorkspaceTab(a.workspaceTabPayload(tab), target, workspaceTab{}, "")
 		}
-		m.Separator()
-		if m.Item(tr(c, "合并全部分组")).Disabled(a.terminalLayout == nil).Chosen() {
-			a.mergeTerminalViews()
-		}
-	})
+	}
+	m.Separator()
+	if m.Item(tr(nil, "合并全部分组")).Disabled(a.terminalLayout == nil).Chosen() {
+		a.activateWorkspaceTab(g, tab)
+		a.mergeTerminalViews()
+	}
 }
 
 func (a *app) terminalTabMenu(m *ui.Menu, s *session) {
@@ -379,7 +376,7 @@ func (a *app) newTerminalTab(source *session) {
 		if a.workspaceTerminalSelected(source) && a.page == 1 {
 			a.activateTerminal(added, true)
 		}
-	})
+	}, source.target.Route)
 }
 
 func (a *app) replaceClosedTerminal(old, added *session) {
@@ -453,7 +450,7 @@ func (a *app) reconnectTerminal(source *session) {
 		if focused {
 			a.activateTerminal(added, true)
 		}
-	})
+	}, source.target.Route)
 }
 
 type terminalTabDrag struct {

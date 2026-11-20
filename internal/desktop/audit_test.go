@@ -198,7 +198,7 @@ func TestAuxiliaryScreensAndFileFooterFitSmallWindow(t *testing.T) {
 	a.authStatus = systemauth.Status{Available: true, Enabled: true, Name: "Touch ID"}
 	a.settingsOpen = true
 	tt := ui.NewTester(a.settingsWindowView, 1000, 760)
-	for _, label := range []string{"关闭设置", "设置分类：安全与解锁", "主密码确认设置", "停用 Touch ID"} {
+	for _, label := range []string{"关闭设置", "设置分类：安全与解锁", "关闭快速解锁"} {
 		r, ok := tt.Find(label)
 		if !ok || r.Y < 0 || r.Y+r.H > 760 {
 			t.Fatal("security control clipped", label, r)

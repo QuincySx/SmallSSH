@@ -1,59 +1,8 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>SSH 隧道</title>
-  <link rel="stylesheet" href="../../tokens.css">
-</head>
-<body class="flex flex-col w-[960px] h-[680px] bg-canvas">
-  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
-    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
-      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
-        <p data-name="标题文字" class="w-full text-text type-section">SSH 隧道</p>
-        <sp-use component="图标按钮" data-name="关闭弹窗">
-          <p data-name="图标"></p>
-        </sp-use>
-      </div>
-      <div data-name="隧道表单" class="flex flex-col gap-[8px] w-full">
-        <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
-          <sp-use component="按钮" props="样式: 普通" data-name="本地">
-            <p data-name="文字">本地</p>
-          </sp-use>
-          <sp-use component="按钮" props="样式: 轻量" data-name="远程">
-            <p data-name="文字">远程</p>
-          </sp-use>
-          <sp-use component="按钮" props="样式: 轻量" data-name="SOCKS5">
-            <p data-name="文字">SOCKS5</p>
-          </sp-use>
-        </div>
-        <div data-name="字段组" class="flex flex-col gap-[12px] w-full">
-          <div data-name="字段 监听地址" class="flex flex-row items-center gap-[8px] w-full">
-            <p data-name="标签" class="w-[116px] text-text type-body">监听地址</p>
-            <sp-use component="输入框" data-name="值" class="w-full">
-              <p data-name="值">127.0.0.1:15432</p>
-            </sp-use>
-          </div>
-          <div data-name="字段 目标地址" class="flex flex-row items-center gap-[8px] w-full">
-            <p data-name="标签" class="w-[116px] text-text type-body">目标地址</p>
-            <sp-use component="输入框" data-name="值" class="w-full">
-              <p data-name="值">127.0.0.1:5432</p>
-            </sp-use>
-          </div>
-        </div>
-        <p data-name="活动隧道" class="w-full text-success type-body">本地 · 127.0.0.1:15432 → 127.0.0.1:5432</p>
-        <sp-use component="按钮" props="样式: 普通" data-name="停止隧道">
-          <p data-name="文字">停止隧道</p>
-        </sp-use>
-      </div>
-      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
-        <sp-use component="按钮" props="样式: 普通" data-name="关闭">
-          <p data-name="文字">关闭</p>
-        </sp-use>
-        <sp-use component="按钮" data-name="启动隧道">
-          <p data-name="文字">启动隧道</p>
-        </sp-use>
-      </div>
-    </div>
-  </div>
-</body>
+<html><head><meta charset="utf-8"><title>SSH 隧道</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col items-center justify-center w-[960px] h-[800px] p-dialog-backdrop bg-canvas"><div data-name="对话框" class="flex flex-col gap-space-md p-space-lg w-service-advanced h-fit bg-surface rounded-panel"><div class="flex flex-row items-center w-full"><p class="w-full text-text type-section">新建端口转发</p><sp-use component="图标按钮" data-name="关闭弹窗"><p data-name="图标"></p></sp-use></div>
+<div data-name="场景选择" class="flex flex-row gap-space-xs w-full"><div data-name="访问远端服务" class="flex flex-col justify-center items-center gap-space-xs w-full h-service-sketch p-space-xs border bg-accentsoft border-accent rounded-control"><p class="w-full font-icons text-icon-compact text-center text-text"> → </p><p class="w-full text-center text-text type-detail">访问远端服务</p></div><div data-name="让服务器访问本机服务" data-click="09 工具/SSH 隧道 · 远程转发" class="flex flex-col justify-center items-center gap-space-xs w-full h-service-sketch p-space-xs border bg-surface border-border rounded-control"><p class="w-full font-icons text-icon-compact text-center text-text"> ← </p><p class="w-full text-center text-text type-detail">让服务器访问本机服务</p></div><div data-name="把服务器当代理" data-click="09 工具/SSH 隧道 · SOCKS5" class="flex flex-col justify-center items-center gap-space-xs w-full h-service-sketch p-space-xs border bg-surface border-border rounded-control"><p class="w-full font-icons text-icon-compact text-center text-text"> →  → </p><p class="w-full text-center text-text type-detail">把服务器当代理</p></div></div>
+<div data-name="可编辑路径" class="flex flex-row items-center p-space-sm w-full bg-canvas rounded-control"><div data-name="本机应用" class="flex flex-col items-center gap-space-xs w-full p-space-sm border bg-surface border-border rounded-control"><p class="w-full font-icons text-icon-compact text-center text-muted"></p><p class="w-full text-center text-text type-control">本机应用</p><div data-name="本机入口端口" class="flex flex-col gap-space-xs w-full"><p class="text-muted type-detail">本机入口端口</p><sp-use component="输入框" class="w-full"><p data-name="值">127.0.0.1</p></sp-use><sp-use component="输入框" class="w-full"><p data-name="值">自动分配</p></sp-use></div></div><div data-name="路径连线" class="flex flex-row items-center shrink-0 w-service-route-wire h-control"><div class="w-full h-tunnel-connector-line bg-accent"></div><sp-use component="图标按钮" data-name="选择线路" data-click="09 工具/SSH 隧道 · 上游代理"><p data-name="图标"></p></sp-use><p class="text-accent type-control">→</p></div><div data-name="SSH 服务器" class="flex flex-col items-center gap-space-xs w-full p-space-sm border bg-accentsoft border-accent rounded-control"><p class="w-full font-icons text-icon-compact text-center text-muted"></p><p class="w-full text-center text-text type-control">SSH 服务器</p><div data-name="使用服务器" class="flex flex-col gap-space-xs w-full"><p class="text-muted type-detail">使用服务器</p><sp-use component="输入框" class="w-full"><p data-name="值">Web　⌄</p></sp-use></div><p data-name="SSH 地址" class="w-full text-center text-muted type-detail">192.0.2.10:22</p><div data-name="服务端口" class="flex flex-col gap-space-xs w-full"><p class="text-muted type-detail">服务端口</p><sp-use component="输入框" class="w-full"><p data-name="值">127.0.0.1</p></sp-use><sp-use component="输入框" class="w-full"><p data-name="值">5432</p></sp-use></div></div></div>
+<sp-use component="复选框" props="状态: 未选" data-name="启动后打开网页" data-click="09 工具/访问服务器网页" class="w-full"><div data-name="勾选框" class="border-muted"></div><p data-name="标签">启动后打开网页</p></sp-use>
+<div class="flex flex-row justify-end gap-space-sm w-full"><sp-use component="按钮" props="样式: 普通" data-name="关闭面板"><p data-name="文字">关闭面板</p></sp-use><sp-use component="按钮" props="样式: 主操作" data-name="启动转发" data-click="09 工具/服务列表"><p data-name="文字">启动转发</p></sp-use></div></div></body>
 </html>

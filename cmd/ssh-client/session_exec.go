@@ -19,7 +19,7 @@ func execSession(ctx context.Context, c client.Client, label string, args []stri
 	if len(args) < 1 || len(args) > 3 || strings.HasPrefix(args[0], "-") {
 		return 2, errors.New("用法: smallssh session exec 连接ID [2h] [15m]；或 smallssh exec 连接ID")
 	}
-	terms := append([]string{args[0], "full"}, args[1:]...)
+	terms := append([]string{args[0], "guarded"}, args[1:]...)
 	options, err := parseCLISessionOptions(terms, notices)
 	if err != nil {
 		return 2, err
@@ -33,7 +33,7 @@ func execSession(ctx context.Context, c client.Client, label string, args []stri
 		stop := context.AfterFunc(ctx, func() { closer.Close() })
 		defer stop()
 	}
-	fmt.Fprintln(notices, "会话已批准。每行执行一条独立远程命令；:quit 或输入结束退出。多条命令共享本次授权，不共享 cd / 环境变量。")
+	fmt.Fprintln(notices, "会话已批准。低风险直接执行，中风险单独确认，高风险拒绝。每行独立执行，不共享 cd / 环境变量；:quit 或输入结束退出。")
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), 32768+2)
 	lastCode := 0
@@ -63,6 +63,17 @@ func execSession(ctx context.Context, c client.Client, label string, args []stri
 				continue
 			}
 			return 1, err
+		}
+		if r.Status == "pending" {
+			writeApprovalNotice(notices, r)
+			if err = c.Wait(ctx, r.ID, ticket); err != nil {
+				if errors.Is(err, client.ErrOperationDenied) {
+					fmt.Fprintln(notices, "本次操作未执行:", err)
+					lastCode = 1
+					continue
+				}
+				return 1, err
+			}
 		}
 		stream, err := c.Start(ctx, r.ID, ticket, 0, 0)
 		if err != nil {

@@ -15,14 +15,19 @@ import (
 	"github.com/godbus/dbus/v5"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sshclient/internal/vault"
 	"strings"
+	"sync"
 )
 
-type linuxBackend struct{}
+type linuxBackend struct {
+	mu          sync.Mutex
+	directories map[string]string
+}
 
-func newBackend(window uintptr) Backend { return linuxBackend{} }
-func (linuxBackend) Name() string       { return "Linux 指纹认证" }
+func newBackend(window uintptr) Backend { return &linuxBackend{} }
+func (*linuxBackend) Name() string      { return LinuxFingerprintName }
 func linuxDevice(ctx context.Context) (*dbus.Conn, dbus.BusObject, error) {
 	c, e := dbus.ConnectSystemBus()
 	if e != nil {
@@ -36,7 +41,7 @@ func linuxDevice(ctx context.Context) (*dbus.Conn, dbus.BusObject, error) {
 	}
 	return c, c.Object("net.reactivated.Fprint", p), nil
 }
-func (linuxBackend) Probe(ctx context.Context) error {
+func (*linuxBackend) Probe(ctx context.Context) error {
 	st, e := os.Stat("/usr/bin/secret-tool")
 	if e != nil || !st.Mode().IsRegular() || st.Mode().Perm()&0022 != 0 {
 		return errors.New("需要系统 Secret Service 和 secret-tool")
@@ -100,6 +105,9 @@ func verifyLinux(ctx context.Context) error {
 				return nil
 			}
 			if done {
+				if status == "verify-no-match" {
+					return ErrFingerprintNotRecognized
+				}
 				return fmt.Errorf("指纹验证未通过: %s", status)
 			}
 		}
@@ -112,7 +120,25 @@ type linuxEnvelope struct {
 	Cipher []byte `json:"cipher"`
 }
 
-func (linuxBackend) Wrap(ctx context.Context, key []byte) (json.RawMessage, error) {
+func (b *linuxBackend) Wrap(ctx context.Context, key []byte) (json.RawMessage, error) {
+	return b.wrap(ctx, "", key)
+}
+
+func (b *linuxBackend) WrapForDirectory(ctx context.Context, dir string, key []byte) (json.RawMessage, error) {
+	directory, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	var sealed json.RawMessage
+	err = withKeyringLock(ctx, directory, func() error {
+		var wrapErr error
+		sealed, wrapErr = b.wrap(ctx, directory, key)
+		return wrapErr
+	})
+	return sealed, err
+}
+
+func (b *linuxBackend) wrap(ctx context.Context, dir string, key []byte) (json.RawMessage, error) {
 	// The OS keyring protects at rest; fprintd enforces this application's
 	// fresh user-presence gate. Same-user keyring extraction is not prevented.
 	k := make([]byte, 32)
@@ -124,6 +150,19 @@ func (linuxBackend) Wrap(ctx context.Context, key []byte) (json.RawMessage, erro
 	rand.Read(nonce)
 	r := linuxEnvelope{ID: vault.ShortID(), Nonce: nonce}
 	r.Cipher = gcm.Seal(nil, nonce, key, []byte(r.ID))
+	// Register before storing the device key: a crash at any later point leaves
+	// enough non-secret information for the next daemon to remove this entry.
+	if dir != "" {
+		if err := registerKeyringID(dir, r.ID); err != nil {
+			return nil, err
+		}
+		b.mu.Lock()
+		if b.directories == nil {
+			b.directories = make(map[string]string)
+		}
+		b.directories[r.ID] = dir
+		b.mu.Unlock()
+	}
 	cmd := exec.CommandContext(ctx, "/usr/bin/secret-tool", "store", "--label=SmallSSH 设备密钥", "service", "ssh-workbench", "id", r.ID)
 	cmd.Stdin = strings.NewReader(base64.StdEncoding.EncodeToString(k))
 	if e := cmd.Run(); e != nil {
@@ -131,7 +170,7 @@ func (linuxBackend) Wrap(ctx context.Context, key []byte) (json.RawMessage, erro
 	}
 	return json.Marshal(r)
 }
-func (linuxBackend) Unwrap(ctx context.Context, data json.RawMessage, reason string) ([]byte, error) {
+func (*linuxBackend) Unwrap(ctx context.Context, data json.RawMessage, reason string) ([]byte, error) {
 	var r linuxEnvelope
 	if e := json.Unmarshal(data, &r); e != nil {
 		return nil, e
@@ -158,17 +197,79 @@ func (linuxBackend) Unwrap(ctx context.Context, data json.RawMessage, reason str
 	return gcm.Open(nil, r.Nonce, r.Cipher, []byte(r.ID))
 }
 
-func (linuxBackend) Remove(ctx context.Context, data json.RawMessage) error {
+func (b *linuxBackend) Remove(ctx context.Context, data json.RawMessage) error {
 	var r linuxEnvelope
 	if e := json.Unmarshal(data, &r); e != nil {
 		return e
 	}
-	id, e := base64.RawURLEncoding.DecodeString(r.ID)
-	if e != nil || len(id) != 18 || len(r.ID) != 24 {
+	if !validKeyringID(r.ID) {
 		return errors.New("系统钥匙串条目标识无效")
 	}
-	if e = exec.CommandContext(ctx, "/usr/bin/secret-tool", "clear", "service", "ssh-workbench", "id", r.ID).Run(); e != nil {
-		return errors.New("系统钥匙串条目清理失败")
+	b.mu.Lock()
+	directory := b.directories[r.ID]
+	b.mu.Unlock()
+	remove := func() error {
+		if err := removeLinuxKeyringRecord(ctx, r.ID); err != nil {
+			return err
+		}
+		if directory != "" {
+			if err := unregisterKeyringID(directory, r.ID); err != nil {
+				return err
+			}
+			b.mu.Lock()
+			delete(b.directories, r.ID)
+			b.mu.Unlock()
+		}
+		return nil
+	}
+	if directory != "" {
+		return withKeyringLock(ctx, directory, remove)
+	}
+	// Legacy or another frontend's record supplies no filesystem target. Its
+	// key removal is idempotent; the registered owner handles marker cleanup.
+	return remove()
+}
+
+// CleanupOrphans runs only while the daemon exclusively owns its service lock,
+// before it accepts any frontend that could create new sealed records.
+func CleanupOrphans(ctx context.Context, dir string) error {
+	directory, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	return cleanupKeyringIDs(ctx, directory, removeLinuxKeyringRecord)
+}
+
+func removeLinuxKeyringRecord(ctx context.Context, id string) error {
+	if !validKeyringID(id) {
+		return errors.New("系统钥匙串条目标识无效")
+	}
+	bus, err := dbus.ConnectSessionBus()
+	if err != nil {
+		return err
+	}
+	defer bus.Close()
+	var unlocked, locked []dbus.ObjectPath
+	attrs := map[string]string{"service": "ssh-workbench", "id": id}
+	if err := bus.Object("org.freedesktop.secrets", "/org/freedesktop/secrets").CallWithContext(ctx, "org.freedesktop.Secret.Service.SearchItems", 0, attrs).Store(&unlocked, &locked); err != nil {
+		return err
+	}
+	// An entry already removed by normal cleanup is a successful no-op. Locked
+	// collections are left for a later retry instead of prompting on startup.
+	if len(locked) > 0 {
+		return errors.New("系统钥匙串已锁定，暂缓清理设备密钥")
+	}
+	if len(unlocked) == 0 {
+		return nil
+	}
+	for _, item := range unlocked {
+		var prompt dbus.ObjectPath
+		if err := bus.Object("org.freedesktop.secrets", item).CallWithContext(ctx, "org.freedesktop.Secret.Item.Delete", 0).Store(&prompt); err != nil {
+			return err
+		}
+		if prompt != "/" {
+			return errors.New("系统钥匙串需要验证，暂缓清理设备密钥")
+		}
 	}
 	return nil
 }

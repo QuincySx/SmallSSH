@@ -1,0 +1,17 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>密钥使用授权</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col w-[520px] h-fit bg-canvas">
+<div data-name="密钥待处理窗口" class="flex flex-col gap-space-md p-space-lg w-full h-fit bg-surface rounded-window-panel">
+  <p data-name="窗口标题" class="w-full text-text type-section">SSH 密钥使用授权</p>
+  <div data-name="同组请求" class="flex flex-col gap-space-sm p-space-md w-full h-fit bg-surface rounded-control border border-border">
+    <div data-name="组标题" class="flex flex-row gap-space-sm items-center overflow-visible w-full h-fit">
+      <svg data-name="密钥图标" viewBox="0 0 24 24" class="w-menu-icon h-menu-icon stroke-accent border-menu-icon"><path d="M4 8a4 4 0 1 0 8 0a4 4 0 1 0 -8 0M11 11l8 8m-3 0h3v-3"/></svg>
+      <div data-name="授权对象" class="flex flex-col gap-space-xs w-full h-fit"><p data-name="申请方" class="w-full text-muted type-panel-label">终端</p><p data-name="密钥" class="w-full text-text type-section">开发机</p><p data-name="用途" class="w-full text-text type-control">tester · 主机 SHA256:EXAMPLE_HOST</p></div>
+      <sp-use component="按钮" props="样式: 普通" data-name="审阅这组"><p data-name="文字">审阅这组</p></sp-use>
+    </div>
+    <p data-name="公钥指纹" class="w-full text-muted type-panel-label">SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDE12</p>
+    <div data-name="第一个请求" class="flex flex-row items-center w-full h-fit"><p data-name="编号" class="w-full text-muted type-panel-label">签名请求 1</p><sp-use component="按钮" props="样式: 普通" data-name="审阅第一个"><p data-name="文字">审阅</p></sp-use></div>
+    <div data-name="第二个请求" class="flex flex-row items-center w-full h-fit"><p data-name="编号" class="w-full text-muted type-panel-label">签名请求 2</p><sp-use component="按钮" props="样式: 普通" data-name="审阅第二个"><p data-name="文字">审阅</p></sp-use></div>
+  </div>
+</div>
+</body></html>

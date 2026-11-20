@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
-	"os"
 	"path/filepath"
 	"sshclient/internal/vault"
 	"strings"
@@ -426,20 +425,21 @@ func TestEmbeddedServicePreservesVaultChecksAndPlatformFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer v.Close()
 	if err = vault.Save(filepath.Join(dir, "vault.json"), v, true); err != nil {
 		t.Fatal(err)
 	}
-	v.Close()
 	b := &fakeEmbeddedBackend{bridge: &fakeEmbeddedBridge{t: t}}
 	s := &Service{backend: b}
-	if err = s.Enroll(context.Background(), dir, pass); err != nil {
+	sealed, err := s.Seal(context.Background(), v)
+	if err != nil {
 		t.Fatal(err)
 	}
 	defer wipe(b.key)
 	if !s.SupportsEmbedded() {
 		t.Fatal("embedded backend not recognized")
 	}
-	if session, err := s.OpenEmbedded(context.Background(), dir, "approve", nil); err == nil {
+	if session, err := s.OpenRecordEmbedded(context.Background(), dir, sealed, "approve", nil); err == nil {
 		session.Close()
 		t.Fatal("missing presentation accepted")
 	}
@@ -448,7 +448,7 @@ func TestEmbeddedServicePreservesVaultChecksAndPlatformFallback(t *testing.T) {
 	}
 	b.bridge.result = fakeReply(b.key)
 	for i := 0; i < 2; i++ {
-		session, err := s.OpenEmbedded(context.Background(), dir, "approve", fakePresentation())
+		session, err := s.OpenRecordEmbedded(context.Background(), dir, sealed, "approve", fakePresentation())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -460,35 +460,25 @@ func TestEmbeddedServicePreservesVaultChecksAndPlatformFallback(t *testing.T) {
 	wrong := append([]byte(nil), b.key...)
 	wrong[0] ^= 1
 	b.bridge.result = fakeReply(wrong)
-	if session, err := s.OpenEmbedded(context.Background(), dir, "approve", fakePresentation()); err == nil {
+	if session, err := s.OpenRecordEmbedded(context.Background(), dir, sealed, "approve", fakePresentation()); err == nil {
 		session.Close()
 		t.Fatal("wrong native key bypassed vault hash")
 	}
-	originalRecord, err := os.ReadFile(path(dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := readRecord(dir)
+	record, err := parseRecord(sealed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wrongHash := sha256.Sum256(wrong)
 	record.VaultHash = hex.EncodeToString(wrongHash[:])
-	modifiedRecord, _ := json.Marshal(record)
-	if err = os.WriteFile(path(dir), modifiedRecord, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if session, err := s.OpenEmbedded(context.Background(), dir, "approve", fakePresentation()); err == nil {
+	modified, _ := json.Marshal(record)
+	if session, err := s.OpenRecordEmbedded(context.Background(), dir, modified, "approve", fakePresentation()); err == nil {
 		session.Close()
 		t.Fatal("native key with a matching record hash bypassed vault encryption")
 	}
 	wipe(wrong)
-	if err = os.WriteFile(path(dir), originalRecord, 0600); err != nil {
-		t.Fatal(err)
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	b.bridge.result, b.bridge.onPoll = fakeReply(b.key), cancel
-	if session, err := s.OpenEmbedded(ctx, dir, "approve", fakePresentation()); err == nil {
+	if session, err := s.OpenRecordEmbedded(ctx, dir, sealed, "approve", fakePresentation()); err == nil {
 		session.Close()
 		t.Fatal("late native success opened vault")
 	}
@@ -499,7 +489,7 @@ func TestEmbeddedServicePreservesVaultChecksAndPlatformFallback(t *testing.T) {
 	if s.SupportsEmbedded() {
 		t.Fatal("ordinary backend claims embedded support")
 	}
-	session, err := s.OpenEmbedded(context.Background(), dir, "approve", nil)
+	session, err := s.OpenRecordEmbedded(context.Background(), dir, sealed, "approve", nil)
 	if err != nil {
 		t.Fatal("non-embedded platform fallback failed", err)
 	}

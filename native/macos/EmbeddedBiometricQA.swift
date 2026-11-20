@@ -23,12 +23,13 @@ struct EmbeddedBiometricQA {
 
         let sizingIcon = EmbeddedAuthenticationIcon(context: LAContext(), controlSize: .small)
         print("unmounted small icon frame=\(sizingIcon.frame), fitting=\(sizingIcon.fittingSize)")
-        // The production slot must preserve the native 32-point dimensions.
+        // The 40-point footer gives AppKit room to center a native small view.
         let production = EmbeddedAuthenticationSession()
-        production.installPresentation(in: window, context: LAContext(), frame: NSRect(x: 20, y: 30, width: 32, height: 32))
+        production.installPresentation(in: window, context: LAContext(), frame: NSRect(x: 20, y: 30, width: 40, height: 40))
         let productionIcon = content.subviews.compactMap { $0 as? EmbeddedAuthenticationIcon }.first!
         precondition(productionIcon.fittingSize == NSSize(width: 32, height: 32))
         precondition(productionIcon.frame.size == NSSize(width: 32, height: 32))
+        precondition(productionIcon.frame.origin == NSPoint(x: 24, y: 134))
         precondition(productionIcon.bounds.size == NSSize(width: 32, height: 32))
         var productionEvaluations = 0
         let productionGate = EmbeddedAuthenticationStartGate(isReady: { true }, evaluate: {
@@ -38,6 +39,12 @@ struct EmbeddedBiometricQA {
         precondition(productionEvaluations == 1 && !production.presentationIsReady)
         productionGate.cancel()
         production.destroy()
+
+        let clipped = EmbeddedAuthenticationSession()
+        clipped.installPresentation(in: window, context: LAContext(), frame: NSRect(x: 269, y: 30, width: 40, height: 40))
+        precondition(!clipped.validateAuthenticationSize() && content.subviews.isEmpty)
+        precondition(read(clipped)["errorCode"] as? String == "notReady")
+        clipped.destroy()
 
         let undersized = EmbeddedAuthenticationSession()
         undersized.installPresentation(in: window, context: LAContext(), frame: NSRect(x: 20, y: 30, width: 24, height: 24))
@@ -70,10 +77,6 @@ struct EmbeddedBiometricQA {
         precondition(icon.bounds.width == natural.width && icon.bounds.height == natural.height)
         precondition(icon.frame.width <= icon.bounds.width && icon.frame.height <= icon.bounds.height)
         print("small icon fitting=\(natural), frame=\(icon.frame), bounds=\(icon.bounds)")
-        if let bitmap = icon.bitmapImageRepForCachingDisplay(in: icon.bounds) {
-            icon.cacheDisplay(in: icon.bounds, to: bitmap)
-            try bitmap.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "/private/tmp/smallssh-embedded-icon.png"))
-        }
         item.move(NSRect(x: 40, y: 50, width: 36, height: 34))
         precondition(NSRect(x: 40, y: 116, width: 36, height: 34).contains(icon.frame))
         window.close()

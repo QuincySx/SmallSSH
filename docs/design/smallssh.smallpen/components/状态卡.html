@@ -1,7 +1,14 @@
-<sp-component name="状态卡">
-  <div class="flex flex-col gap-space-sm p-space-md w-[220px] bg-subtle rounded-control">
-    <p data-name="标签" class="text-muted type-detail leading-[16]">CPU</p>
-    <p data-name="数值" class="text-text type-title leading-[30]">12.6%</p>
-    <p data-name="说明" class="text-muted type-detail leading-[16]">4 核 · 0.21 / 0.18 / 0.12</p>
+<sp-component name="状态卡" props="密度: 标准 | 紧凑">
+  <div class="flex flex-col gap-metric-gap p-space-sm w-[220px] h-metric-card bg-subtle rounded-control">
+    <div data-name="标签行" class="flex flex-row items-center w-full"><p data-name="标签" class="w-full text-muted type-status-label">CPU</p><p data-name="详情入口" class="w-[14px] text-muted font-icons text-icon-compact leading-[1]"></p></div>
+    <p data-name="数值" class="w-full text-text type-metric">12.6%</p>
+    <div data-name="迷你趋势" class="flex flex-col justify-center w-full h-sparkline">
+      <div data-name="趋势线" class="w-full h-[1px] bg-border"></div>
+    </div>
+    <p data-name="说明" class="w-full text-muted type-status-note">4 核 · 0.21 / 0.18 / 0.12</p>
   </div>
+  <sp-variant when="密度: 紧凑" class="h-metric-compact p-metric-compact-inset gap-metric-compact-gap">
+    <p data-name="数值" class="type-metric-compact"></p>
+    <div data-name="迷你趋势" class="hidden"></div>
+  </sp-variant>
 </sp-component>

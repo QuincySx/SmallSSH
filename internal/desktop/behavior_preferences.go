@@ -20,6 +20,9 @@ type behaviorPreferences struct {
 	IdleLockMinutes    int    `json:"idleLockMinutes"`
 	SessionIdleEnabled *bool  `json:"sessionIdleEnabled"`
 	SessionIdleMinutes int    `json:"sessionIdleMinutes"`
+	// QuickUnlock keeps a system-verification envelope in the local service's
+	// memory after a password unlock; missing means on.
+	QuickUnlock *bool `json:"quickUnlock,omitempty"`
 }
 
 func behaviorEnabled(value *bool) bool { return value == nil || *value }

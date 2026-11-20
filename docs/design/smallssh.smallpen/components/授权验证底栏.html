@@ -1,0 +1,114 @@
+<sp-component name="授权验证底栏" props="状态: 待验证 | 等待验证 | 输入主密码 | 主密码已填 | 密码框验证中; 切换验证: 无 | 有; 系统: Touch ID | Windows Hello | Linux 指纹">
+  <div class="flex flex-col gap-space-xs w-dialog-small h-fit">
+    <div data-name="主密码字段" class="flex flex-col gap-native-field w-full hidden">
+      <p data-name="密码标签" class="type-native-hint text-muted">保险库主密码</p>
+      <div data-name="输入主密码" class="flex flex-row items-center w-full pl-field-inline pr-field-inline h-field rounded-control border border-accent bg-surface">
+        <p data-name="密码占位" class="type-native-copy text-muted flex-1 min-w-0">输入保险库主密码</p>
+        <p data-name="密码掩码" class="type-native-copy text-text flex-1 min-w-0 hidden">••••••••</p>
+        <sp-use data-name="密码显隐" component="隐藏密码图标"></sp-use>
+        <div data-name="密码框系统入口" class="flex flex-row w-fit h-authentication-action items-center shrink-0 mr-[1px] hidden">
+          <div data-name="分隔" class="w-review-divider h-switch-height bg-border shrink-0"></div>
+          <sp-use data-name="密码框系统验证" component="系统验证入口" class="shrink-0"></sp-use>
+          <sp-use data-name="密码框验证中" component="系统验证入口" props="样式: 等待" class="shrink-0 hidden"></sp-use>
+        </div>
+      </div>
+    </div>
+    <div data-name="操作" class="flex flex-row items-center gap-space-sm w-full h-authentication-action">
+      <sp-use data-name="使用主密码" class="shrink-0 hidden" component="按钮" props="样式: 轻量">
+        <p data-name="文字">使用主密码</p>
+      </sp-use>
+      <div data-name="间隔" class="flex-1 min-w-0 h-review-divider"></div>
+      <p data-name="等待提示" class="type-native-hint text-muted w-fit shrink-0 hidden">请将手指放在读取器上</p>
+      <sp-use data-name="拒绝" class="shrink-0" component="按钮" props="样式: 轻量">
+        <p data-name="文字">拒绝</p>
+      </sp-use>
+      <sp-use data-name="系统验证" class="shrink-0" component="系统验证入口" props="样式: 确认"></sp-use>
+      <sp-use data-name="正在验证" class="shrink-0 hidden" component="系统验证入口" props="样式: 等待"></sp-use>
+      <sp-use data-name="允许" class="shrink-0 hidden" component="按钮" props="样式: 主操作">
+        <p data-name="文字">允许</p>
+      </sp-use>
+    </div>
+  </div>
+  <sp-variant when="状态: 待验证; 切换验证: 有">
+    <div data-name="操作"><div data-name="使用主密码" class="shown"></div></div>
+  </sp-variant>
+  <sp-variant when="状态: 等待验证">
+    <div data-name="操作">
+      <div data-name="系统验证" class="hidden"></div>
+      <div data-name="正在验证" class="shown"></div>
+    </div>
+  </sp-variant>
+  <sp-variant when="状态: 等待验证; 切换验证: 有">
+    <div data-name="操作"><div data-name="使用主密码" class="shown"></div></div>
+  </sp-variant>
+  <sp-variant when="状态: 输入主密码">
+    <div data-name="主密码字段" class="shown"></div>
+    <div data-name="操作">
+      <div data-name="系统验证" class="hidden"></div>
+      <div data-name="允许" class="shown opacity-disabled"></div>
+    </div>
+  </sp-variant>
+  <sp-variant when="状态: 输入主密码; 切换验证: 有">
+    <div data-name="主密码字段"><div data-name="输入主密码" class="h-approval-password-with-system pr-0">
+      <div data-name="密码框系统入口" class="shown"></div>
+    </div></div>
+  </sp-variant>
+  <sp-variant when="状态: 主密码已填">
+    <div data-name="主密码字段" class="shown">
+      <div data-name="输入主密码">
+        <p data-name="密码占位" class="hidden"></p>
+        <p data-name="密码掩码" class="shown"></p>
+      </div>
+    </div>
+    <div data-name="操作">
+      <div data-name="系统验证" class="hidden"></div>
+      <div data-name="允许" class="shown"></div>
+    </div>
+  </sp-variant>
+  <sp-variant when="状态: 主密码已填; 切换验证: 有">
+    <div data-name="主密码字段"><div data-name="输入主密码" class="h-approval-password-with-system pr-0">
+      <div data-name="密码框系统入口" class="shown"></div>
+    </div></div>
+  </sp-variant>
+  <sp-variant when="状态: 密码框验证中">
+    <div data-name="主密码字段" class="shown"></div>
+    <div data-name="操作">
+      <div data-name="系统验证" class="hidden"></div>
+      <div data-name="允许" class="shown opacity-disabled"></div>
+    </div>
+  </sp-variant>
+  <sp-variant when="状态: 密码框验证中; 切换验证: 有">
+    <div data-name="主密码字段"><div data-name="输入主密码" class="h-approval-password-with-system pr-0">
+      <div data-name="密码框系统入口" class="shown">
+        <div data-name="密码框系统验证" class="hidden"></div>
+        <div data-name="密码框验证中" class="shown"></div>
+      </div>
+    </div></div>
+  </sp-variant>
+  <sp-variant when="系统: Windows Hello">
+    <div data-name="主密码字段"><div data-name="输入主密码"><div data-name="密码框系统入口">
+      <sp-use data-name="密码框系统验证" props="方式: Windows Hello"></sp-use>
+      <sp-use data-name="密码框验证中" props="方式: Windows Hello; 样式: 等待"></sp-use>
+    </div></div></div>
+    <div data-name="操作">
+      <sp-use data-name="系统验证" props="方式: Windows Hello; 样式: 确认"></sp-use>
+      <sp-use data-name="正在验证" props="方式: Windows Hello; 样式: 等待"></sp-use>
+    </div>
+  </sp-variant>
+  <sp-variant when="状态: 等待验证; 系统: Windows Hello">
+    <div data-name="操作"><p data-name="等待提示" class="shown">请完成 Windows Hello 验证</p></div>
+  </sp-variant>
+  <sp-variant when="系统: Linux 指纹">
+    <div data-name="主密码字段"><div data-name="输入主密码"><div data-name="密码框系统入口">
+      <sp-use data-name="密码框系统验证" props="方式: Linux 指纹"></sp-use>
+      <sp-use data-name="密码框验证中" props="方式: Linux 指纹; 样式: 等待"></sp-use>
+    </div></div></div>
+    <div data-name="操作">
+      <sp-use data-name="系统验证" props="方式: Linux 指纹; 样式: 确认"></sp-use>
+      <sp-use data-name="正在验证" props="方式: Linux 指纹; 样式: 等待"></sp-use>
+    </div>
+  </sp-variant>
+  <sp-variant when="状态: 等待验证; 系统: Linux 指纹">
+    <div data-name="操作"><p data-name="等待提示" class="shown"></p></div>
+  </sp-variant>
+</sp-component>

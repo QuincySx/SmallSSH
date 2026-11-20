@@ -46,12 +46,6 @@ func (b *directoryBrowser) indexDirectory(local bool, dir string) {
 		b.indexFiles()
 	}
 }
-func (b *directoryBrowser) indexFiles() {
-	b.filesByName = make(map[string]int, len(b.cache[b.dir]))
-	for i, f := range b.cache[b.dir] {
-		b.filesByName[f.Name] = i
-	}
-}
 func (b *directoryBrowser) treeLocation(local bool) {
 	t := b.treeIndex()
 	clear(t.ancestry)

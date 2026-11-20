@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -40,5 +41,77 @@ func TestUnlockedAfterIdleDoesNotLockImmediately(t *testing.T) {
 	}
 	if !a.idleExpired(unlocked.Add(idleLockAfter), unlocked) {
 		t.Fatal("did not lock after the window was left alone for the whole limit")
+	}
+}
+
+func TestIdleWatchersBelongToEachAppAndStopWithTheirLifetime(t *testing.T) {
+	type fixture struct {
+		app     *app
+		cancel  context.CancelFunc
+		ticks   chan time.Time
+		updates chan func()
+		stopped chan struct{}
+		starts  int
+	}
+	newFixture := func() *fixture {
+		ctx, cancel := context.WithCancel(context.Background())
+		f := &fixture{cancel: cancel, ticks: make(chan time.Time, 1), updates: make(chan func(), 4), stopped: make(chan struct{})}
+		f.app = &app{ctx: ctx, dispatch: func(fn func()) { f.updates <- fn }}
+		t.Cleanup(cancel)
+		return f
+	}
+	first, second := newFixture(), newFixture()
+	start := func(f *fixture) {
+		f.app.watchIdleWithTicker(func() (<-chan time.Time, func()) {
+			f.starts++
+			return f.ticks, func() { close(f.stopped) }
+		})
+	}
+	update := func(f *fixture) func() {
+		t.Helper()
+		f.ticks <- time.Now()
+		select {
+		case fn := <-f.updates:
+			return fn
+		case <-time.After(3 * time.Second):
+			t.Fatal("app did not receive its idle tick")
+			return nil
+		}
+	}
+	start(first)
+	start(first)
+	start(second)
+	if first.starts != 1 || second.starts != 1 {
+		t.Fatal("watcher was shared between apps or started more than once", first.starts, second.starts)
+	}
+	queued := update(first)
+	update(second)()
+	first.cancel()
+	select {
+	case <-first.stopped:
+	case <-time.After(3 * time.Second):
+		t.Fatal("canceled app retained its clock")
+	}
+	first.app.idleUnlockedAt = time.Now()
+	queued()
+	if first.app.idleUnlockedAt.IsZero() {
+		t.Fatal("queued callback changed app state after cancellation")
+	}
+	update(second)()
+	second.cancel()
+	select {
+	case <-second.stopped:
+	case <-time.After(3 * time.Second):
+		t.Fatal("second app retained its clock")
+	}
+}
+
+func TestIdleWatchDoesNotStartWithoutCancelableLifetime(t *testing.T) {
+	for _, ctx := range []context.Context{nil, context.Background()} {
+		a := &app{ctx: ctx}
+		a.watchIdleWithTicker(func() (<-chan time.Time, func()) {
+			t.Fatal("created an idle clock without an app cancellation path")
+			return nil, func() {}
+		})
 	}
 }

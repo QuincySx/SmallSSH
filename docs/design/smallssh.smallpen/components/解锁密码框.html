@@ -1,10 +1,13 @@
 <sp-component name="解锁密码框" props="状态: 普通 | 焦点; 系统验证: 不可用 | 可用">
-  <div class="flex flex-row items-center gap-[8px] px-[10px] w-[340px] h-[44px] bg-surface border border-border rounded-[8px]">
-    <p data-name="占位文字" class="w-full text-muted type-body">输入主密码</p>
-    <p data-name="系统验证入口" class="w-[22px] h-[22px] text-accent hidden font-[SmallSSH_Icons] text-[22px] leading-[1]"></p>
+  <div class="flex flex-row items-center pl-field-inline w-[340px] h-[44px] bg-surface border border-border rounded-control">
+    <p data-name="占位文字" class="flex-1 min-w-0 text-muted type-body">输入主密码</p>
+    <div data-name="系统验证入口" class="flex flex-row items-center w-fit h-authentication-action shrink-0 hidden">
+      <div data-name="分隔线" class="w-review-divider h-menu-icon bg-border shrink-0"></div>
+      <sp-use data-name="Touch ID 验证" component="系统验证入口" class="shrink-0"></sp-use>
+    </div>
   </div>
   <sp-variant when="状态: 焦点" class="border border-accent"></sp-variant>
   <sp-variant when="系统验证: 可用">
-    <p data-name="系统验证入口" class="shown"></p>
+    <div data-name="系统验证入口" class="shown"></div>
   </sp-variant>
 </sp-component>

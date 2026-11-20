@@ -13,6 +13,9 @@ func coreParts(c *ui.Context, core monitor.CPUUsage) []components.MeterPart {
 	if !core.Valid {
 		return nil
 	}
+	if core.BasicOnly {
+		return []components.MeterPart{{Value: core.System, Color: ui.Hex("#ef5350")}, {Value: core.User, Color: ui.Hex("#2bc66d")}}
+	}
 	return []components.MeterPart{{Value: core.System, Color: ui.Hex("#ef5350")}, {Value: core.User, Color: ui.Hex("#2bc66d")}, {Value: core.Guest, Color: ui.Hex("#a855f7")}, {Value: core.Wait, Color: ui.Hex("#f59e0b")}, {Value: core.Steal, Color: ui.Hex("#eab308")}}
 }
 
@@ -29,6 +32,9 @@ func (a *app) coreGrid(c *ui.Context, s *monitor.Stats) {
 			tooltip := tr(c, "等待两次有效采样")
 			if core.Valid {
 				tooltip = fmt.Sprintf(tr(c, "用户 %.1f%% · 系统 %.1f%% · Guest %.1f%% · I/O 等待 %.1f%% · Steal %.1f%%"), core.User, core.System, core.Guest, core.Wait, core.Steal)
+				if core.BasicOnly {
+					tooltip = fmt.Sprintf(tr(c, "用户 %.1f%% · 系统 %.1f%%"), core.User, core.System)
+				}
 			}
 			components.SegmentedMeter(c, coreParts(c, core)).Tooltip(tooltip)
 		})
@@ -45,13 +51,13 @@ func (a *app) coreSummary(c *ui.Context, s *monitor.Stats) {
 	components.Surface(c, tr(c, "核心负载")).Children(func() {
 		sectionTitle(c, tr(c, "各核心负载"))
 		ui.Row(c).FillWidth().Wrap().Gap(12).Children(func() {
-			for _, metric := range []struct {
+			for index, metric := range []struct {
 				name  string
 				v     float64
 				color ui.Color
 			}{{tr(c, "系统"), s.CPUDetail.System, ui.Hex("#ef5350")}, {tr(c, "用户"), s.CPUDetail.User, ui.Hex("#2bc66d")}, {"Guest", s.CPUDetail.Guest, ui.Hex("#a855f7")}, {tr(c, "I/O 等待"), s.CPUDetail.Wait, ui.Hex("#f59e0b")}, {"Steal", s.CPUDetail.Steal, ui.Hex("#eab308")}} {
 				value := "—"
-				if s.CPUDetail.Valid {
+				if s.CPUDetail.Valid && (index < 2 || !s.CPUDetail.BasicOnly) {
 					value = percentText(metric.v)
 				}
 				ui.Text(c, "● "+metric.name+" "+value).FontSize(10).TextColor(metric.color)

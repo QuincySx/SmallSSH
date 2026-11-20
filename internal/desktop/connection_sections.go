@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
 	"sshclient/internal/desktop/components"
 )
 
@@ -20,7 +21,7 @@ type connectionSection struct {
 
 var connectionSections = []connectionSection{
 	{connectionGeneral, "常规", "常规（Normal）", "服务器地址、登录信息与备注", components.WorkspaceIcon, (*app).connectionGeneralForm},
-	{connectionNetwork, "加速与代理", "加速与代理", "选择网络代理或自有 SSH 中转，并比较连接路径。", components.TransfersIcon, (*app).connectionNetworkForm},
+	{connectionNetwork, "加速与代理", "加速与代理", "选择默认代理线路或 SSH 跳板机；右键可临时选用线路。", components.TransfersIcon, (*app).connectionNetworkForm},
 	{connectionTerminal, "终端设置", "终端设置", "字符编码、退格键与 SSH 保活", components.CodeFileIcon, (*app).connectionTerminalForm},
 	{connectionAccess, "访问策略", "访问策略", "设置此服务器的 AI 访问与关键操作保护。", components.ShieldIcon, (*app).connectionPolicyForm},
 }
@@ -42,17 +43,17 @@ func (a *app) connectionForm(c *ui.Context) {
 	}
 	index := connectionSectionIndex(a.connection.section)
 	a.connection.section = connectionSections[index].id
-	sidebarWidth := float32(128)
+	sidebarWidth := design.Length("size-dialog-sidebar")
 	for _, section := range connectionSections {
 		textWidth, _ := c.MeasureText(0, ui.Span{Text: tr(c, section.title), Size: 13})
 		// Sidebar padding, icon slot, text margins.
-		sidebarWidth = max(sidebarWidth, textWidth+12+components.NavigationIconSlotSize+components.NavigationTextGap+8)
+		sidebarWidth = max(sidebarWidth, textWidth+2*(components.DialogSidebarInset+1)+components.NavigationIconSlotSize+components.NavigationTextGap+8)
 	}
 	ui.Row(c).FillWidth().Grow(1).MinHeight(0).Gap(components.SectionGap).Label(tr(c, "连接分类布局")).Children(func() {
-		components.NavigationSidebar(c, "connection-sections", tr(c, "连接分类"), sidebarWidth, false, func() {
+		components.DialogSidebar(c, "connection-sections", tr(c, "连接分类"), sidebarWidth, func() {
 			for i, section := range connectionSections {
 				if components.NavigationIcon(c, "connection-section:"+section.id, tr(c, section.title), section.icon, i == index, false, "").
-					Label(tr(c, "连接分类：") + tr(c, section.title)).Disabled(a.connection.phase != "").Clicked() {
+					Description(tr(c, section.description)).Label(tr(c, "连接分类：") + tr(c, section.title)).Disabled(a.connection.phase != "").Clicked() {
 					index = i
 					a.connection.section, a.connection.focusName = section.id, false
 				}
@@ -62,7 +63,6 @@ func (a *app) connectionForm(c *ui.Context) {
 		c.Key("connection-content:" + section.id)
 		ui.Scroll(c).Grow(1).FillHeight().MinWidth(0).MinHeight(0).TrackScroll(&a.connection.sectionScrolls[index]).Label(tr(c, "连接分类内容")).Children(func() {
 			ui.Column(c).FillWidth().Padding(0, 8, 8, 0).Gap(components.FormGap).Children(func() {
-				ui.Text(c, tr(c, section.description)).FontSize(11).FillWidth().TextColor(c.Theme().TextMuted)
 				ui.Column(c).FillWidth().Disabled(a.connection.phase != "" || (a.connection.pendingNote != nil && section.id != connectionGeneral)).Children(func() { section.render(a, c) })
 			})
 		})
@@ -88,9 +88,12 @@ func (a *app) revealConnectionErrors() {
 			section = connectionTerminal
 		} else if a.form.Auth == "pkcs11" && a.form.Hardware.Validate() != nil {
 			section = connectionGeneral
+		} else if a.connection.errors["policy"] != "" {
+			section = connectionAccess
 		}
 	}
 	if section != "" {
+		a.connection.focusPaths = section == connectionAccess && a.connection.errors["policy"] != ""
 		a.connection.section, a.connection.focusName = section, false
 		a.connection.sectionScrolls[connectionSectionIndex(section)] = ui.ScrollState{}
 	}

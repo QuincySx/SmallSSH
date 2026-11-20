@@ -9,15 +9,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"sshclient/internal/sshconn"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/transfer"
 )
 
-func (a *app) promptDownload(endpoint, dir string, entries []sshconn.File) {
+func (a *app) promptDownload(endpoint, dir string, entries []sshdata.File, selectedRoute ...connectcfg.RouteSelection) {
 	if endpoint == "" || endpoint == localEndpoint || len(entries) == 0 {
 		return
 	}
-	entries = append([]sshconn.File(nil), entries...)
+	entries = append([]sshdata.File(nil), entries...)
+	route := a.fileRoute(endpoint, selectedRoute...)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		a.status = err.Error()
@@ -41,16 +43,31 @@ func (a *app) promptDownload(endpoint, dir string, entries []sshconn.File) {
 				a.status = tr(nil, "请输入本地目标文件夹的完整路径")
 				return
 			}
-			a.queueFileEntries(endpoint, dir, entries, localEndpoint, filepath.Clean(value))
+			a.queueFileEntries(endpoint, dir, entries, localEndpoint, filepath.Clean(value), route)
 		})
 }
 
-func (a *app) queueFileEntries(fromEndpoint, sourceDir string, entries []sshconn.File, toEndpoint, destinationDir string) {
+type fileTransferItem struct {
+	name, source string
+	directory    bool
+}
+
+func (a *app) queueFileEntries(fromEndpoint, sourceDir string, entries []sshdata.File, toEndpoint, destinationDir string, selectedRoute ...connectcfg.RouteSelection) {
 	upload := fromEndpoint == localEndpoint
 	host, direction := fromEndpoint, "download"
 	if upload {
 		host, direction = toEndpoint, "upload"
 	}
+	items := make([]fileTransferItem, 0, len(entries))
+	for _, entry := range entries {
+		source := joinPath(upload, sourceDir, entry.Name)
+		items = append(items, fileTransferItem{name: entry.Name, source: source, directory: entry.Directory})
+	}
+	a.queueFileTransfers(host, direction, destinationDir, a.fileRoute(host, selectedRoute...), items)
+}
+
+func (a *app) queueFileTransfers(host, direction, destinationDir string, route connectcfg.RouteSelection, entries []fileTransferItem) {
+	upload := direction == "upload"
 	endpoint, fingerprint := "", ""
 	for _, profile := range a.connections {
 		if profile.ID == host {
@@ -60,7 +77,6 @@ func (a *app) queueFileEntries(fromEndpoint, sourceDir string, entries []sshconn
 		}
 	}
 	gen, manager, detached := a.generation, a.transfers, a.toolsWindowFocused()
-	entries = append([]sshconn.File(nil), entries...)
 	a.work(func() (func(), error) {
 		if !upload {
 			if endpoint == "" || fingerprint == "" {
@@ -77,21 +93,15 @@ func (a *app) queueFileEntries(fromEndpoint, sourceDir string, entries []sshconn
 		ids := []string{}
 		var failed error
 		for _, entry := range entries {
-			if entry.Name == "" || entry.Name == "." || entry.Name == ".." || strings.ContainsAny(entry.Name, "/\\\x00") {
+			if entry.name == "" || entry.name == "." || entry.name == ".." || strings.ContainsAny(entry.name, "/\\\x00") {
 				failed = errors.New(tr(nil, "文件名称无效"))
 				break
 			}
-			local, remote := filepath.Join(sourceDir, entry.Name), path.Join(destinationDir, entry.Name)
 			var job transfer.Job
 			if upload {
-				if entry.Directory {
-					failed = errors.New(tr(nil, "目录上传尚不支持，请选择普通文件"))
-					break
-				}
-				job, failed = manager.Add(host, direction, local, remote)
+				job, failed = queueUploadFile(manager, host, destinationDir, entry, route)
 			} else {
-				local, remote = filepath.Join(destinationDir, entry.Name), path.Join(sourceDir, entry.Name)
-				job, failed = manager.AddDownload(host, local, remote, endpoint, fingerprint, entry.Directory)
+				job, failed = manager.AddDownload(host, filepath.Join(destinationDir, entry.name), entry.source, endpoint, fingerprint, entry.directory, route)
 			}
 			if failed != nil {
 				break
@@ -113,4 +123,21 @@ func (a *app) queueFileEntries(fromEndpoint, sourceDir string, entries []sshconn
 			}
 		}, nil
 	})
+}
+
+func queueUploadFile(manager *transfer.Manager, host, destination string, item fileTransferItem, route connectcfg.RouteSelection) (transfer.Job, error) {
+	if !filepath.IsAbs(item.source) {
+		return transfer.Job{}, errors.New(tr(nil, "请选择普通文件"))
+	}
+	info, err := os.Lstat(item.source)
+	if err != nil {
+		return transfer.Job{}, err
+	}
+	if item.directory || info.IsDir() {
+		return transfer.Job{}, errors.New(tr(nil, "目录上传尚不支持，请选择普通文件"))
+	}
+	if !info.Mode().IsRegular() {
+		return transfer.Job{}, errors.New(tr(nil, "请选择普通文件"))
+	}
+	return manager.Add(host, "upload", item.source, path.Join(destination, item.name), route)
 }

@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>加速与代理 · 线路库</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" data-flow="共用线路管理" class="flex flex-row p-space-sm gap-space-sm w-[1080px] h-[800px] bg-canvas">
+  <div data-name="设置导航" class="flex flex-col gap-space-sm w-settings-nav shrink-0 h-full px-space-md py-space-sm bg-surface rounded-window-panel">
+      <div data-name="设置窗口" class="flex flex-row items-center gap-space-sm w-full h-control">
+        <p data-name="标题" class="type-section text-text">设置</p>
+      </div>
+      <div data-name="设置分类" class="flex flex-col gap-space-xs w-full">
+        <sp-use data-name="工作区" class="w-full h-control" component="导航项" props="图标: 隐藏; 状态: 普通">
+          <p data-name="标签" class="">工作区</p>
+        </sp-use>
+        <sp-use data-name="安全与解锁" class="w-full h-control" component="导航项" props="图标: 隐藏; 状态: 普通">
+          <p data-name="标签" class="">安全与解锁</p>
+        </sp-use>
+        <sp-use data-name="SSH 密钥" class="w-full h-control" component="导航项" props="图标: 隐藏; 状态: 普通">
+          <p data-name="标签" class="">SSH 密钥</p>
+        </sp-use>
+        <sp-use data-name="加速与代理" class="w-full h-control" component="导航项" props="图标: 隐藏; 状态: 选中">
+          <p data-name="标签" class="">加速与代理</p>
+        </sp-use>
+        <sp-use data-name="运行与后台" class="w-full h-control" component="导航项" props="图标: 隐藏; 状态: 普通">
+          <p data-name="标签" class="">运行与后台</p>
+        </sp-use>
+        <sp-use data-name="授权中心" class="w-full h-control" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/待确认授权">
+          <p data-name="标签" class="">授权中心</p>
+        </sp-use>
+      </div>
+    </div>
+  <div data-name="设置内容" class="flex flex-col gap-space-lg flex-1 min-w-0 h-full p-space-xl bg-surface rounded-window-panel">
+    <div data-name="标题与操作" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="标题" class="type-vaulttitle text-text flex-1">加速与代理</p>
+      <sp-use data-name="新建线路" class="shrink-0" component="按钮" props="样式: 主操作" data-click="11 连接与授权评审/新建线路 · 导入">
+        <p data-name="文字" class="">新建线路</p>
+      </sp-use>
+    </div>
+    <p data-name="生效范围" class="type-native-hint text-muted">这里的线路可供多个连接使用。编辑后，下次连接会使用新配置。</p>
+    <div data-name="共用线路列表" class="flex flex-col w-full px-space-md rounded-window-panel border border-border">
+      <div data-name="日常工作代理" class="flex flex-row items-center gap-space-sm w-full py-space-md">
+        <div data-name="线路信息" class="flex flex-col gap-native-field flex-1 min-w-0">
+          <p data-name="名称" class="type-native-label text-text">日常工作代理</p>
+          <p data-name="类型与地址" class="type-native-hint text-muted">SOCKS5 · 127.0.0.1:1080  ·  3 个连接使用</p>
+        </div>
+        <sp-use data-name="编辑" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/线路 · 编辑代理">
+          <p data-name="文字" class="">编辑</p>
+        </sp-use>
+        <sp-use data-name="删除" class="shrink-0 opacity-disabled" component="按钮" props="样式: 轻量">
+          <p data-name="文字" class="">删除</p>
+        </sp-use>
+      </div>
+      <div data-name="代理与导入分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+      <div data-name="备用代理" class="flex flex-row items-center gap-space-sm w-full py-space-md">
+        <div data-name="线路信息" class="flex flex-col gap-native-field flex-1 min-w-0">
+          <p data-name="名称" class="type-native-label text-text">备用代理</p>
+          <p data-name="类型与地址" class="type-native-hint text-muted">AnyTLS · proxy.example:443  ·  1 个连接使用</p>
+        </div>
+        <sp-use data-name="编辑" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/线路 · 导入节点">
+          <p data-name="文字" class="">编辑</p>
+        </sp-use>
+        <sp-use data-name="删除" class="shrink-0 opacity-disabled" component="按钮" props="样式: 轻量">
+          <p data-name="文字" class="">删除</p>
+        </sp-use>
+      </div>
+      <div data-name="导入与跳板分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+      <div data-name="自有中转" class="flex flex-row items-center gap-space-sm w-full py-space-md">
+        <div data-name="线路信息" class="flex flex-col gap-native-field flex-1 min-w-0">
+          <p data-name="名称" class="type-native-label text-text">自有中转</p>
+          <p data-name="类型与地址" class="type-native-hint text-muted">跳板机 · 未使用</p>
+        </div>
+        <sp-use data-name="编辑" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/线路 · SSH 跳板机">
+          <p data-name="文字" class="">编辑</p>
+        </sp-use>
+        <sp-use data-name="删除" class="shrink-0" component="按钮" props="样式: 轻量" data-click="11 连接与授权评审/线路 · 删除确认">
+          <p data-name="文字" class="text-danger">删除</p>
+        </sp-use>
+      </div>
+    </div>
+    <p data-name="删除条件" class="type-native-hint text-muted">先解除连接引用，才能删除已被使用的线路。</p>
+  </div>
+</body>
+</html>

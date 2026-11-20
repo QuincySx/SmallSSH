@@ -1,0 +1,13 @@
+<sp-component name="配对码核对" props="密度: 标准 | 紧凑">
+  <div class="flex flex-row items-center gap-space-sm w-authorization-prompt px-space-md py-space-sm bg-native-pairing border border-native-pairing-border rounded-control">
+    <div data-name="核对" class="flex flex-col gap-native-field flex-1 min-w-0">
+      <p data-name="标签" class="type-native-hint text-muted shrink-0">配对码</p>
+      <p data-name="配对值" class="text-approval-pairing-value font-bold text-text">139e 3940 e64b 5491</p>
+    </div>
+    <p data-name="提示" class="type-native-hint text-muted">与申请端一致再允许</p>
+  </div>
+  <sp-variant when="密度: 紧凑" class="px-space-sm py-space-xs">
+    <div data-name="核对" class="flex-row items-center"></div>
+    <p data-name="提示" class="hidden"></p>
+  </sp-variant>
+</sp-component>

@@ -5,13 +5,13 @@
   <title>页面地图 7</title>
   <link rel="stylesheet" href="../../tokens.css">
 </head>
-<body class="flex flex-col w-[1400px] h-[1200px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+<body class="flex flex-col w-[1400px] h-fit bg-canvas">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-fit bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="待实现；曾有离线视觉原型" class="flex flex-col gap-[12px] w-full">
+    <div data-name="待实现；曾有离线视觉原型" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">待实现；曾有离线视觉原型</p>
-      <div data-name="planned-server-key" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="planned-server-key" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">安装登录公钥向导</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：需求：服务器安全与密钥入口</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：计划选择专用软件/硬件身份、安装公钥、独立验证</p>
@@ -21,9 +21,9 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：10 待实现 / 登录公钥安装</p>
       </div>
     </div>
-    <div data-name="待实现" class="flex flex-col gap-[12px] w-full">
+    <div data-name="待实现" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">待实现</p>
-      <div data-name="planned-migration" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="planned-migration" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">导入导出与加密备份</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：需求：配置迁移</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：计划来源选择、预览、冲突处理、恢复验证</p>
@@ -32,14 +32,35 @@
         <p data-name="源码" class="w-full text-muted type-detail">源码：docs/REQUIREMENTS.md §导入 / 导出与本地加密备份</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：10 待实现 / 配置迁移与备份</p>
       </div>
-      <div data-name="planned-terminal-extras" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="planned-terminal-extras" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">终端增强与其他连接</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：需求：终端工具/连接类型</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：计划tmux会话、串口、远程桌面及更完整变量体系</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：计划tmux会话、串口、RDP远程桌面及更完整变量体系</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：待实现</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：不要把现有PTY、SSH保活或参数历史误称上述功能</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不要把现有PTY、SSH保活或参数历史误称上述功能；命令末尾回车选择仍未提供</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：docs/REQUIREMENTS.md §tmux、串口、剪贴板与连接恢复</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：10 待实现 / 终端增强与完整变量</p>
+      </div>
+    </div>
+    <div data-name="VNC 标签与全屏" class="flex flex-col gap-space-md w-full">
+      <p data-name="标题" class="w-full text-text type-section">VNC 标签与全屏</p>
+      <div data-name="vnc" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-detail">名称：VNC 远程桌面（noVNC）</p>
+        <p data-name="入口" class="w-full text-text type-detail">入口：服务器右键 → VNC 远程桌面…</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：直连或SSH通道；预填服务器主机，端口独立输入默认5900；协商后按需登录；右侧全部图标直显，只有放不下才显示⋯；Ctrl/Alt/Shift/Win按住切换、常用按键直发；剪贴板双图标；收纳菜单仅放溢出的操作；同连接全屏</p>
+        <p data-name="状态" class="w-full text-text type-detail">状态：直连/SSH、IP/端口校验、按需VNC登录、无认证、身份核对、已连接、右侧栏收纳/恢复、菜单与按键互斥、修饰键按住/自动松开、剪贴板原生接收/发送、Unicode/旧式编码、只读禁用、密码失败、服务不可达、断开、取消、锁定</p>
+        <p data-name="边界" class="w-full text-text type-detail">边界：服务器需已有兼容VNC服务或控制台，主机默认当前服务器、端口5900；直连不使用SSH或代理，SSH方式复用保存配置；最多8个桌面；密码可加密保存、自动填入与清除；基础RFB亦可发送组合键，动作由远端决定；不安装远端软件，不含RDP/图片文件剪贴板/系统剪贴板自动同步</p>
+        <p data-name="源码" class="w-full text-text type-detail">源码：internal/desktop/vnc.go; internal/desktop/connection_rail.go; internal/vncview/server.go; internal/vncview/web/viewer.js</p>
+        <sp-use component="按钮" props="样式: 普通" data-name="查看 VNC 连接" data-click="09 工具/VNC 远程桌面连接"><p data-name="文字">查看 VNC 连接</p></sp-use>
+<sp-use component="按钮" props="样式: 普通" data-name="查看 VNC 收纳状态" data-click="09 工具/VNC 工具栏收纳"><p data-name="文字">查看收纳状态</p></sp-use>
+      </div>
+    </div>
+    <div data-name="两类授权" class="flex flex-col gap-space-sm w-full h-fit"><p data-name="标题" class="w-full text-text type-section">密钥使用与服务器操作</p><p data-name="实现状态" class="w-full text-muted type-detail">服务器操作与 macOS 密钥签名均已接入；公钥部署向导待实现。</p><div data-name="查看两类审批" class="flex flex-row gap-space-sm w-full h-fit"><sp-use component="按钮" props="样式: 普通" data-name="查看操作授权" data-click="overlay:08 设置/服务器操作授权; position: center; close-outside"><p data-name="文字">服务器操作授权</p></sp-use><sp-use component="按钮" props="样式: 普通" data-name="查看密钥使用授权" data-click="overlay:08 设置/密钥使用授权; position: center; close-outside"><p data-name="文字">密钥使用授权</p></sp-use></div></div>
+    <div data-name="风险分级授权" class="flex flex-col gap-space-sm w-full h-fit">
+      <p data-name="标题" class="w-full text-text type-section">限时受控与本次操作确认</p>
+      <div data-name="查看受控审批" class="flex flex-row gap-space-sm w-full h-fit">
+        <sp-use component="按钮" props="样式: 普通" data-name="查看限时受控" data-click="overlay:08 设置/限时受控授权; position: center; close-outside"><p data-name="文字">限时受控授权</p></sp-use>
+        <sp-use component="按钮" props="样式: 普通" data-name="查看本次确认" data-click="overlay:08 设置/会话内操作确认; position: center; close-outside"><p data-name="文字">会话内操作确认</p></sp-use>
       </div>
     </div>
   </div>

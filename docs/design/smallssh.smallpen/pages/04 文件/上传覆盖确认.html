@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>上传覆盖确认</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[900px] h-[600px] bg-canvas">
+  <div data-name="模态承载" class="flex flex-col items-center justify-center p-dialog-backdrop w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-space-lg p-space-lg w-[480px] h-fit bg-surface rounded-panel">
+      <p data-name="标题" class="w-full text-text type-section">覆盖远程文件？</p>
+      <p data-name="目标" class="w-full text-muted type-body">Web 生产环境 · /srv/site/index.html</p>
+      <p data-name="提示" class="w-full text-text type-body">远程已有同名文件。覆盖会保留旧副本。</p>
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
+        <sp-use component="按钮" props="样式: 普通" data-name="跳过">
+          <p data-name="文字">跳过</p>
+        </sp-use>
+        <sp-use component="按钮" props="样式: 危险" data-name="覆盖">
+          <p data-name="文字">覆盖</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

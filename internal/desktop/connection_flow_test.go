@@ -48,9 +48,8 @@ func TestConnectionUIValidatesTrustSavesEncryptedAndEditsWithoutSecretReadback(t
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	updates := make(chan func(), 64)
-	a := &app{ctx: ctx, dir: dir, client: client.Client{Dir: dir, Owner: server.Vault}, online: true, server: server, dispatch: func(fn func()) { updates <- fn }}
+	a := &app{ctx: ctx, dir: dir, client: client.Client{Dir: dir, Owner: server.Vault}, online: true, server: testDesktopSession(server), dispatch: func(fn func()) { updates <- fn }}
 	a.newConnection()
-	a.connection.connect = false
 	tt := ui.NewTester(a.connectionView, 820, 1400)
 	if tt.HasText("连接 ID") || tt.HasText("已核对的主机指纹") {
 		t.Fatal("internal setup fields still exposed", tt.Texts())
@@ -95,18 +94,11 @@ func TestConnectionUIValidatesTrustSavesEncryptedAndEditsWithoutSecretReadback(t
 			}
 		}
 	}
-	wait(func() bool { return a.connection.identity != nil || a.connection.phase == "" })
-	if a.connection.identity == nil || fixture.Auths.Load() != 0 {
-		t.Fatal("identity step missing or already authenticated", a.connection.errors)
-	}
-	if !a.connection.review || !tt.HasText("确认服务器身份") || tt.HasText("我已通过可信渠道核对服务器指纹") || tt.HasText("保险库主密码输入") {
-		t.Fatal("identity review is hidden in the form or requires another unlock", tt.Texts())
-	}
-	if err = tt.Click("信任并保存"); err != nil {
-		t.Fatal(err)
+	wait(func() bool { return a.page == 1 || a.connection.phase == "" })
+	if a.prompt.open || fixture.Auths.Load() != 0 || len(a.sessions) != 0 || a.selected != "" {
+		t.Fatal("saving contacted or activated the target")
 	}
 
-	wait(func() bool { return a.page == 1 || a.connection.phase == "" })
 	if a.page != 1 || len(a.connections) != 1 {
 		t.Fatal("save did not return to workspace", a.connection.errors)
 	}
@@ -246,20 +238,24 @@ func TestFirstConnectionPromptsAndRecordsTheHost(t *testing.T) {
 	h := newConnectionFlowHarness(t)
 	h.fillTarget()
 	h.input("服务器密码", h.fixture.Profile().Password)
-	h.click("保存并连接")
-	h.wait(func() bool { return h.a.prompt.open && h.a.connection.identity != nil })
-	if h.a.prompt.title != tr(nil, "首次连接") || len(h.a.connections) != 0 {
-		t.Fatal("the first connection did not ask before saving", h.a.prompt.title, h.a.connections)
+	h.saveOnly()
+	id := h.a.connections[0].ID
+	if h.stored(id).Fingerprint != "" || h.fixture.Auths.Load() != 0 {
+		t.Fatal("save trusted or authenticated the target")
 	}
-	tt := ui.NewTester(h.a.view, 1000, 760)
-	if !tt.HasText("首次连接") || !tt.HasText(h.fixture.Profile().Fingerprint) {
-		t.Fatal("the prompt did not show the observed fingerprint", tt.Texts())
+	h.ui = ui.NewTester(h.a.view, 1000, 760)
+	h.a.openShellForHostAfter(id, true, nil)
+	h.wait(func() bool { return h.a.prompt.open })
+	if h.a.prompt.title != tr(nil, "首次连接") || h.fixture.Auths.Load() != 0 {
+		t.Fatal("credentials sent before confirmation")
 	}
-	if err := tt.Click("信任指纹并连接"); err != nil {
-		t.Fatal(err)
+	h.ui.Frame()
+	if !h.ui.HasText(h.fixture.Profile().Fingerprint) {
+		t.Fatal("fingerprint missing")
 	}
-	h.wait(func() bool { return h.a.page == 1 && len(h.a.sessions) > 0 })
-	if h.a.prompt.open || h.a.connection.review || len(h.a.connections) != 1 || h.a.connections[0].Fingerprint != h.fixture.Profile().Fingerprint {
-		t.Fatal("accepting the first-use prompt did not record the fingerprint", h.a.prompt.open, h.a.connection.review, h.a.connections)
+	h.click("信任指纹并连接")
+	h.wait(func() bool { return readyTerminalCount(h.a) > 0 })
+	if h.a.prompt.open || h.stored(id).Fingerprint != h.fixture.Profile().Fingerprint || h.fixture.Auths.Load() == 0 {
+		t.Fatal("explicit connect did not pin and authenticate", h.a.status)
 	}
 }

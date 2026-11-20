@@ -6,7 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/desktop/components"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 )
 
 // fileMenu lets native menus and the nonmodal list popup use the same action
@@ -103,7 +103,7 @@ type fileContextPopup struct {
 	browser      *directoryBrowser
 	dir          string
 	name         string
-	files        []sshconn.File
+	files        []sshdata.File
 	generation   int
 	online       bool
 	sequence     uint64
@@ -116,11 +116,12 @@ type fileContextPopup struct {
 }
 
 func (a *app) fileContextPopupValid(p *filePane, popup *fileContextPopup) bool {
-	if popup == nil || !popup.open || p.contextPopup != popup || a.generation != popup.generation || a.online != popup.online || p.endpoint != popup.endpoint || p.states[popup.endpoint] != popup.browser {
+	if popup == nil || !popup.open || p.contextPopup != popup || a.generation != popup.generation || a.online != popup.online || p.endpoint != popup.endpoint || p.browser() != popup.browser {
 		return false
 	}
 	b := popup.browser
-	if b.dir != popup.dir || b.seq != popup.sequence || b.loadError[popup.dir] != "" || popup.row < 0 || popup.row >= len(b.cache[popup.dir]) || b.cache[popup.dir][popup.row].Name != popup.name {
+	rows := b.displayedFiles()
+	if b.dir != popup.dir || b.seq != popup.sequence || b.loadError[popup.dir] != "" || popup.row < 0 || popup.row >= len(rows) || rows[popup.row].Name != popup.name {
 		return false
 	}
 	if popup.tool != nil && (!a.online || a.workspaceTools[popup.tool.kind] != popup.tool || popup.tool.source != popup.source) {
@@ -133,7 +134,7 @@ func (a *app) fileContextPopupValid(p *filePane, popup *fileContextPopup) bool {
 		return false
 	}
 	for i, location := range popup.locations {
-		if panes[i] != location.pane || location.pane.endpoint != location.endpoint || location.pane.states[location.endpoint] != location.browser || location.browser.dir != location.dir {
+		if panes[i] != location.pane || location.pane.endpoint != location.endpoint || location.pane.browser() != location.browser || location.browser.dir != location.dir {
 			return false
 		}
 	}
@@ -148,9 +149,9 @@ func (a *app) validateFileContextPopup(p *filePane) {
 	}
 }
 
-func (a *app) fileCellContextMenu(c *ui.Context, cell ui.Element, p *filePane, b *directoryBrowser, dir string, row, col int) {
+func (a *app) fileCellContextMenu(c *ui.Context, cell ui.Element, p *filePane, b *directoryBrowser, dir, name string, row, col int) {
 	tool, generation, online := a.renderingWorkspaceTool, a.generation, a.online
-	endpoint, name := p.endpoint, b.cache[dir][row].Name
+	endpoint := p.endpoint
 	var source *session
 	if tool != nil {
 		source = tool.source
@@ -169,7 +170,7 @@ func (a *app) fileCellContextMenu(c *ui.Context, cell ui.Element, p *filePane, b
 		if event.Button != 1 {
 			return false
 		}
-		if a.generation != generation || a.online != online || p.endpoint != endpoint || p.states[endpoint] != b || b.dir != dir || row >= len(b.cache[dir]) || b.cache[dir][row].Name != name || tool != nil && (!a.online || a.workspaceTools[tool.kind] != tool || tool.source != source) {
+		if a.generation != generation || a.online != online || p.endpoint != endpoint || p.browser() != b || b.dir != dir || row >= len(b.fileRows) || b.fileRows[row].Name != name || tool != nil && (!a.online || a.workspaceTools[tool.kind] != tool || tool.source != source) {
 			return true
 		}
 		for _, pane := range a.allFilePanes() {

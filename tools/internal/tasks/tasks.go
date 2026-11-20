@@ -24,12 +24,19 @@ type task struct {
 
 // tasks is the whole list, in the order `go run ./tools` shows it.
 var tasks = []task{
+	{"archive", "将已打包产物归档到 build/dist，保留权限与符号链接（-platform）", runArchive},
 	{"build", "编译原生组件与各平台 CLI 并打包桌面应用（-platform、-check）", runBuild},
 	{"check", "格式检查、go vet 与测试一次跑完（CI 与本机同一批命令）", runCheck},
 	{"compile", "只编译 Go 代码与 CLI，不启动桌面（-platform、-pkg）", runCompile},
 	{"dev", "静默开发进程：run / status / show / stop（-data-dir）", runDev},
-	{"install", "安装已打包的本机 macOS 应用，保留旧版且不启动", runInstall},
+	{"deps", "显式更新依赖、重建 vendor 并重新应用安全补丁（-update）", runDeps},
+	{"install", "安装已打包的本机 macOS 应用，替换后清理旧版且不启动", runInstall},
+	{"identity-qa", "编译原生 SSH 签名模块并运行纯授权状态检查，不访问钥匙串或弹窗", runIdentityQA},
+	{"proxy-probe", "隔离编译代理出站探针，记录耗时与体积，不启动产物（-platform）", runProxyProbe},
+	{"security", "使用固定 govulncheck 检查可达漏洞（-pkg、-binary）", runSecurity},
+	{"service", "只读核验本机后台身份与状态，不解锁（-executable、-data-dir）", runService},
 	{"test", "只跑 go vet 与测试（-race、-short、-pkg、-run、-timeout）", runTest},
+	{"ui-review", "将离线 PNG 或 SmallPen view JSON 汇成带索引的评审联系表，不打开窗口", runUIReview},
 }
 
 // Main runs the task this command owns. A tool with no fixed name is the front

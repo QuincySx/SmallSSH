@@ -6,17 +6,17 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[960px] h-[660px] bg-canvas">
-  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
-    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
-      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+  <div data-name="模态承载" class="flex flex-col items-center justify-center gap-space-sm p-dialog-backdrop w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-space-lg p-space-lg w-[560px] h-fit bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-space-sm w-full">
         <p data-name="标题文字" class="w-full text-text type-section">服务器备注</p>
         <sp-use component="图标按钮" data-name="关闭弹窗">
           <p data-name="图标"></p>
         </sp-use>
       </div>
-      <div data-name="备注内容" class="flex flex-col gap-[8px] w-full">
+      <div data-name="备注内容" class="flex flex-col gap-space-sm w-full">
         <p data-name="目标" class="w-full text-text type-section">Web 生产环境</p>
-        <div data-name="字段 维护备注" class="flex flex-row items-center gap-[8px] w-full">
+        <div data-name="字段 维护备注" class="flex flex-row items-center gap-space-sm w-full">
           <p data-name="标签" class="w-[116px] text-text type-body">维护备注</p>
           <sp-use component="输入框" data-name="值" class="w-full">
             <p data-name="值">前端与静态资源节点，发布前先备份配置。</p>
@@ -27,7 +27,7 @@
         </sp-use>
         <p data-name="自动概览" class="w-full text-muted type-body">nginx · example.test · 最近检测成功</p>
       </div>
-      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
         <sp-use component="按钮" props="样式: 普通" data-name="取消">
           <p data-name="文字">取消</p>
         </sp-use>

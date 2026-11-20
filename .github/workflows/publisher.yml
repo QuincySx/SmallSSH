@@ -28,6 +28,8 @@ jobs:
   publish:
     name: publish
     runs-on: macos-26
+    env:
+      SMALLSSH_PLATFORM: ${{ inputs.platform }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -35,20 +37,11 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: go run ./tools build
-        run: go run ./tools build -platform "${{ inputs.platform }}"
+        run: go run ./tools build -platform "$SMALLSSH_PLATFORM"
       - name: One tarball per platform
-        run: |
-          mkdir -p dist
-          # Only the targets tools build produces: arch names, never a stray
-          # directory a previous step left in build/.
-          for dir in build/*-amd64/ build/*-arm64/; do
-            [ -d "$dir" ] || continue
-            name=$(basename "$dir")
-            tar -czf "dist/smallssh-$name.tar.gz" -C "$dir" .
-          done
-          ls -l dist
+        run: go run ./tools archive -platform "$SMALLSSH_PLATFORM"
       - uses: actions/upload-artifact@v7
         with:
           name: smallssh-dist
-          path: dist/*.tar.gz
+          path: build/dist/*.tar.gz
           retention-days: 7

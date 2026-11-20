@@ -253,12 +253,13 @@ final class EmbeddedAuthenticationSession {
     // view's frame during layout, so the assigned slot must fit it as well.
     func validateAuthenticationSize() -> Bool {
         precondition(Thread.isMainThread)
-        guard let view = icon, let slot = slotSize else { return false }
+        guard let view = icon, let slot = slotSize, let content = view.superview else { return false }
         view.layoutSubtreeIfNeeded()
         let natural = view.fittingSize
         guard natural.width > 0, natural.height > 0,
               slot.width >= natural.width, slot.height >= natural.height,
-              view.frame.width >= natural.width, view.frame.height >= natural.height else {
+              view.frame.width >= natural.width, view.frame.height >= natural.height,
+              content.bounds.contains(view.frame) else {
             fail(.notReady, message: "Touch ID 图标空间不足，请调整窗口后点击指纹重试或使用密码解锁")
             return false
         }

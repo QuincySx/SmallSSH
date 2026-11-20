@@ -15,6 +15,7 @@ import (
 	"sort"
 	"sshclient/internal/desktop/components"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,14 +24,15 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/desktopcontrol"
 	"sshclient/internal/localipc"
 	"sshclient/internal/monitor"
+	"sshclient/internal/protocol"
 	"sshclient/internal/servernotes"
 	"sshclient/internal/snippet"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/systemauth"
 	"sshclient/internal/transfer"
 	"sshclient/internal/vault"
@@ -66,7 +68,12 @@ type terminalOpenRequest struct {
 }
 
 type app struct {
+	routes                                                        []vault.RouteSummary
+	routeError                                                    string
 	tunnels                                                       tunnelManager
+	vnc                                                           vncManager
+	newVNCWindow                                                  toolsWindowFactory
+	newVNCView                                                    func(mygo.WebViewOptions) (vncEmbeddedView, error)
 	startup                                                       startupState
 	presence                                                      presenceState
 	connection                                                    connectionEditor
@@ -80,6 +87,8 @@ type app struct {
 	fileExpanded, editShown, editLocal                            bool
 	toolsHidden, toolsRight                                       bool
 	workspaceCanvas                                               bool
+	revealedWorkspaceTab                                          workspaceTab
+	workspaceHeaderTabsWidth                                      float32
 	toolsEdge                                                     string
 	toolsLayoutOpen                                               bool
 	settingsSection                                               string
@@ -135,12 +144,23 @@ type app struct {
 	approvalHistory                          approvalHistoryState
 	auth                                     *systemauth.Service
 	authStatus                               systemauth.Status
+	quickUnlock                              quickUnlockStore // nil: the local service; tests substitute
+	legacyAuthChecked                        bool
+	identities                               identitySettingsState
 	transfers                                *transfer.Manager
 	jobs                                     []transfer.Job
 	dockerJobs                               []*dockerJob
 	activityTab                              int
+	activityHistory                          [2]int
+	transferHistoryBusy                      bool
+	transferHistoryError                     string
+	transferCancelling                       map[string]bool
+	uploadConflicts                          []uploadConflict
+	transferJobsVersion                      atomic.Uint64
 	transfersOpen                            bool
 	connections                              []vault.Summary
+	connectionOrderVersion                   atomic.Uint64
+	pollWake                                 chan struct{}
 	search                                   string
 	groups                                   map[string]*bool
 	connectionRailList                       ui.ListState
@@ -157,7 +177,7 @@ type app struct {
 	win                           *mygo.Window
 	dir                           string
 	client                        client.Client
-	server                        *broker.Server
+	server                        *desktopSession
 	ctx                           context.Context
 	cancel                        context.CancelFunc
 	sessionCtx                    context.Context
@@ -165,7 +185,9 @@ type app struct {
 	online, busy, create          bool
 	generation                    int
 	epoch                         atomic.Uint64
-	queryOwner                    atomic.Pointer[vault.Session]
+	queryOwner                    atomic.Pointer[desktopSession]
+	unlockService                 client.ServiceClient
+	lastUnlockNotice              time.Time
 	pass, confirm, status         string
 	unlockError                   string
 	unlockState                   *unlockState
@@ -186,7 +208,8 @@ type app struct {
 	mainWindowReady               bool
 	applicationActive             bool
 	// zoom is the main window's content zoom; 0 means unset, which draws at 100%.
-	zoom float32
+	zoom      float32
+	idleWatch sync.Once
 	// idleUnlockedAt is when this unlock began, used by the idle lock. It belongs
 	// to the UI thread.
 	idleUnlockedAt                time.Time
@@ -209,11 +232,12 @@ type app struct {
 	active                        int
 	contentFocus                  bool
 	remotePath, localFile, saveAs string
-	files                         []sshconn.File
+	files                         []sshdata.File
 	edit                          *editor.State
 	editorSaving                  *editor.State
 	editPath                      string
 	editHash, editHost            string
+	editRoute                     connectcfg.RouteSelection
 	approvalWin                   *mygo.Window
 	approvalID                    string
 	approvalNonce                 string
@@ -230,6 +254,7 @@ func Run(dir string) error {
 func RunWithOptions(dir string, opts Options) error {
 	a := &app{dir: dir, client: client.Client{Dir: dir}, remotePath: "/", port: "22", form: vault.Profile{Port: 22, Auth: "password"}, edit: &editor.State{Buffer: editor.NewBuffer("")}}
 	defer a.destroyPresence()
+	a.pollWake = make(chan struct{}, 1)
 	a.startup = newStartup(opts.Background)
 	mygo.App.SetActivationPolicy(a.startup.policy())
 	a.notified = make(map[string]bool)
@@ -243,7 +268,7 @@ func RunWithOptions(dir string, opts Options) error {
 	a.loadLayout()
 	a.loadBehavior()
 	a.transfers = transfer.New(dir)
-	a.create = !broker.Exists(dir)
+	a.create = !vault.Exists(dir)
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	defer a.cancel()
 	// Cmd-Q stops the run loop instead of closing the window, so this is the only
@@ -289,6 +314,16 @@ func RunWithOptions(dir string, opts Options) error {
 		mygo.Power.OnSuspend(func() { a.lock() })
 		a.auth = systemauth.New(a.win.NativeHandle())
 		a.refreshAuth()
+		if local, err := client.NewLocalService(a.dir); err == nil {
+			a.unlockService = local.Client()
+			if !a.create && !opts.Background {
+				go func() {
+					ctx, cancel := context.WithTimeout(a.ctx, 12*time.Second)
+					defer cancel()
+					_ = local.Ensure(ctx)
+				}()
+			}
+		}
 		if opts.Background {
 			control, startupErr = desktopcontrol.Start(a.ctx, a.dir, a.handleDesktopControl)
 			if startupErr != nil {
@@ -333,6 +368,8 @@ func (a *app) refreshLanguage() {
 }
 
 func (a *app) shutdown() {
+	a.closeVNCs()
+	a.closeTunnels()
 	a.destroyPresence()
 	a.approvalTerms, a.approvalAutoAttempted = nil, nil
 	a.cancelEditorRead()
@@ -384,6 +421,9 @@ func (a *app) isActive() bool {
 }
 
 func (a *app) lock() {
+	a.closeVNCs()
+	a.closeTunnels()
+	a.idleUnlockedAt = time.Time{}
 	a.approvalTerms, a.approvalAutoAttempted = nil, nil
 	a.cancelEditorRead()
 	a.closeEditorWindow()
@@ -420,6 +460,8 @@ func (a *app) lock() {
 		a.transfers.PauseAll()
 	}
 	a.connections = nil
+	a.routes = nil
+	a.routeError = ""
 	a.connectionRailCache = connectionRailModel{}
 	a.connectionRailList = ui.ListState{}
 	a.details = nil
@@ -460,6 +502,11 @@ func (a *app) lock() {
 	a.snippetOpen = false
 	a.formNote, a.formNoteOriginal = vault.ServerNote{}, vault.ServerNote{}
 	a.transfersOpen = false
+	a.activityHistory = [2]int{}
+	a.transferHistoryBusy, a.transferHistoryError = false, ""
+	a.transferCancelling = nil
+	a.uploadConflicts = nil
+	a.transferJobsVersion.Add(1)
 	a.toolsLayoutOpen = false
 	a.toolsHidden = false
 	a.diagnosticTab = 0
@@ -486,17 +533,30 @@ func (a *app) lock() {
 	a.server = nil
 	lockStatus := tr(nil, "已锁定，连接与授权已撤销")
 	if s != nil {
-		// The closing audit record and its anchor must be written before the
-		// signing key goes away: a sealed vault cannot be saved again, and an
-		// anchor left behind would make the history look rewritten next time.
-		if e := s.SealAudit(); e != nil {
-			lockStatus = tr(nil, "已锁定，连接与授权已撤销；审计锚点未写入")
-		}
-		// Revoke the in-process signing key before asynchronous network cleanup.
-		s.Vault.Close()
+		s.revoke()
+		lockStatus = tr(nil, "正在锁定连接服务…")
+		expected, gen := lockStatus, a.generation
 		done := make(chan struct{})
 		a.unlockCleanup = done
-		go func() { defer close(done); s.Close() }()
+		go func() {
+			defer close(done)
+			err := s.Lock()
+			a.postUI(func() {
+				if !a.online && a.generation == gen && a.status == expected {
+					if err == nil {
+						a.status = tr(nil, "已锁定，连接与授权已撤销")
+					} else {
+						a.status = tr(nil, "界面已锁定，连接服务未确认锁定")
+						a.unlockError = a.status
+					}
+				}
+				// The lock screen offers quick unlock only if the service
+				// still holds this executable's envelope.
+				if !a.online && a.generation == gen {
+					a.refreshAuth()
+				}
+			})
+		}()
 	}
 	a.status = lockStatus
 	if a.win != nil {
@@ -544,6 +604,7 @@ func (a *app) unlock() {
 	create := a.create
 	gen := a.generation
 	dir := a.dir
+	seal := a.quickUnlockSealer() // a new vault is opened with its password
 	a.pass = ""
 	a.confirm = ""
 	a.work(func() (func(), error) {
@@ -558,7 +619,7 @@ func (a *app) unlock() {
 			}
 			v, e := vault.New(pass)
 			if e == nil {
-				e = vault.Save(broker.VaultPath(dir), v, true)
+				e = vault.Save(vault.Path(dir), v, true)
 				v.Close()
 			}
 			release()
@@ -566,16 +627,21 @@ func (a *app) unlock() {
 				return nil, e
 			}
 		}
-		s, e := broker.Open(dir, pass)
+		source, e := vault.Read(vault.Path(dir), pass)
+		if e != nil {
+			return nil, e
+		}
+		s, e := openDesktopSession(a.ctx, dir, source, seal)
 		if e != nil {
 			return nil, e
 		}
 		return func() {
 			if gen != a.generation || a.ctx.Err() != nil {
-				go s.Close()
+				go s.Abandon()
 				return
 			}
 			a.server = s
+			a.client.BrokerKey = s.PublicKeyPin()
 			a.online = true
 			a.page = 1
 			a.create = false
@@ -590,73 +656,84 @@ func (a *app) unlock() {
 func (a *app) poll() {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
+	var reader *client.ServiceStatusReader
+	defer func() { reader.Close() }()
 	for {
 		select {
 		case <-a.ctx.Done():
 			return
 		case <-t.C:
-			epoch := a.epoch.Load()
-			owner := a.queryOwner.Load()
-			if owner == nil {
-				continue
-			}
-			ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
-			h, e := a.client.CallWithOwner(ctx, broker.Message{Action: "hosts"}, owner)
-			p, e2 := a.client.CallWithOwner(ctx, broker.Message{Action: "pending"}, owner)
-			cancel()
-			if e != nil || e2 != nil {
-				continue
-			}
-			var jobs []transfer.Job
-			if a.transfers != nil {
-				jobs = a.transfers.List()
-			}
-			sort.Slice(p.Requests, func(i, j int) bool { return p.Requests[i].Expires.Before(p.Requests[j].Expires) })
-			a.postUI(func() {
-				if !a.online || a.epoch.Load() != epoch {
-					return
-				}
-				a.hosts = h.Hosts
-				a.connections = h.Connections
-				a.jobs = jobs
-				a.requests = p.Requests
-				a.pruneApprovalTerms()
-				if a.approvalCenterVisible() && a.approvalTab == 2 {
-					a.refreshApprovalHistoryIfDue()
-				}
-				if a.approvalWin != nil {
-					pending := false
-					var current approval.Request
-					for _, r := range p.Requests {
-						if r.ID == a.approvalID && r.Nonce == a.approvalNonce && r.Status == "pending" {
-							pending, current = true, r
-						}
-					}
-					if !pending {
-						old := a.approvalWin
-						a.approvalWin = nil
-						a.approvalID, a.approvalNonce = "", ""
-						old.Close()
-					} else {
-						a.approvalWin.SetTitle(a.approvalWindowTitle(current))
-					}
-				}
-				if r, ok := a.nextApprovalPopup(time.Now()); ok {
-					a.showApproval(r)
-				}
-				if a.selected == "" && len(a.hosts) > 0 {
-					a.switchHost(hostID(a.hosts[0]))
-				}
-				if a.selectedRequest == "" {
-					for _, r := range a.requests {
-						if r.Status == "pending" {
-							a.selectedRequest = r.ID
-							break
-						}
-					}
-				}
-			})
+		case <-a.pollWake:
 		}
+		epoch := a.epoch.Load()
+		owner := a.queryOwner.Load()
+		if owner == nil {
+			reader = a.pollUnlockNotice(epoch, reader)
+			continue
+		}
+		reader.Close()
+		reader = nil
+		ctx, cancel := context.WithTimeout(a.ctx, 2*time.Second)
+		cli := client.Client{Dir: a.dir, BrokerKey: owner.PublicKeyPin()}
+		orderVersion := a.connectionOrderVersion.Load()
+		h, e := cli.CallWithOwner(ctx, protocol.Message{Action: "hosts"}, owner)
+		a.postUI(func() { a.applyConnectionSnapshot(epoch, orderVersion, h, e) })
+
+		p, err := cli.CallWithOwner(ctx, protocol.Message{Action: "pending"}, owner)
+		cancel()
+		if err != nil {
+			continue
+		}
+		var jobs []transfer.Job
+		jobsVersion := a.transferJobsVersion.Load()
+		if a.transfers != nil {
+			jobs = a.transfers.List()
+		}
+		sort.Slice(p.Requests, func(i, j int) bool { return p.Requests[i].Expires.Before(p.Requests[j].Expires) })
+		a.postUI(func() {
+			if !a.online || a.epoch.Load() != epoch {
+				return
+			}
+			if a.transferJobsVersion.Load() == jobsVersion {
+				a.jobs = jobs
+			}
+			a.requests = p.Requests
+			a.pruneApprovalTerms()
+			if a.approvalCenterVisible() && a.approvalTab == 2 {
+				a.refreshApprovalHistoryIfDue()
+			}
+			if a.approvalCenterVisible() && a.approvalTab == 1 && !a.identities.busy && time.Since(a.identities.lastAttempt) > 10*time.Second {
+				a.refreshIdentities(nil)
+			}
+			if a.approvalWin != nil {
+				pending := false
+				var current approval.Request
+				for _, r := range p.Requests {
+					if r.ID == a.approvalID && r.Nonce == a.approvalNonce && r.Status == "pending" {
+						pending, current = true, r
+					}
+				}
+				if !pending {
+					old := a.approvalWin
+					a.approvalWin = nil
+					a.approvalID, a.approvalNonce = "", ""
+					old.Close()
+				} else {
+					a.approvalWin.SetTitle(a.approvalWindowTitle(current))
+				}
+			}
+			if r, ok := a.nextApprovalPopup(time.Now()); ok {
+				a.showApproval(r)
+			}
+			if a.selectedRequest == "" {
+				for _, r := range a.requests {
+					if r.Status == "pending" {
+						a.selectedRequest = r.ID
+						break
+					}
+				}
+			}
+		})
 	}
 }
 func hostID(s string) string { return strings.SplitN(s, " · ", 2)[0] }
@@ -677,8 +754,17 @@ func (a *app) view(c *ui.Context) {
 	defer a.queueInlineApproval()
 	defer a.publishToolsState()
 	components.ApplyTheme(c, !a.online)
+	if a.online && a.vnc.fullscreen != nil && a.vnc.fullscreen.view != nil {
+		ui.WebView(c, a.vnc.fullscreen.view).Fill().Label(tr(c, "VNC 远程桌面内容"))
+		return
+	}
 	t := c.Theme()
-	ui.Column(c).Fill().Background(t.Background).Children(func() {
+	ui.Column(c).Fill().Background(t.Background).Draw(func(p *ui.Painter, r ui.Rect) {
+		if a.online && a.workspaceNavigationPage() == 1 {
+			inset := components.WorkspaceInset
+			p.Fill(ui.Rect{X: r.X + inset, Y: r.Y + inset, W: components.SidebarWidth(c, a.sidebarWidth, a.sidebarHidden), H: max(0, r.H-2*inset)}, t.Surface, components.PanelRadius)
+		}
+	}).Children(func() {
 
 		if !a.online {
 			lockedWindowChrome(c)
@@ -690,15 +776,16 @@ func (a *app) view(c *ui.Context) {
 		if a.online {
 			a.workspaceStatusNotice(c)
 		}
-		if a.online && a.page == 0 {
+		if a.online && a.page == 0 && !(a.prompt.open && a.prompt.connectionIdentity) {
 			a.connectionView(c)
 		}
-		a.promptForHost(c, dialogHostMain)
 		if !a.snippetDetached || !a.toolsDetached || a.toolsHidden {
 			a.snippetDialog(c)
 		}
 		a.tunnelsView(c)
+		a.vncDialog(c)
 		a.serverNotesDialog(c)
+		a.promptForHost(c, dialogHostMain)
 	})
 }
 func field(c *ui.Context, label string, value *string, secret bool) {
@@ -711,25 +798,49 @@ func field(c *ui.Context, label string, value *string, secret bool) {
 	})
 }
 
-// Human gestures use the in-process unlocked session. AI/CLI requests never
+// Human gestures use the process-bound owner capability. External requests never
 // enter this path and retain separate fresh verification.
 func (a *app) operationContext() context.Context {
+	ctx := context.Background()
 	if a.sessionCtx != nil {
-		return a.sessionCtx
+		ctx = a.sessionCtx
+	} else if a.ctx != nil {
+		ctx = a.ctx
 	}
-	if a.ctx != nil {
-		return a.ctx
+	if source := a.serverStateSession(); source != nil {
+		ctx = client.WithRoute(ctx, source.host, source.target.Route)
 	}
-	return context.Background()
+	return ctx
 }
 func (a *app) startUnlockedSession() {
+	a.idleUnlockedAt = time.Now()
 	if a.server != nil {
-		a.queryOwner.Store(a.server.Vault)
+		a.connectionRailCache.loading = true
+		a.queryOwner.Store(a.server)
+		a.wakePoll()
 	}
 	if a.sessionCancel != nil {
 		a.sessionCancel()
 	}
 	a.sessionCtx, a.sessionCancel = context.WithCancel(a.ctx)
+	if server := a.server; server != nil && server.done != nil {
+		ctx, gen := a.sessionCtx, a.generation
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-server.done:
+			}
+			a.postUI(func() {
+				if a.server == server && a.generation == gen {
+					a.lock()
+					a.status = tr(nil, "连接服务会话已结束，请重新解锁")
+					a.unlockError = a.status
+				}
+			})
+		}()
+	}
+
 }
 func (a *app) begin(op approval.Operation, execute func(*client.Stream) (func(), error)) {
 	a.beginContext(a.operationContext(), op, execute, nil)
@@ -782,9 +893,19 @@ func (a *app) openShellAfter(force bool, opened func(*session)) {
 	a.openShellForHostAfter(a.selected, force, opened)
 }
 
-func (a *app) openShellForHostAfter(host string, force bool, opened func(*session)) {
+func (a *app) openShellForHostAfter(host string, force bool, opened func(*session), route ...connectcfg.RouteSelection) {
 	a.filesTabSelected = false
 	a.ensureTerminalGroups()
+	if len(route) != 0 && route[0].Temporary() {
+		if _, err := a.unlockedOwner(); err != nil {
+			a.status = err.Error()
+			return
+		}
+		pending := a.reserveTerminal(host, a.activeTerminalGroup, opened == nil)
+		pending.target.Route = route[0]
+		a.openShellInGroup(host, true, pending.group, opened, pending)
+		return
+	}
 	a.openShellInGroup(host, force, a.activeTerminalGroup, opened)
 }
 
@@ -792,7 +913,7 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 	var replace *session
 	if !force {
 		for _, s := range a.sessions {
-			if s.host == host && s.target.Kind != "docker-terminal" {
+			if s.host == host && s.target.Kind != "docker-terminal" && !s.target.Route.Temporary() {
 				if !s.closed {
 					a.page = 1
 					a.activateTerminal(s, true)
@@ -845,7 +966,7 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 		return
 	}
 	pending.connectionState, pending.connectionError, pending.closed = "connecting", "", false
-	ctx, cancel := context.WithCancel(a.operationContext())
+	ctx, cancel := context.WithCancel(client.WithRoute(a.operationContext(), host, pending.target.Route))
 	pending.connectionCancel = cancel
 	gen, cli := a.generation, a.client
 	if a.connecting == nil {
@@ -858,6 +979,18 @@ func (a *app) openShellInGroup(host string, force bool, targetGroup *terminalGro
 		a.failPendingTerminals(host, tr(nil, "连接已取消"))
 	}
 	a.status = tr(nil, "正在连接 ") + a.hostName(host) + "…"
+	var target vault.Summary
+	for _, profile := range a.connections {
+		if profile.ID == host {
+			target = profile
+			break
+		}
+	}
+	steps, trustErr := a.connectionTrustPlan(host, pending.target.Route)
+	if target.ID != "" && (trustErr != nil || len(steps) > 0) {
+		a.readFirstHostIdentity(ctx, target, pending, opened, gen)
+		return
+	}
 	go func() {
 		stream, err := cli.ConnectWithOwner(ctx, host, owner)
 		a.postUI(func() {
@@ -964,7 +1097,7 @@ func (a *app) attachTerminalInGroup(stream *client.Stream, host string, finish c
 		OnMonitorError: func(message string) { a.updateServerStatus(sess, gen, nil, message) },
 	}
 	lightColors, darkColors := workspaceTerminalColors()
-	term, e := terminal.New(terminal.Options{Conn: conn, Theme: lightColors, DarkTheme: darkColors, Scrollback: 32 << 20, OptionAsAlt: true, ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
+	term, e := terminal.New(terminal.Options{Conn: conn, Theme: lightColors, DarkTheme: darkColors, Padding: workspaceTerminalPadding(), Scrollback: 32 << 20, OptionAsAlt: true, ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
 	if e != nil {
 		stream.Close()
 		a.status = e.Error()
@@ -1057,7 +1190,17 @@ func (a *app) decide(id string, allow, revoke bool) {
 		} else {
 			e = cli.DecideReviewed(ctx, reviewed, allow, revoke, pass)
 		}
-		return func() { a.status = tr(nil, "授权决定已处理") }, e
+		return func() {
+			a.markApprovalHandled(reviewed)
+			a.status = tr(nil, "授权决定已处理")
+			if revoke {
+				for i, r := range a.requests {
+					if r.ID == reviewed.ID && r.Nonce == reviewed.Nonce || r.ParentID == reviewed.ID {
+						a.requests[i].Status = "revoked"
+					}
+				}
+			}
+		}, e
 	})
 }
 
@@ -1081,7 +1224,7 @@ func (a *app) replaceText() {
 	host := a.editHost
 	oldHash := a.editHash
 	a.editorSaving = document
-	a.beginContext(a.operationContext(), approval.Operation{Host: host, Kind: "replace", Path: p, ContentHash: hash, OriginalHash: oldHash}, func(s *client.Stream) (func(), error) {
+	a.beginContext(client.WithRoute(a.operationContext(), host, a.editRoute), approval.Operation{Host: host, Kind: "replace", Path: p, ContentHash: hash, OriginalHash: oldHash}, func(s *client.Stream) (func(), error) {
 		defer s.Close()
 		if _, e := s.Write(content); e != nil {
 			return nil, e
@@ -1145,6 +1288,7 @@ func (a *app) upload(fromEditor bool) {
 		content = []byte(editorBufferText(a.edit.Buffer))
 		remote = a.saveAs
 		host = a.editHost
+		ctx = client.WithRoute(ctx, host, a.editRoute)
 	}
 	go func() {
 		var source io.ReadSeeker

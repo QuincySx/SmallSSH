@@ -38,7 +38,7 @@ func TestLockCommitsTheAuditAnchorBeforeTheKeyGoesAway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &app{ctx: context.Background(), online: true, dir: dir, server: server}
+	a := &app{ctx: context.Background(), online: true, dir: dir, server: testDesktopSession(server)}
 	a.lock()
 	if a.server != nil || a.online {
 		t.Fatal("lock kept the broker")

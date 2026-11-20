@@ -66,8 +66,8 @@ type hostOptions struct {
 	ClearProxyPassword bool                 `json:"clearProxyPassword,omitempty"`
 }
 
-func configureHost(ctx context.Context, c client.Client, dir, id string, biometric bool) (int, error) {
-	owner, e := openOwner(ctx, dir, biometric, "修改连接的终端、代理、中转或硬件密钥配置")
+func configureHost(ctx context.Context, c client.Client, dir, id string) (int, error) {
+	owner, e := openOwner(ctx, dir, "修改连接的终端、代理、中转或硬件密钥配置")
 	if e != nil {
 		return 1, e
 	}
@@ -121,11 +121,11 @@ func (options hostOptions) apply(profile vault.Profile) vault.ProfileChange {
 	}
 	return vault.ProfileChange{Profile: profile, KeepCredential: keep, KeepProxyCredential: keepProxy}
 }
-func inspectHardwareCommand(ctx context.Context, c client.Client, dir string, biometric bool, args []string) (int, error) {
+func inspectHardwareCommand(ctx context.Context, c client.Client, dir string, args []string) (int, error) {
 	if len(args) < 1 || len(args) > 2 {
 		return 2, errors.New("用法: smallssh host hardware 模块完整路径 [令牌序列号]；选定序列号后从本地终端读取 PIN")
 	}
-	owner, e := openOwner(ctx, dir, biometric, "读取 PKCS#11 驱动和硬件公钥")
+	owner, e := openOwner(ctx, dir, "读取 PKCS#11 驱动和硬件公钥")
 	if e != nil {
 		return 1, e
 	}

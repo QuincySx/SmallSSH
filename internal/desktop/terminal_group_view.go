@@ -20,10 +20,12 @@ func (a *app) terminalGroupView(c *ui.Context, g *terminalGroup, first, last boo
 		previous := a.renderingTerminalGroup
 		a.renderingTerminalGroup = g
 		defer func() { a.renderingTerminalGroup = previous }()
-		if a.workspaceCanvas && len(a.workspaceTabs(g)) == 1 {
-			a.canvasPaneHeader(c, g, panel.Bounds())
-		} else if a.workspaceCanvas || len(a.terminalGroups()) > 1 {
-			a.terminalGroupHeader(c, g, false, false, panel.Bounds().W, panel.Bounds())
+		if a.workspaceCanvas || len(a.terminalGroups()) > 1 {
+			if len(a.workspaceTabs(g)) > 0 {
+				a.canvasPaneHeader(c, g, panel.Bounds())
+			} else {
+				a.terminalGroupHeader(c, g, false, false, panel.Bounds().W, panel.Bounds())
+			}
 		}
 		if g.selectedTool != nil {
 			a.renderWorkspaceTool(c, g.selectedTool)
@@ -44,10 +46,9 @@ func (a *app) terminalGroupView(c *ui.Context, g *terminalGroup, first, last boo
 func (a *app) terminalGroupHeader(c *ui.Context, g *terminalGroup, first, last bool, width float32, groupBounds ...ui.Rect) {
 	entries := a.workspaceTabs(g)
 	selected := a.selectedWorkspaceTab(g)
-	active := max(0, slices.Index(entries, selected))
 	displayedTab, displayedEditor, displayedTool := g.active, g.editorSelected, g.selectedTool
 	reveal := g.revealedTab != displayedTab || g.revealedEditor != displayedEditor || g.revealedTool != displayedTool
-	header := components.HeaderBar(c).Height(32).Label(fmt.Sprintf(tr(c, "终端栏标题%d"), g.id))
+	header := components.HeaderBar(c).Height(components.PanelHeaderHeight).Padding(0, components.PanelInset).Label(fmt.Sprintf(tr(c, "终端栏标题%d"), g.id))
 	if width <= 0 {
 		width = header.Bounds().W
 	}
@@ -56,67 +57,17 @@ func (a *app) terminalGroupHeader(c *ui.Context, g *terminalGroup, first, last b
 		reveal = true
 		c.AnimationFrame()
 	}
-	controls := float32(0)
-	if last {
-		controls = 30
-	}
 	tabWidth := float32(210)
 	if width > 0 {
-		tabWidth = min(tabWidth, max(20, width-12-controls-36))
+		tabWidth = workspaceTabWidth(width-12-36, len(entries))
 	}
 	header.Children(func() {
 		if len(entries) > 0 {
-			ui.ScrollHorizontal(c).Grow(1).MinWidth(0).Height(32).Children(func() {
-				tabs := ui.TabsBase(c, &active, len(entries))
-				tabs.List.Gap(3).AlignItems(ui.Center).Children(func() {
-					for i, entry := range entries {
-						label := a.workspaceTabTitle(c, entry)
-						display := a.workspaceTabDisplayTitle(c, entry)
-						row := ui.Row(c).Key(entry.key()).Gap(2).Padding(2).Radius(8).AlignItems(ui.Center).Border(1, c.Theme().Border.Alpha(0))
-						if entry == selected {
-							if a.activeTerminalGroup == g {
-								row.Background(c.Theme().Accent.Alpha(.10)).TextColor(c.Theme().Accent)
-							} else {
-								row.Background(c.Theme().SurfaceHover.Alpha(.6)).TextColor(c.Theme().TextMuted)
-							}
-							if reveal {
-								row.ScrollIntoView()
-							}
-						}
-						row.Children(func() {
-							tab := tabs.Tab(i).Height(28).Padding(4, 10).Radius(8).MinWidth(0).MaxWidth(tabWidth).Label(label).Tooltip(display)
-							if tab.Pressed() {
-								tab.Background(c.Theme().SurfacePressed)
-							} else if tab.Hovered() {
-								tab.Background(c.Theme().SurfaceHover)
-							}
-							tab.Children(func() { components.HeaderLabel(c, display).MaxWidth(max(0, tabWidth-20)) })
-							tab.Drag(a.workspaceTabPayload(entry))
-							a.workspaceGroupDrop(c, tab, g, entry, false, groupBounds...)
-							tab.ContextMenu(func(m *ui.Menu) { a.workspaceTabMenu(m, entry) })
-							if tab.Clicked() {
-								a.activateWorkspaceTab(g, entry)
-							}
-							closeLabel := tr(c, "关闭标签：") + label
-							if entry.tool != nil && entry.tool.kind == toolFiles {
-								closeLabel = tr(c, "关闭文件标签")
-							}
-							if components.IconButton(c, "×", closeLabel).Tooltip(tr(c, "关闭 ") + label).Clicked() {
-								a.closeWorkspaceTab(entry)
-							}
-						})
-					}
-				})
-				if tabs.List.Changed() && active >= 0 && active < len(entries) {
-					a.activateWorkspaceTab(g, entries[active])
-				}
-			})
+			a.workspaceTabStrip(c, g, entries, selected, tabWidth, components.PanelHeaderHeight, reveal, groupBounds...)
 		} else {
 			components.HeaderLabel(c, tr(c, "终端")).TextColor(c.Theme().TextMuted).Grow(1)
 		}
-		if last {
-			a.terminalLayoutMenu(c)
-		} else if a.workspaceCanvas {
+		if !last && a.workspaceCanvas {
 			components.ButtonGroup(c, func() { a.canvasPaneActions(c, g) }).MinWidth(0).Shrink(1)
 		}
 	})
@@ -126,12 +77,76 @@ func (a *app) terminalGroupHeader(c *ui.Context, g *terminalGroup, first, last b
 	}
 }
 
+// A nil group renders the global strip across all panes. Each tab retains
+// its actual owner so selecting it never merges or retiles the workspace.
+func (a *app) workspaceTabStrip(c *ui.Context, g *terminalGroup, entries []workspaceTab, selected workspaceTab, tabWidth, height float32, reveal bool, groupBounds ...ui.Rect) {
+	active := max(0, slices.Index(entries, selected))
+	ui.ScrollHorizontal(c).Grow(1).MinWidth(0).Height(height).Children(func() {
+		tabs := ui.TabsBase(c, &active, len(entries))
+		tabs.List.Gap(3).AlignItems(ui.Center).Children(func() {
+			for i, entry := range entries {
+				label := a.workspaceTabTitle(c, entry)
+				display := a.workspaceTabDisplayTitle(c, entry)
+				owner := g
+				if owner == nil {
+					owner = a.workspaceTabGroup(entry)
+				}
+				row := ui.Row(c).Key(entry.key()).Gap(2).Padding(2).Radius(8).AlignItems(ui.Center).Border(1, c.Theme().Border.Alpha(0))
+				if entry == selected {
+					if g == nil || a.activeTerminalGroup == g {
+						row.Background(c.Theme().Accent.Alpha(.06)).TextColor(c.Theme().Accent)
+					} else {
+						row.Background(c.Theme().SurfaceHover.Alpha(.6)).TextColor(c.Theme().TextMuted)
+					}
+					if reveal {
+						row.ScrollIntoView()
+					}
+				}
+				row.Children(func() {
+					target := label
+					if g == nil {
+						target = tr(c, "顶部标签：") + label
+					}
+					tab := tabs.Tab(i).Height(28).Padding(4, 10).Radius(8).MinWidth(0).MaxWidth(tabWidth).Label(target).Tooltip(display)
+					if tab.Pressed() {
+						tab.Background(c.Theme().SurfacePressed)
+					} else if tab.Hovered() {
+						tab.Background(c.Theme().SurfaceHover)
+					}
+					tab.Children(func() { components.HeaderLabel(c, display).MaxWidth(max(0, tabWidth-20)) })
+					tab.Drag(a.workspaceTabPayload(entry))
+					a.workspaceGroupDrop(c, tab, owner, entry, false, groupBounds...)
+					tab.ContextMenu(func(m *ui.Menu) { a.workspaceTabMenu(m, entry) })
+					if tab.Clicked() {
+						a.activateWorkspaceTab(owner, entry)
+					}
+					closeLabel := tr(c, "关闭标签：") + label
+					if entry.tool != nil && entry.tool.kind == toolFiles {
+						closeLabel = tr(c, "关闭文件标签")
+					}
+					if g == nil {
+						closeLabel = tr(c, "关闭顶部标签：") + label
+					}
+					if components.IconButton(c, "×", closeLabel).Tooltip(tr(c, "关闭 ") + label).Clicked() {
+						a.closeWorkspaceTab(entry)
+					}
+				})
+			}
+		})
+		if tabs.List.Changed() && active >= 0 && active < len(entries) {
+			a.activateWorkspaceTab(a.workspaceTabGroup(entries[active]), entries[active])
+		}
+	})
+}
+
 func (a *app) emptyTerminalGroup(c *ui.Context) {
 	ui.Column(c).Fill().Center().Children(func() {
 		ui.Column(c).FillWidth().MaxWidth(360).Padding(0, 12).Gap(10).AlignItems(ui.Center).Children(func() {
 			if len(a.connections) == 0 {
+				if a.connectionRailCache.loading {
+					return
+				}
 				ui.Text(c, tr(c, "添加你的第一台服务器")).FontSize(18).Bold().TextAlign(ui.Center)
-				ui.Text(c, tr(c, "保存服务器信息后，即可在工作台连接终端。")).FontSize(12).TextColor(c.Theme().TextMuted).TextAlign(ui.Center)
 				if components.PrimaryButton(c, tr(c, "添加服务器")).Clicked() {
 					a.navigate(a.newConnection)
 				}
@@ -140,7 +155,6 @@ func (a *app) emptyTerminalGroup(c *ui.Context) {
 			index := slices.IndexFunc(a.connections, func(d vault.Summary) bool { return d.ID == a.selected && d.ID != "" })
 			if index < 0 {
 				ui.Text(c, tr(c, "选择服务器，开始连接")).FontSize(18).Bold().TextAlign(ui.Center)
-				ui.Text(c, tr(c, "从服务器列表中选择一台，或搜索已有服务器。")).FontSize(12).TextColor(c.Theme().TextMuted).TextAlign(ui.Center)
 				if components.PrimaryButton(c, tr(c, "选择服务器")).Clicked() {
 					a.focusConnectionSearch(c)
 				}

@@ -3,6 +3,8 @@ package desktop
 import (
 	"context"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -16,7 +18,7 @@ func TestConnectionPolicyDefaultsAndExplicitRiskConfirmation(t *testing.T) {
 	if a.form.Policy.Disabled || a.form.Policy.Unrestricted || a.connectionHasChanges() {
 		t.Fatal("new connection did not default to protected AI access")
 	}
-	tt := ui.NewTester(a.connectionPolicyForm, 430, 120)
+	tt := ui.NewTester(a.connectionPolicyForm, 430, 500)
 	if tt.HasText("保护开启时，AI 不开放任意命令和终端") || tt.HasText("受保护路径禁止读取、下载和修改") || !tt.HasText("保护关键操作") {
 		t.Fatal("AI access did not stay a plain allow/deny choice", tt.Texts())
 	}
@@ -81,59 +83,102 @@ func TestConnectionPolicyPreservedAcrossCredentialFormsAndMetadataEdits(t *testi
 func TestProtectedPathsEditorUsesValidatedPolicyDefaults(t *testing.T) {
 	a := &app{online: true}
 	a.newConnection()
-	a.editProtectedPaths()
-	if a.prompt.value == "" || !a.prompt.multiline || a.prompt.validate == nil {
-		t.Fatal("default paths were not accessible")
+	tt := ui.NewTester(a.connectionPolicyForm, 560, 520)
+	if _, ok := tt.Find("保护路径输入"); !ok || a.prompt.open || !a.connection.pathsReady || a.connection.protectedPaths != strings.Join(a.form.Policy.Paths(), "\n") || a.connectionHasChanges() {
+		t.Fatal("inline defaults missing, opened a dialog or changed the clean draft")
 	}
-	if a.prompt.validate("relative/path") == nil {
-		t.Fatal("invalid protected path was accepted")
-	}
-	a.prompt.confirm("/srv/private\n\n/etc")
+	a.updateProtectedPaths("/srv/private\n\n/etc")
 	if !reflect.DeepEqual(a.form.Policy.ProtectedPaths, []string{"/srv/private", "/etc"}) {
-		t.Fatal("valid editor paths were not applied")
+		t.Fatal("valid inline paths were not applied")
 	}
-	policy, err := protectedPathsInput("")
-	if err != nil || len(policy.ProtectedPaths) != 0 || len(policy.Paths()) == 0 {
-		t.Fatal("empty editor did not restore defaults")
+	a.updateProtectedPaths("")
+	if len(a.form.Policy.ProtectedPaths) != 0 || len(a.form.Policy.Paths()) == 0 || a.connectionHasChanges() {
+		t.Fatal("clearing the inline field did not restore unchanged defaults")
 	}
 }
 
-// The path editor has to be tall and wide enough to read several paths at
-// once, and a rejected path must stay editable instead of closing the dialog.
+func replaceProtectedPaths(t *testing.T, tt *ui.Tester, value string) {
+	t.Helper()
+	if err := tt.Click("保护路径输入"); err != nil {
+		t.Fatal(err)
+	}
+	mod := ui.Ctrl
+	if runtime.GOOS == "darwin" {
+		mod = ui.Super
+	}
+	tt.Key(mod, ui.KeyA)
+	tt.Key(0, ui.KeyBackspace)
+	tt.Type(value)
+	tt.Frame()
+}
+
 func TestProtectedPathsEditorStaysReadableAndEditableAtSmallWindow(t *testing.T) {
+	for _, width := range []int{560, 1000} {
+		a := &app{online: true}
+		a.newConnection()
+		a.form.Name, a.form.Host, a.form.User = "Example", "192.0.2.10", "demo"
+		a.connection.section = connectionAccess
+		tt := ui.NewTester(a.connectionView, width, 760)
+		area, ok := tt.Find("保护路径输入")
+		content, contentOK := tt.Find("连接分类内容")
+		if !ok || !contentOK || area.W < content.W-24 || area.H != 210 || area.Y < content.Y || area.Y+area.H > content.Y+content.H || a.prompt.open || tt.HasText("保护路径…") {
+			t.Fatal("paths did not use the current form's available area", width, area, content)
+		}
+		replaceProtectedPaths(t, tt, "/srv/private\nrelative/path")
+		if a.connection.protectedPaths != "/srv/private\nrelative/path" || !a.connectionHasChanges() || a.prompt.open || !tt.HasText("规范绝对路径") {
+			t.Fatal("invalid inline paths lost the draft, error or unsaved state", a.connection.protectedPaths, tt.Texts())
+		}
+		if err := tt.Click("保存连接"); err != nil {
+			t.Fatal(err)
+		}
+		if a.connection.errors["policy"] == "" || a.connection.phase != "" || a.prompt.open {
+			t.Fatal("invalid protected paths passed save or started a connection")
+		}
+		tt.Frame()
+		if a.connection.section != connectionAccess || !tt.Focused("保护路径输入") {
+			t.Fatal("save validation did not return focus to the inline error")
+		}
+		if err := tt.Click("连接分类：常规"); err != nil {
+			t.Fatal(err)
+		}
+		if err := tt.Click("连接分类：访问策略"); err != nil {
+			t.Fatal(err)
+		}
+		if a.connection.protectedPaths != "/srv/private\nrelative/path" {
+			t.Fatal("category navigation lost the inline draft")
+		}
+		replaceProtectedPaths(t, tt, "/srv/private\n/etc/ssh")
+		change, ok := a.connectionDraft()
+		if !ok || a.connection.errors["policy"] != "" || !reflect.DeepEqual(change.Profile.Policy.ProtectedPaths, []string{"/srv/private", "/etc/ssh"}) || a.prompt.open {
+			t.Fatal("corrected inline policy was not included in the connection draft", change.Profile.Policy, a.connection.errors)
+		}
+	}
+}
+
+func TestInlineProtectedPathErrorsCannotHideBehindDisabledAccess(t *testing.T) {
 	a := &app{online: true}
 	a.newConnection()
-	a.editProtectedPaths()
-	tt := ui.NewTester(a.promptView, 560, 760)
-	label, ok := tt.Find("保护路径输入")
-	apply, applyOK := tt.Find("应用")
-	if !ok || label.W < 400 || label.Y < 0 {
-		t.Fatal("protected paths field did not use the available dialog width", label)
+	a.form.Name, a.form.Host, a.form.User = "Example", "192.0.2.10", "demo"
+	a.updateProtectedPaths("relative/path")
+	a.form.Policy.Disabled, a.form.Policy.Unrestricted = true, true
+	tt := ui.NewTester(a.connectionPolicyForm, 560, 520)
+	if _, ok := tt.Find("保护路径输入"); !ok {
+		t.Fatal("disabled policy hid an invalid editable draft")
 	}
-	if !applyOK || apply.Y < 0 || apply.Y+apply.H > 760 || apply.Y-(label.Y+label.H) < 160 {
-		t.Fatal("multiline path area is not readable above the visible dialog actions", label, apply)
+	if _, ok := a.connectionDraft(); ok {
+		t.Fatal("disabling access or protection bypassed path validation")
 	}
-	a.prompt.value = "/srv/private\nrelative/path"
+	replaceProtectedPaths(t, tt, "/srv/private")
+	if _, ok := a.connectionDraft(); !ok {
+		t.Fatal("disabled policy left its invalid path impossible to correct", a.connection.errors)
+	}
+	a.newConnection()
+	if a.connection.pathsReady || a.connection.protectedPaths != "" || len(a.form.Policy.ProtectedPaths) != 0 {
+		t.Fatal("inline draft leaked into another connection")
+	}
 	tt.Frame()
-	if err := tt.Click("应用"); err != nil {
-		t.Fatal(err)
-	}
-	if !a.prompt.open || a.prompt.value != "/srv/private\nrelative/path" || a.prompt.error == "" {
-		t.Fatal("an invalid protected path closed the editor or lost the draft", a.prompt.open, a.prompt.value, a.prompt.error)
-	}
-	if !tt.HasText("规范绝对路径") {
-		t.Fatal("the invalid protected path was not explained next to the editable area", tt.Texts())
-	}
-	if len(a.form.Policy.ProtectedPaths) != 0 {
-		t.Fatal("an invalid protected path was stored", a.form.Policy.ProtectedPaths)
-	}
-	a.prompt.value = "/srv/private\n/etc/ssh"
-	tt.Frame()
-	if err := tt.Click("应用"); err != nil {
-		t.Fatal(err)
-	}
-	if a.prompt.open || !reflect.DeepEqual(a.form.Policy.ProtectedPaths, []string{"/srv/private", "/etc/ssh"}) {
-		t.Fatal("corrected protected paths were not applied", a.prompt.open, a.form.Policy.ProtectedPaths)
+	if a.connection.protectedPaths != strings.Join(a.form.Policy.Paths(), "\n") || !tt.HasText("保护路径输入") {
+		t.Fatal("existing inline control did not rebind to the new connection defaults")
 	}
 }
 
@@ -154,22 +199,15 @@ func TestConnectionPolicyShortcutScrollsToServerAccessSettings(t *testing.T) {
 	}
 }
 
-func TestConnectionPolicyKeepsSaveAfterConnectOptionInVisibleFooter(t *testing.T) {
+func TestConnectionFooterOnlySaves(t *testing.T) {
 	for _, size := range [][2]int{{560, 760}, {820, 1600}} {
 		a := &app{online: true}
 		a.newConnection()
 		tt := ui.NewTester(a.connectionView, size[0], size[1])
-		dialog, dialogOK := tt.Find("新建连接对话框")
-		option, optionOK := tt.Find("保存后连接")
-		save, saveOK := tt.Find("保存并连接")
-		if !dialogOK || !optionOK || !saveOK || option.X < dialog.X || option.X+option.W > dialog.X+dialog.W || option.Y < dialog.Y || option.Y+option.H > dialog.Y+dialog.H || option.Y > save.Y+save.H || option.Y+option.H < save.Y {
-			t.Fatal("save behavior option escaped the visible footer", size, dialog, option, save)
-		}
-		if err := tt.Click("保存后连接"); err != nil {
-			t.Fatal(err)
-		}
-		if a.connection.connect || !tt.HasText("保存连接") {
-			t.Fatal("visible save-only option did not change the submit action")
+		dialog, ok := tt.Find("新建连接对话框")
+		save, found := tt.Find("保存连接")
+		if !ok || !found || save.X < dialog.X || save.X+save.W > dialog.X+dialog.W || save.Y+save.H > dialog.Y+dialog.H || tt.HasText("保存后连接") {
+			t.Fatal("save-only footer violated", dialog, save)
 		}
 	}
 }

@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>独立授权 · 本次操作密码框验证中</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" class="flex flex-col gap-space-xs w-authorization-prompt h-approval-prompt-height px-approval-prompt-inline py-space-md bg-canvas">
+  <div data-name="请求标题" class="flex flex-col w-full gap-native-field">
+    <p data-name="标题" class="type-native-dialog text-text">本次操作确认</p>
+    <p data-name="申请方" class="type-native-hint text-muted">申请方  Offline QA</p>
+  </div>
+  <div data-name="授权范围" class="flex flex-col w-full gap-space-sm px-space-md py-space-sm bg-surface border border-border rounded-window-panel">
+    <p data-name="目标服务器" class="type-native-label text-text">Web 生产环境</p>
+    <p data-name="连接地址" class="type-path text-muted">deploy@192.0.2.10:22</p>
+    <div data-name="权限分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+    <p data-name="权限" class="type-native-label text-text">修改文件</p>
+    <p data-name="允许范围" class="type-native-hint text-muted">仅允许本次重命名</p>
+    <p data-name="路径" class="type-path text-text">/srv/site/index.html → index.old.html</p>
+    <p data-name="限制" class="type-native-hint text-warning">此次决定只适用于这一项操作。</p>
+  </div>
+  <div data-name="弹性空间" class="flex-1 min-h-0"></div>
+  <sp-use data-name="验证与决定" component="授权验证底栏" props="状态: 密码框验证中; 切换验证: 有" class="w-full">
+    <div data-name="操作">
+      <div data-name="拒绝" data-click="11 连接与授权评审/暂无授权请求"></div>
+    </div>
+  </sp-use>
+</body>
+</html>

@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"sshclient/tools/internal/project"
@@ -44,10 +45,14 @@ func runBuild(args []string) error {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	platforms := fs.String("platform", "darwin/arm64,linux/amd64,windows/amd64", `comma-separated desktop targets, or "all"`)
 	check := fs.Bool("check", false, "只校验已提交的生成文件是否为最新，不写入任何内容")
+	generateOnly := fs.Bool("generate-only", false, "只更新许可证与原生指纹，不打包桌面或下载平台运行库")
 	if e := parse(fs, args); e != nil {
 		return e
 	}
-	return build(*platforms, *check)
+	if *check && *generateOnly {
+		return errors.New("-check 与 -generate-only 不能同时使用")
+	}
+	return build(*platforms, *check, *generateOnly)
 }
 
 type target struct{ goos, goarch string }
@@ -62,7 +67,7 @@ func (t target) resources() string {
 	return filepath.Join(resourcesDir, t.goos+"-"+t.goarch)
 }
 
-func build(platforms string, check bool) error {
+func build(platforms string, check, generateOnly bool) error {
 	if _, e := project.Chdir(); e != nil {
 		return e
 	}
@@ -76,7 +81,7 @@ func build(platforms string, check bool) error {
 	if e = verifyVendorPatch(); e != nil {
 		return e
 	}
-	if !check {
+	if !check && !generateOnly {
 		for _, t := range targets {
 			if e = os.RemoveAll(t.resources()); e != nil {
 				return e
@@ -86,7 +91,7 @@ func build(platforms string, check bool) error {
 	if e = stageNotices(check); e != nil {
 		return e
 	}
-	hashes, e := stageNatives(targets, check)
+	hashes, e := stageNatives(targets, check || generateOnly)
 	if e != nil {
 		return e
 	}
@@ -95,6 +100,10 @@ func build(platforms string, check bool) error {
 	}
 	if check {
 		fmt.Println("生成文件均为最新：" + noticesPath + "、" + hashesPath)
+		return nil
+	}
+	if generateOnly {
+		fmt.Println("生成文件已更新：" + noticesPath + "、" + hashesPath)
 		return nil
 	}
 	for _, t := range targets {
@@ -180,7 +189,13 @@ func stageNotices(check bool) error {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(&notices, "\n===== %s =====\n\n%s\n", p, b)
+			// Preserve license text while avoiding whitespace-only changes from
+			// upstream line endings in the committed generated notice bundle.
+			lines := strings.Split(string(b), "\n")
+			for i := range lines {
+				lines[i] = strings.TrimRight(lines[i], " \t\r")
+			}
+			fmt.Fprintf(&notices, "\n===== %s =====\n\n%s\n", p, strings.Join(lines, "\n"))
 		}
 		return nil
 	})
@@ -193,6 +208,25 @@ func stageNotices(check bool) error {
 		return err
 	}
 	fmt.Fprintf(&notices, "\n===== Lucide icons (ISC and Feather-derived MIT) =====\n\n%s\n", license)
+	const (
+		noVNCRoot = "internal/vncview/web/novnc/"
+		fontRoot  = "docs/design/font-notices/"
+	)
+	for _, p := range []string{
+		noVNCRoot + "LICENSE.txt", noVNCRoot + "docs/LICENSE.MPL-2.0", noVNCRoot + "docs/LICENSE.BSD-2-Clause",
+		noVNCRoot + "docs/LICENSE.BSD-3-Clause", noVNCRoot + "docs/LICENSE.OFL-1.1", noVNCRoot + "vendor/pako/LICENSE",
+		fontRoot + "NotoSansSC-OFL.txt", fontRoot + "JetBrainsMono-OFL.txt", fontRoot + "Lucide-LICENSE.txt",
+	} {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		lines := strings.Split(string(b), "\n")
+		for i := range lines {
+			lines[i] = strings.TrimRight(lines[i], " \t\r")
+		}
+		fmt.Fprintf(&notices, "\n===== %s =====\n\n%s\n", p, strings.Join(lines, "\n"))
+	}
 	return generate(noticesPath, []byte(notices.String()), check)
 }
 
@@ -250,7 +284,8 @@ func stageNatives(targets []target, check bool) (map[string]string, error) {
 			if e = run("/usr/bin/swiftc", args...); e != nil {
 				return nil, e
 			}
-			if e = run("/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none", out); e != nil {
+			// Hardened runtime before hashing: the pinned hash covers this signature.
+			if e = run("/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime", "--timestamp=none", out); e != nil {
 				return nil, e
 			}
 			b, err := os.ReadFile(out)
@@ -260,6 +295,16 @@ func stageNatives(targets []target, check bool) (map[string]string, error) {
 			sum := sha256.Sum256(b)
 			hashes[artifact.hashKey] = hex.EncodeToString(sum[:])
 		}
+		identity, err := stageIdentityAgent(dir, swiftArch, nil)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(identity)
+		if err != nil {
+			return nil, err
+		}
+		digest := sha256.Sum256(data)
+		hashes[t.String()+"/identity"] = hex.EncodeToString(digest[:])
 	}
 	return hashes, nil
 }
@@ -286,13 +331,27 @@ func stageCLI(t target) error {
 	if e := os.MkdirAll(filepath.Dir(out), 0o755); e != nil {
 		return e
 	}
-	cmd := exec.Command("go", "build", "-mod=vendor", "-trimpath", "-o", out, "./cmd/ssh-client")
+	cmd := exec.Command("go", "build", "-mod=vendor", "-trimpath", "-tags", project.RuntimeTags, "-ldflags", project.ReleaseLinkFlags, "-o", out, "./cmd/ssh-client")
 	cmd.Env = append(os.Environ(), "GOOS="+t.goos, "GOARCH="+t.goarch, "CGO_ENABLED=0")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if e := cmd.Run(); e != nil {
 		return e
 	}
-	return copyExecutable(out, filepath.Join(t.resources(), legacy))
+	if e := hardenDarwinExecutable(t, out); e != nil {
+		return e
+	}
+	return stageCLIAlias(t, out, filepath.Join(t.resources(), legacy))
+}
+
+func stageCLIAlias(t target, source, alias string) error {
+	if t.goos != "darwin" || runtime.GOOS != "darwin" {
+		return copyExecutable(source, alias)
+	}
+	relative, err := filepath.Rel(filepath.Dir(alias), source)
+	if err != nil {
+		return err
+	}
+	return os.Symlink(relative, alias)
 }
 
 // stageDaemon builds the fixed helper the app launches beside the desktop
@@ -306,10 +365,26 @@ func stageDaemon(t target) error {
 	if e := os.MkdirAll(filepath.Dir(out), 0o755); e != nil {
 		return e
 	}
-	cmd := exec.Command("go", "build", "-mod=vendor", "-trimpath", "-o", out, "./cmd/smallsshd")
+	cmd := exec.Command("go", "build", "-mod=vendor", "-trimpath", "-tags", project.RuntimeTags, "-ldflags", project.ReleaseLinkFlags, "-o", out, "./cmd/smallsshd")
 	cmd.Env = append(os.Environ(), "GOOS="+t.goos, "GOARCH="+t.goarch, "CGO_ENABLED=0")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return cmd.Run()
+	if e := cmd.Run(); e != nil {
+		return e
+	}
+	return hardenDarwinExecutable(t, out)
+}
+
+// hardenDarwinExecutable re-signs a pure-Go macOS executable ad hoc with the
+// hardened runtime, so a process of the same user can neither attach a
+// debugger to it nor inject libraries through DYLD_* variables. The daemon
+// holds the unlocked vault and the quick-unlock envelope; the CLI holds the
+// root session while approving. Cross builds from other hosts keep the
+// linker signature, as codesign is not available there.
+func hardenDarwinExecutable(t target, path string) error {
+	if t.goos != "darwin" || runtime.GOOS != "darwin" {
+		return nil
+	}
+	return run("/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime", "--timestamp=none", path)
 }
 
 // packageApp runs the pinned MyGo CLI, which matches the vendored library read
@@ -319,7 +394,75 @@ func packageApp(platforms string) error {
 	if e != nil {
 		return e
 	}
-	return run("go", "run", "github.com/egoist/mygo/cmd/mygo@"+version, "build", "-platform", platforms, "-skip-dmg")
+	cmd := exec.Command("go", "run", "github.com/egoist/mygo/cmd/mygo@"+version, "build", "-platform", platforms, "-skip-dmg")
+	cmd.Env = project.RuntimeEnv(os.Environ())
+	cmd.Stdout, cmd.Stderr, cmd.Stdin = os.Stdout, os.Stderr, os.Stdin
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return compactDarwinCLI(platforms)
+}
+
+// MyGo follows top-level resource symlinks. Restore the compatibility alias in
+// the finished ad-hoc bundle, then reseal only the outer bundle so native
+// helper signatures (and their pinned hashes) are not changed.
+func compactDarwinCLI(platforms string) error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	var configuration struct {
+		MacOS struct {
+			SigningIdentity string `json:"signingIdentity"`
+		} `json:"macos"`
+	}
+	content, err := os.ReadFile("mygo.json")
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(content, &configuration); err != nil {
+		return err
+	}
+	if configuration.MacOS.SigningIdentity != "" {
+		return nil // Keep the original distribution signature untouched.
+	}
+	targets, err := parseTargets(platforms)
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if target.goos != "darwin" {
+			continue
+		}
+		bundle := filepath.Join("build", "darwin-"+target.goarch, "SmallSSH.app")
+		resources := filepath.Join(bundle, "Contents", "Resources")
+		source, alias := filepath.Join(resources, "cli", "smallssh"), filepath.Join(resources, "ssh-client")
+		a, err := os.ReadFile(source)
+		if err != nil {
+			return err
+		}
+		b, err := os.ReadFile(alias)
+		if err != nil || !bytes.Equal(a, b) {
+			return errors.New("兼容 CLI 与正式 CLI 不一致，不能合并")
+		}
+		temporary := alias + ".alias"
+		if err := os.Symlink(filepath.Join("cli", "smallssh"), temporary); err != nil {
+			return err
+		}
+		if err := os.Rename(temporary, alias); err != nil {
+			_ = os.Remove(temporary)
+			return err
+		}
+		// Reseal with the hardened runtime. The desktop loads the bundled ad-hoc
+		// terminal and authentication libraries, so only library validation is
+		// relaxed; debugger attach and DYLD_* injection stay refused.
+		if err := run("codesign", "--force", "--sign", "-", "--timestamp=none", "--options", "runtime", "--entitlements", filepath.Join("native", "macos", "Desktop.entitlements"), "--preserve-metadata=identifier", bundle); err != nil {
+			return err
+		}
+		if err := run("codesign", "--verify", "--deep", "--strict", bundle); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // generate writes b to path unless it is already there, and in check mode

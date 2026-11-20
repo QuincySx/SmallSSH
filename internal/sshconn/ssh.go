@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"sshclient/internal/sshdata"
 	"strings"
 	"sync"
 	"time"
@@ -64,7 +65,11 @@ func dial(ctx context.Context, p vault.Profile, upstream *Client) (*Client, erro
 	if err := vault.Validate(p); err != nil {
 		return nil, err
 	}
-	handshake, cancelHandshake := context.WithTimeout(ctx, 15*time.Second)
+	handshakeTimeout := 15 * time.Second
+	if p.Auth == "managed" {
+		handshakeTimeout = 2 * time.Minute
+	}
+	handshake, cancelHandshake := context.WithTimeout(ctx, handshakeTimeout)
 	defer cancelHandshake()
 	var auth ssh.AuthMethod
 	var authResource io.Closer
@@ -77,8 +82,17 @@ func dial(ctx context.Context, p vault.Profile, upstream *Client) (*Client, erro
 			return nil, err
 		}
 		auth = ssh.PublicKeys(signer)
-	case "agent":
-		agentConn, err := dialAgent(handshake)
+	case "agent", "managed":
+		var agentConn io.ReadWriteCloser
+		var err error
+		if p.Auth == "managed" {
+			if p.AgentSocket == "" {
+				return nil, errors.New("SmallSSH 密钥代理未解析")
+			}
+			agentConn, err = (&net.Dialer{}).DialContext(handshake, "unix", p.AgentSocket)
+		} else {
+			agentConn, err = dialAgent(handshake)
+		}
 		if err != nil {
 			return nil, errors.New("SSH密钥代理不可用")
 		}
@@ -86,7 +100,7 @@ func dial(ctx context.Context, p vault.Profile, upstream *Client) (*Client, erro
 		stopAgent := context.AfterFunc(handshake, func() { agentConn.Close() })
 		defer stopAgent()
 		if nc, ok := agentConn.(net.Conn); ok {
-			nc.SetDeadline(time.Now().Add(15 * time.Second))
+			nc.SetDeadline(time.Now().Add(handshakeTimeout))
 		}
 		signers, err := agent.NewClient(agentConn).Signers()
 		if err != nil {
@@ -145,7 +159,7 @@ func dial(ctx context.Context, p vault.Profile, upstream *Client) (*Client, erro
 	stop := context.AfterFunc(ctx, abort)
 	stopHandshake := context.AfterFunc(handshake, abort)
 	defer stopHandshake()
-	raw.SetDeadline(time.Now().Add(15 * time.Second))
+	raw.SetDeadline(time.Now().Add(handshakeTimeout))
 	conn, ch, req, err := ssh.NewClientConn(raw, addr, cfg)
 	stopHandshake()
 	if handshake.Err() != nil {
@@ -386,13 +400,7 @@ func (s *Shell) Close() error {
 	return nil
 }
 
-type File struct {
-	Modified  time.Time `json:"modified"`
-	Name      string    `json:"name"`
-	Size      int64     `json:"size"`
-	Directory bool      `json:"directory"`
-	Mode      string    `json:"mode"`
-}
+type File = sshdata.File
 
 func remotePath(p string) error {
 	if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, "\x00\r\n") || path.Clean(p) != p {

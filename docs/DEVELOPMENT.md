@@ -26,7 +26,7 @@ go run ./tools <任务> [参数]    # 与 go run ./tools/<任务> 等价
 | `deps` | 显式依赖更新：`-update` 按 go.mod 重建 vendor、重新应用密码框与 Vision 补丁、复核原哈希并生成许可证 | `build/logs/deps-<时间>.log` |
 | `security` | 固定 govulncheck 对桌面/守护进程/CLI 做已知漏洞可达性分析；`-snapshot` 下载官方数据库快照离线分析；`-binary` 检查构建产物 | `build/logs/security-<时间>.log`、同名 JSON 与数据库快照 |
 | `test` | 只跑 `go vet` + `go test`（`-race`、`-short`、`-pkg`、`-run`、`-tags`、`-timeout`、`-serial`） | `build/logs/test-<时间>[-race]-<唯一后缀>.log` |
-| `identity-qa` | 编译/签名macOS SSH密钥原生模块并运行纯内存授权QA；`-keychain` 额外使用隔离的合成记录验证系统钥匙串枚举/读取/删除并清理，禁用认证UI；两种路径均不启动生产Agent或访问真实密钥/硬件/通知 | `build/logs/identity-qa-<时间>-<唯一后缀>.log` |
+| `identity-qa` | 编译/签名 macOS SSH 密钥原生模块并运行纯内存授权 QA。`-keychain` 验证隔离的合成钥匙串记录，`-embedded` 测量隐藏的指纹控件，`-snapshots` 渲染合成密钥请求。所有路径均无系统认证弹窗 | `build/logs/identity-qa-<时间>-<唯一后缀>.log`、`build/snapshots/ssh-key-authorization/` |
 | `ui-review` | 将 build/ 内离线 PNG 或 SmallPen view JSON 汇成编号联系表与 index.json；不捕获真实窗口、访问连接数据或打开 App | `build/review/`（`-output` 必须在 build/） |
 | `build` | 编译原生组件与各平台 CLI，再调 MyGo 打包（`-platform`、`-check`）；`-generate-only`仅更新两份受提交生成文件，不打包或下载平台运行库 | 标准输出 |
 | `dev` | 静默开发进程：`run` / `status` / `show` / `stop`（`-data-dir`） | — |

@@ -82,7 +82,7 @@ func dockerUIFixture(t *testing.T) (*app, *testdocker.Fixture, chan func()) {
 	t.Cleanup(server.Close)
 	updates := make(chan func(), 256)
 	a := managementApp()
-	a.ctx, a.dir, a.server, a.client = ctx, dir, server, client.Client{Dir: dir, Owner: server.Vault}
+	a.ctx, a.dir, a.server, a.client = ctx, dir, testDesktopSession(server), client.Client{Dir: dir, Owner: server.Vault}
 	a.dispatch = func(fn func()) { updates <- fn }
 	a.dock, a.diagnosticTab = toolDiagnostics, 4
 	p := ssh.Profile()
@@ -216,6 +216,12 @@ func TestComposeUIPlanBackgroundJobAndTaskDetails(t *testing.T) {
 		t.Fatal("UI did not reach deployment", string(calls))
 	}
 	if err := tt.Click("任务中心"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("服务器操作"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("历史记录"); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.Click("任务详情 更新 sample"); err != nil {

@@ -2,10 +2,13 @@ package desktop
 
 import (
 	"context"
+	"runtime"
 	"strconv"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/hardware"
 	"sshclient/internal/vault"
 )
 
@@ -27,7 +30,7 @@ func TestConnectionAuthSwitchKeepsCommonFieldsStable(t *testing.T) {
 					options := []struct{ label, kind, branch string }{
 						{"已有私钥", "key", "私钥文件输入"},
 						{"SSH 密钥代理", "agent", "读取代理密钥"},
-						{"硬件密钥（PKCS#11）", "pkcs11", "PKCS#11 原生模块输入"},
+						{"硬件密钥", "pkcs11", "选择驱动"},
 						{"服务器密码", "password", "服务器密码输入"},
 					}
 					if locale == "en" {
@@ -35,7 +38,7 @@ func TestConnectionAuthSwitchKeepsCommonFieldsStable(t *testing.T) {
 						options = []struct{ label, kind, branch string }{
 							{"Existing private key", "key", "Private key file input"},
 							{"SSH agent", "agent", "Load agent keys"},
-							{"Hardware key (PKCS#11)", "pkcs11", "PKCS#11 native module input"},
+							{"Hardware key", "pkcs11", "Choose driver"},
 							{"Server password", "password", "Server password input"},
 						}
 					}
@@ -75,5 +78,72 @@ func TestConnectionAuthSwitchKeepsCommonFieldsStable(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestConnectionAuthHardwareShowsPINOnlyAfterDeviceSelection(t *testing.T) {
+	a := &app{}
+	a.form.Hardware.Module = "/example/opensc-pkcs11.so"
+	a.connection.hardwareKeys = []hardware.Key{{Token: "测试智能卡", Serial: "test-card"}}
+	tt := ui.NewTester(a.hardwareForm, 560, 500)
+	if tt.HasText("设备 PIN") || !tt.HasText("测试智能卡") {
+		t.Fatal("device discovery exposed a PIN or hid the device name")
+	}
+	if err := tt.Click("选择设备"); err != nil {
+		t.Fatal(err)
+	}
+	if a.form.Hardware.TokenSerial != "test-card" || !tt.HasText("设备 PIN") {
+		t.Fatal("the selected device cannot be unlocked")
+	}
+	a.form.Hardware.PIN, a.form.Hardware.KeyID = "synthetic PIN", "3d"
+	if err := tt.Click("更换设备"); err != nil {
+		t.Fatal(err)
+	}
+	if a.form.Hardware != (connectcfg.Hardware{Module: "/example/opensc-pkcs11.so"}) {
+		t.Fatal("changing devices kept the prior device's PIN or identity")
+	}
+}
+
+func TestConnectionAuthCanCreateManagedKeyInsideTheForm(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Secure Enclave is macOS-only")
+	}
+	a := &app{}
+	tt := ui.NewTester(a.managedConnectionForm, 560, 500)
+	if err := tt.Click("新建密钥"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tt.Find("SSH 密钥名称"); !ok || a.connection.managed.auth != "presence" {
+		t.Fatal("creation is missing a name or the default system authentication")
+	}
+	if err := tt.Click("取消新建密钥"); err != nil {
+		t.Fatal(err)
+	}
+	key := offlineIdentities().state.Keys[0]
+	a.connection.managed.keys = offlineIdentities().state.Keys
+	a.form.AgentFingerprint = key.Fingerprint
+	tt.Frame()
+	if err := tt.Click("复制公钥"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.Clipboard() != key.PublicKey+" "+key.Name {
+		t.Fatal("the selected public key was not copied")
+	}
+}
+
+func TestConnectionAuthSystemSmartCardLeavesPINToMacOS(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("system smart cards use macOS")
+	}
+	a := &app{}
+	tt := ui.NewTester(a.hardwareForm, 560, 500)
+	if _, ok := tt.Find("读取系统智能卡"); !ok {
+		t.Fatal("system smart-card entry is missing")
+	}
+	a.selectHardwareDriver(connectcfg.MacSmartCard)
+	a.form.Hardware.TokenSerial = "synthetic-card"
+	tt.Frame()
+	if tt.HasText("输入设备 PIN") || tt.HasText("设备 PIN") {
+		t.Fatal("system card PIN must be entered only in the OS prompt")
 	}
 }

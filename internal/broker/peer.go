@@ -18,33 +18,7 @@ func (s *Server) peerProcess(pid int) approval.Peer {
 	if pid <= 0 {
 		return approval.Peer{}
 	}
-	path := executablePath(pid)
-	return approval.Peer{PID: pid, Path: path, Bundle: bundleIdentifier(path)}
-}
-
-// bundleIdentifier names the macOS app a path belongs to, the way an approval
-// dialog can show a stable identity instead of an editable name.
-func bundleIdentifier(path string) string {
-	if runtime.GOOS != "darwin" || path == "" {
-		return ""
-	}
-	const marker = ".app/Contents/MacOS/"
-	index := strings.Index(path, marker)
-	if index < 0 {
-		return ""
-	}
-	plist := path[:index+len(".app")] + "/Contents/Info.plist"
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, "/usr/bin/plutil", "-extract", "CFBundleIdentifier", "raw", "-o", "-", plist).Output()
-	if err != nil {
-		return ""
-	}
-	id := strings.TrimSpace(string(out))
-	if len(id) > 128 {
-		return ""
-	}
-	return id
+	return approval.Peer{PID: pid, Path: executablePath(pid)}
 }
 
 // executablePath is best effort: an unknown path leaves the PID, which still

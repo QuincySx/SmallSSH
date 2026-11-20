@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>连接未完成 · 指纹变化</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" data-flow="服务器指纹变化" class="flex flex-col w-[1100px] h-[760px] bg-canvas">
+      <div data-name="工作台根" class="flex flex-row gap-space-sm p-space-sm w-full h-full">
+        <div data-name="服务器侧栏外框" class="flex flex-col gap-space-sm w-sidebar shrink-0 h-full bg-surface rounded-panel">
+          <div data-name="侧栏标题栏" class="flex flex-row items-center gap-space-xs w-full h-control">
+            <sp-use component="窗口控制" props="位置: 侧栏" data-name="原生窗口按钮" class="w-sidebar-window-reserve h-control"></sp-use>
+            <sp-use component="图标按钮" data-name="侧栏开关" class="w-control h-control">
+              <p data-name="图标"></p>
+            </sp-use>
+            <sp-use component="图标按钮" data-name="新建连接" class="w-control h-control" data-click="11 连接与授权评审/新建连接">
+              <p data-name="图标"></p>
+            </sp-use>
+            <div data-name="侧栏标题留白" class="w-full h-control"></div>
+          </div>
+          <div data-name="服务器侧栏" class="flex flex-col gap-space-sm w-full h-full p-connection-sidebar bg-surface rounded-panel">
+            <sp-use component="输入框" data-name="搜索服务器" class="w-full h-connection-search">
+              <p data-name="值">搜索服务器</p>
+            </sp-use>
+            <p data-name="分组" class="w-full text-muted type-detail">我的服务器</p>
+            <sp-use component="导航项" props="状态: 选中" data-name="Web 生产环境" class="w-full" data-click="11 连接与授权评审/首次连接 · 核对指纹">
+              <p data-name="标签">Web 生产环境</p>
+              <div data-name="图标">
+                <p data-name="字标">W</p>
+              </div>
+            </sp-use>
+            <sp-use component="导航项" data-name="Staging" class="w-full">
+              <p data-name="标签">Staging</p>
+              <div data-name="图标">
+                <p data-name="字标">S</p>
+              </div>
+            </sp-use>
+            <sp-use component="导航项" data-name="备份服务器" class="w-full">
+              <p data-name="标签">备份服务器</p>
+              <div data-name="图标">
+                <p data-name="字标">备</p>
+              </div>
+            </sp-use>
+          </div>
+        </div>
+        <div data-name="主内容列" class="flex flex-col gap-space-sm flex-1 min-w-0 h-full">
+          <div data-name="标题栏" class="flex flex-row items-center w-full h-control shrink-0 gap-space-xs pl-space-sm">
+            <sp-use component="工作区标签" props="状态: 选中" data-name="Web 生产环境标签">
+              <p data-name="名称">Web 生产环境</p>
+            </sp-use>
+            <div data-name="拖动空白" class="flex-1 min-w-0 h-full"></div>
+            <sp-use component="服务入口" data-name="端口转发" class="w-control h-control"></sp-use>
+  <sp-use component="图标按钮" data-name="任务入口" class="w-control h-control">
+              <p data-name="图标"></p>
+            </sp-use>
+            <sp-use component="图标按钮" data-name="工具面板开关" class="w-control h-control">
+              <p data-name="图标"></p>
+            </sp-use>
+            <sp-use component="图标按钮" data-name="设置入口" class="w-control h-control">
+              <p data-name="图标"></p>
+            </sp-use>
+          </div>
+          <div data-name="工作区" class="flex flex-row items-center gap-space-sm w-full flex-1 min-h-0">
+            <div data-name="主内容" class="flex flex-col gap-space-sm w-full h-full">
+              <div data-name="终端内容" class="flex flex-col w-full h-full bg-surface rounded-panel overflow-hidden">
+                <div data-name="终端状态" class="flex flex-col items-center justify-center w-full h-full p-space-xl">
+    <div data-name="状态信息" class="flex flex-col w-full max-w-settings-content items-center gap-space-md">
+      <p data-name="状态" class="type-section text-text">连接未完成</p>
+      <p data-name="目标" class="type-path text-muted">deploy@192.0.2.10:22</p>
+      <p data-name="原因" class="type-native-copy text-danger w-full text-center">服务器指纹与已保存的记录不一致，已阻止登录。</p>
+      <div data-name="操作" class="flex flex-row items-center gap-space-sm w-full justify-center">
+        <sp-use data-name="关闭此标签" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/连接已保存">
+          <p data-name="文字">关闭此标签</p>
+        </sp-use>
+        <sp-use data-name="重新核对服务器身份" class="shrink-0" component="按钮" props="样式: 主操作" data-click="11 连接与授权评审/服务器指纹已变化">
+          <p data-name="文字">重新核对服务器身份</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+  
+</body>
+</html>

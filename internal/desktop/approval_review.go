@@ -5,6 +5,8 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/approval"
+	"sshclient/internal/desktop/components"
+	"sshclient/internal/operationrisk"
 )
 
 // Keep the decision separate from protocol diagnostics. Caller labels remain
@@ -19,10 +21,31 @@ func reviewRow(c *ui.Context, label, value string) {
 	})
 }
 
+// Every current approval request authorizes a server operation. Key-use
+// authorization has its own signing flow and must never inherit these grants.
+func serverOperationAuthorizationLabel(c *ui.Context) ui.Element {
+	return ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Label(tr(c, "授权类型：服务器操作")).Children(func() {
+		ui.Icon(c, components.ShieldIcon).Size(16, 16).TextColor(c.Theme().Accent)
+		ui.Text(c, tr(c, "服务器操作授权")).FontSize(12).Bold().TextColor(c.Theme().Accent)
+	})
+}
+
+// Only guarded, delegated operations enter the pending queue. Their decision
+// authorizes this immutable operation, never the remaining session.
+func operationReview(r approval.Request) bool {
+	return r.ParentID != "" && r.Status == "pending" && r.Operation.Kind != "grant" && !r.OwnerIssued
+}
+
 func approvalHeading(r approval.Request) string {
+	if operationReview(r) {
+		return tr(nil, "本次操作确认")
+	}
 	if r.Operation.Kind == "grant" {
+		if r.Operation.Grant.Permission == approval.MaintenancePermission {
+			return tr(nil, "维护准备授权")
+		}
 		if r.Status != "pending" {
-			return tr(nil, "客户端会话授权")
+			return tr(nil, "服务器操作会话授权")
 		}
 		if r.Renewal {
 			// An authority that has been extended many times deserves to say so.
@@ -38,17 +61,22 @@ func approvalHeading(r approval.Request) string {
 
 func approvalAuthReason(r approval.Request) string {
 	title := operationTitle(r.Operation.Kind)
+	if operationReview(r) {
+		title = tr(nil, "允许本次操作")
+	}
 	if r.Operation.Kind == "grant" {
 		title = approvalActionLabel(r)
 	}
 	// The broker supplies this endpoint from the stored connection. Do not put
 	// self-reported caller names or opaque request IDs into the OS prompt.
 	target := []rune(reviewText(r.Operation.Endpoint))
-	if len(target) > 96 {
-		target = append(target[:95], '…')
-	}
+	title = tr(nil, "服务器操作授权") + " · " + title
 	if len(target) == 0 {
 		return title
+	}
+	limit := min(96, max(1, 120-len([]rune(title))-3))
+	if len(target) > limit {
+		target = append(target[:limit-1], '…')
 	}
 	return title + " · " + string(target)
 }
@@ -58,6 +86,26 @@ func approvalPermission(r approval.Request) (label, actions, caution string) {
 	case "tunnel":
 		return tr(nil, "SSH 隧道"), tr(nil, "转发 TCP 网络流量"), tr(nil, "监听端口可被同机其他进程使用；动态 SOCKS5 能连接任意 TCP 目标")
 	case "grant":
+		if r.Operation.Grant.Permission == approval.MaintenancePermission {
+			actions := tr(nil, "系统检查 · APT 升级预览")
+			if r.Operation.Grant.ReadRoot != "" {
+				actions = tr(nil, "系统检查 · 备份下载 · APT 升级预览")
+			}
+			return tr(nil, "维护准备"), actions, tr(nil, "安装更新、重启及写入需另行授权")
+		}
+		if r.Operation.Grant.Permission == "guarded" {
+			caution := ""
+			if r.Operation.Grant.ReadRoot != "" || r.Operation.Grant.WriteRoot != "" {
+				caution = tr(nil, "仅限授权目录；不含命令、终端、状态采样或容器日志")
+			}
+			if !r.ConfirmsMediumReview() {
+				if r.Status == "pending" {
+					return tr(nil, "限时受控"), "", caution
+				}
+				return tr(nil, "限时受控"), tr(nil, mediumReviewOffNotice), caution
+			}
+			return tr(nil, "限时受控"), tr(nil, "低风险放行 · 中风险确认 · 高风险拒绝"), caution
+		}
 		if r.Operation.Grant.ReadRoot != "" || r.Operation.Grant.WriteRoot != "" {
 			return tr(nil, "限定目录访问"), tr(nil, "仅开放授权目录内的文件操作"), tr(nil, "不含命令、终端、状态采样或容器日志")
 		}
@@ -84,7 +132,7 @@ func approvalPermission(r approval.Request) (label, actions, caution string) {
 		return tr(nil, "删除文件"), "", tr(nil, "删除后无法从此工具恢复")
 	case "put", "put-resume", "replace", "mkdir", "rename", "chmod", "file-attributes":
 		return tr(nil, "修改文件"), "", ""
-	case "compose-plan", "list", "file-info", "get", "get-resume", "monitor", "docker-logs":
+	case "compose-plan", "list", "file-info", "get", "get-resume", "monitor", "docker-logs", "upgrade-preview":
 		return tr(nil, "只读操作"), "", ""
 	default:
 		return tr(nil, "未知操作"), "", tr(nil, "请先核对请求详情")
@@ -98,7 +146,7 @@ func requestReview(c *ui.Context, r approval.Request, serverNames ...string) {
 // requestReviewWithLifetime shows the duration the owner is about to grant,
 // rather than the one the caller suggested.
 func requestReviewWithLifetime(c *ui.Context, r approval.Request, lifetime int, serverNames ...string) {
-	requestReviewWithTerms(c, r, lifetime, 0, serverNames...)
+	requestReviewWithTerms(c, r, lifetime, 0, true, serverNames...)
 }
 
 func grantTermsText(c *ui.Context, lifetime, idle int) string {
@@ -108,7 +156,7 @@ func grantTermsText(c *ui.Context, lifetime, idle int) string {
 	return fmt.Sprintf(tr(c, "最长 %s · 闲置 %s 后失效"), grantDuration(lifetime), grantDuration(idle))
 }
 
-func requestReviewWithTerms(c *ui.Context, r approval.Request, lifetime, idle int, serverNames ...string) {
+func requestReviewWithTerms(c *ui.Context, r approval.Request, lifetime, idle int, showPairing bool, serverNames ...string) {
 	op := r.Operation
 	panel := ui.Column(c).Key(r.ID).FillWidth().MinWidth(0).Gap(16)
 	details := ui.Local(panel, "details", func() bool { return false })
@@ -123,6 +171,9 @@ func requestReviewWithTerms(c *ui.Context, r approval.Request, lifetime, idle in
 				ui.Text(c, tr(c, "申请方")).Width(76).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
 				ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 					ui.Text(c, reviewText(caller)).FillWidth().Selectable().FontSize(15).Bold()
+					if r.Peer.Bundle != "" {
+						ui.Text(c, reviewText(r.Peer.Bundle)).FillWidth().Selectable().FontSize(12)
+					}
 					if !r.OwnerIssued {
 						note := tr(c, "自报名称 · 未验证软件身份")
 						if op.Kind == "grant" {
@@ -182,13 +233,9 @@ func requestReviewWithTerms(c *ui.Context, r approval.Request, lifetime, idle in
 					}
 				}
 				reviewRow(c, tr(c, "授权期限"), term)
-				ui.Column(c).FillWidth().Padding(12, 14).Radius(8).Gap(5).Background(c.Theme().Accent.Alpha(.06)).Border(1, c.Theme().Accent.Alpha(.16)).Children(func() {
-					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, tr(c, "配对码")).FontSize(12).TextColor(c.Theme().TextMuted)
-						ui.Text(c, tr(c, "与申请端一致再允许")).Grow(1).FontSize(11).TextAlign(ui.End).TextColor(c.Theme().TextMuted)
-					})
-					ui.Text(c, op.Grant.PairingCode()).FillWidth().Selectable().FontSize(18).Bold()
-				})
+				if showPairing {
+					operationPairingCode(c, r, false)
+				}
 				ui.Text(c, tr(c, "锁定、退出或撤销后失效")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 			} else {
 				lifetime := tr(c, "本次操作 · 有效至 ") + r.Expires.Local().Format("01-02 15:04:05")
@@ -206,6 +253,10 @@ func requestReviewWithTerms(c *ui.Context, r approval.Request, lifetime, idle in
 }
 
 func requestGrantRoots(c *ui.Context, scope approval.GrantScope) {
+	if scope.Permission == approval.MaintenancePermission {
+		reviewRow(c, tr(c, "备份来源"), scope.ReadRoot)
+		return
+	}
 	if scope.ReadRoot == "" && scope.WriteRoot == "" {
 		return
 	}
@@ -241,6 +292,11 @@ func (a *app) reviewedApproval(id string) (approval.Request, bool) {
 // Security-relevant operation data is shared by compact prompts and the review center.
 func requestOperationReview(c *ui.Context, r approval.Request) {
 	op := r.Operation
+	if operationReview(r) {
+		assessment := operationrisk.Assess(op.Kind, op.Command, op.Path, op.Destination)
+		ui.Text(c, tr(c, "本次操作确认")+" · "+tr(c, assessment.Reason)).FillWidth().FontSize(12).Bold().TextColor(c.Theme().Warning)
+		ui.Text(c, tr(c, "仅本次，不扩大或续期会话权限")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
+	}
 	if op.Kind == "tunnel" {
 		reviewRow(c, tr(c, "隧道方向"), op.Tunnel.Kind)
 		reviewRow(c, tr(c, "监听地址"), op.Tunnel.Listen)
@@ -260,6 +316,10 @@ func requestOperationReview(c *ui.Context, r approval.Request) {
 	}
 	reviewRow(c, tr(c, "路径"), op.Path)
 	reviewRow(c, tr(c, "目标路径"), op.Destination)
+	if operationReview(r) {
+		reviewRow(c, tr(c, "内容摘要"), op.ContentHash)
+		reviewRow(c, tr(c, "原内容摘要"), op.OriginalHash)
+	}
 	if op.Kind == "docker-logs" || op.Kind == "docker-terminal" {
 		reviewRow(c, tr(c, "容器 ID"), op.Docker.Target.ID)
 		if op.Kind == "docker-terminal" {

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"sshclient/internal/approval"
+	"sshclient/internal/operationrisk"
 )
 
 var (
@@ -20,6 +21,7 @@ var (
 	ErrCommand            = errors.New("保护模式下不开放交互终端和容器终端；命令请使用可检查的 exec")
 	ErrEmptyCommand       = errors.New("命令不能为空")
 	ErrDestructiveCommand = errors.New("命令被破坏性命令护栏拦截")
+	ErrHighRisk           = errors.New("受控会话拒绝高风险或不可逐项检查的操作")
 	ErrInvalidPolicy      = errors.New("自动化策略无效")
 )
 
@@ -150,15 +152,27 @@ func (p Policy) Check(op approval.Operation) error {
 		return CheckPaths(MutationPaths(op), p.Paths())
 	case "list", "file-info", "get", "get-resume":
 		return CheckReadPaths(ReadPaths(op), p.Paths())
-	case "grant", "monitor", "docker-logs", "compose-plan":
+	case "grant", "monitor", "docker-logs", "compose-plan", "upgrade-preview":
 		return nil
 	default:
 		return ErrUncontrolled
 	}
 }
 
+// CheckGuarded is additional to the server policy, including when that policy
+// is unrestricted. A guarded grant never opens opaque channels or high risks.
+func CheckGuarded(op approval.Operation) error {
+	assessment := operationrisk.Assess(op.Kind, op.Command, op.Path, op.Destination)
+	if assessment.Level == operationrisk.High {
+		return fmt.Errorf("%w：%s", ErrHighRisk, assessment.Reason)
+	}
+	return nil
+}
+
 func Reason(err error) string {
 	switch {
+	case errors.Is(err, ErrHighRisk):
+		return "high_risk_operation"
 	case errors.Is(err, ErrDisabled):
 		return "automation_disabled"
 	case errors.Is(err, ErrProtected):

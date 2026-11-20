@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/desktop/components"
 	"sshclient/internal/snippet"
 )
 
@@ -81,7 +82,7 @@ func TestSavedCommandSnapshotsWithoutWindows(t *testing.T) {
 					height = 740
 				}
 			}
-			tt := ui.NewTester(view, width, height)
+			tt := ui.NewTester(func(c *ui.Context) { components.ApplyTheme(c, false); view(c) }, width, height)
 			tt.SetDark(dark)
 			if variant == "run-history" {
 				if err := tt.Click("参数 1 历史"); err != nil {

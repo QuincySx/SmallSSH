@@ -3,6 +3,9 @@ package broker
 import (
 	"context"
 	"errors"
+	"os"
+	"sshclient/internal/approval"
+	"sshclient/internal/vault"
 	"time"
 
 	"sshclient/internal/monitor"
@@ -10,9 +13,11 @@ import (
 )
 
 const (
-	monitorCounterInterval   = 2 * time.Second
-	monitorDockerInterval    = 10 * time.Second
-	monitorInventoryInterval = time.Minute
+	monitorCounterInterval          = 2 * time.Second
+	monitorDockerInterval           = 10 * time.Second
+	monitorInventoryInterval        = time.Minute
+	monitorWindowsCounterInterval   = 10 * time.Second
+	monitorWindowsInventoryInterval = 5 * time.Minute
 )
 
 // All authorized sessions to the same SSH user, peer address and host key
@@ -60,10 +65,16 @@ type monitorExecutor func(context.Context, string, time.Duration) (sshconn.Resul
 var errUnknownMonitorProbe = errors.New("仅允许内置服务器状态采样")
 
 // Only these fixed probes are internal telemetry within an already-authorized
-// session. They do not create per-sample audit events. Public exec requests are
-// audited normally, including requests with identical commands or caller labels.
+// session. Actual executions also enter the system audit category; budget waits
+// and cache fanout do not masquerade as extra remote executions.
 func monitorProbeInterval(command string) (time.Duration, error) {
 	switch command {
+	case monitor.PlatformProbe, monitor.WindowsProbeCommand:
+		return monitorCounterInterval, nil
+	case monitor.WindowsStatsCommand:
+		return monitorWindowsCounterInterval, nil
+	case monitor.WindowsInventoryCommand:
+		return monitorWindowsInventoryInterval, nil
 	case monitor.Command:
 		return monitorCounterInterval, nil
 	case monitor.InventoryCommand:
@@ -75,7 +86,9 @@ func monitorProbeInterval(command string) (time.Duration, error) {
 	}
 }
 
-func (s *Server) monitorExecutor(c *sshconn.Client, fingerprint string) monitorExecutor {
+type monitorAuditSource struct{ Host string }
+
+func (s *Server) monitorExecutor(c *sshconn.Client, fingerprint string, sources ...monitorAuditSource) monitorExecutor {
 	// RemoteAddr uses the connected address, so DNS aliases of that same peer
 	// cannot multiply sampling. Different users and host keys remain isolated.
 	target := c.SSH.User() + "@" + c.SSH.RemoteAddr().String() + "\x00" + fingerprint
@@ -92,7 +105,37 @@ func (s *Server) monitorExecutor(c *sshconn.Client, fingerprint string) monitorE
 		return value.(*monitorBudget).run(ctx, gap, func() (sshconn.Result, error) {
 			probe, stop := context.WithTimeout(ctx, timeout)
 			defer stop()
-			return c.Exec(probe, command)
+			if len(sources) == 0 {
+				return c.Exec(probe, command)
+			}
+			source := sources[0]
+			executable, _ := os.Executable()
+			request := approval.Request{ID: vault.ShortID(), Peer: approval.Peer{PID: os.Getpid(), Path: executable}, Operation: approval.Operation{Kind: "system-probe", Host: source.Host, Endpoint: c.SSH.User() + "@" + c.SSH.RemoteAddr().String(), HostFingerprint: fingerprint, Command: command, Client: "SmallSSH 系统采样"}}
+			if err := s.auditRequest("system_started", &request); err != nil {
+				return sshconn.Result{}, err
+			}
+			result, runErr := c.Exec(probe, command)
+			outcome := "success"
+			var code *int
+			if runErr != nil {
+				outcome = "failed"
+				if probe.Err() != nil {
+					outcome = "cancelled"
+				}
+			} else {
+				code = &result.ExitCode
+				if result.ExitCode != 0 {
+					outcome = "failed"
+				}
+			}
+			name := ""
+			if p, e := s.Vault.Profile(source.Host); e == nil {
+				name = p.Name
+			}
+			if err := s.audit.writeOutcome("system_ended", &request, name, outcome, code); err != nil {
+				return sshconn.Result{}, s.failAudit(err)
+			}
+			return result, runErr
 		})
 	}
 }

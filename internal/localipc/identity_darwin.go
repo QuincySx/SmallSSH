@@ -37,16 +37,16 @@ func identify(c net.Conn) (*ProcessIdentity, error) {
 	if credentialErr != nil || length != 32 || token[5] == 0 || token[7] == 0 {
 		return nil, ErrIdentityUnavailable
 	}
-	code, err := auditCodeID(token)
+	code, appID, err := auditCodeIdentity(token)
 	if err != nil {
 		return nil, err
 	}
 	bytes := unsafe.Slice((*byte)(unsafe.Pointer(&token)), 32)
 	digest := sha256.Sum256(bytes)
-	p := &ProcessIdentity{PID: int(token[5]), Instance: "darwin-audit:" + hex.EncodeToString(digest[:]), CodeID: code}
+	p := &ProcessIdentity{PID: int(token[5]), Instance: "darwin-audit:" + hex.EncodeToString(digest[:]), CodeID: code, AppID: appID}
 	p.verify = func() error {
-		current, err := auditCodeID(token)
-		if err != nil || current != code {
+		current, currentAppID, err := auditCodeIdentity(token)
+		if err != nil || current != code || currentAppID != appID {
 			return ErrIdentityUnavailable
 		}
 		return nil
@@ -61,6 +61,7 @@ var codeSecurity struct {
 	err       error
 	guestKey  uintptr
 	uniqueKey uintptr
+	idKey     uintptr
 	data      func(uintptr, unsafe.Pointer, int64) uintptr
 	dict      func(uintptr, unsafe.Pointer, unsafe.Pointer, int64, uintptr, uintptr) uintptr
 	guest     func(uintptr, uintptr, uint32, *uintptr) int32
@@ -69,10 +70,11 @@ var codeSecurity struct {
 	value     func(uintptr, uintptr) uintptr
 	length    func(uintptr) int64
 	bytes     func(uintptr) unsafe.Pointer
+	string    func(uintptr, *byte, int64, uint32) bool
 	release   func(uintptr)
 }
 
-func auditCodeID(token [8]uint32) (string, error) {
+func auditCodeIdentity(token [8]uint32) (codeID, appID string, err error) {
 	codeSecurity.Do(func() {
 		cf, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW|purego.RTLD_LOCAL)
 		if err != nil {
@@ -92,6 +94,7 @@ func auditCodeID(token [8]uint32) (string, error) {
 			{cf, "CFDataCreate", &codeSecurity.data}, {cf, "CFDictionaryCreate", &codeSecurity.dict},
 			{cf, "CFDictionaryGetValue", &codeSecurity.value}, {cf, "CFDataGetLength", &codeSecurity.length},
 			{cf, "CFDataGetBytePtr", &codeSecurity.bytes}, {cf, "CFRelease", &codeSecurity.release},
+			{cf, "CFStringGetCString", &codeSecurity.string},
 			{security, "SecCodeCopyGuestWithAttributes", &codeSecurity.guest},
 			{security, "SecCodeCheckValidity", &codeSecurity.valid},
 			{security, "SecCodeCopySigningInformation", &codeSecurity.info},
@@ -108,7 +111,8 @@ func auditCodeID(token [8]uint32) (string, error) {
 		for _, key := range []struct {
 			name string
 			out  *uintptr
-		}{{"kSecGuestAttributeAudit", &codeSecurity.guestKey}, {"kSecCodeInfoUnique", &codeSecurity.uniqueKey}} {
+		}{{"kSecGuestAttributeAudit", &codeSecurity.guestKey}, {"kSecCodeInfoUnique", &codeSecurity.uniqueKey},
+			{"kSecCodeInfoIdentifier", &codeSecurity.idKey}} {
 			symbol := symbolPointer(security, key.name)
 			if symbol == nil {
 				codeSecurity.err = ErrIdentityUnavailable
@@ -118,41 +122,50 @@ func auditCodeID(token [8]uint32) (string, error) {
 		}
 	})
 	if codeSecurity.err != nil {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	s := &codeSecurity
 	data := s.data(0, unsafe.Pointer(&token), 32)
 	runtime.KeepAlive(token)
 	if data == 0 {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	defer s.release(data)
 	attributes := s.dict(0, unsafe.Pointer(&s.guestKey), unsafe.Pointer(&data), 1, 0, 0)
 	if attributes == 0 {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	defer s.release(attributes)
 	var code uintptr
 	if s.guest(0, attributes, 0, &code) != 0 || code == 0 {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	defer s.release(code)
 	if s.valid(code, 0, 0) != 0 {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	var information uintptr
 	if s.info(code, 2, &information) != 0 || information == 0 {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	defer s.release(information)
 	unique := s.value(information, s.uniqueKey)
 	if unique == 0 {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
 	n := s.length(unique)
 	ptr := s.bytes(unique)
 	if n < 16 || n > 64 || ptr == nil {
-		return "", ErrIdentityUnavailable
+		return "", "", ErrIdentityUnavailable
 	}
-	return "cdhash:" + hex.EncodeToString(unsafe.Slice((*byte)(ptr), int(n))), nil
+	// The signing identifier is part of the validated code signature. An
+	// ad-hoc executable can choose its identifier, so it never replaces the hash.
+	if identifier := s.value(information, s.idKey); identifier != 0 {
+		const utf8Encoding = 0x08000100
+		var value [257]byte
+		if s.string(identifier, &value[0], int64(len(value)), utf8Encoding) {
+			appID = unix.ByteSliceToString(value[:])
+		}
+	}
+	return "cdhash:" + hex.EncodeToString(unsafe.Slice((*byte)(ptr), int(n))), appID, nil
 }

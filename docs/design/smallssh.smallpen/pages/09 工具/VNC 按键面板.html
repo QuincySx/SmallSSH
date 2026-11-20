@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>VNC 按键面板</title><link rel="stylesheet" href="../../tokens.css"></head><body class="flex flex-col w-vnc-popover h-fit bg-surface">
+<div data-name="按键弹出层" class="flex flex-col gap-space-sm p-space-md w-full h-fit border border-border rounded-window-panel">
+<div data-name="标题栏" class="flex flex-row items-center gap-space-sm w-full h-control"><p data-name="标题" class="w-full text-text type-control">发送按键</p><sp-use component="图标按钮" data-name="收起" data-click="close-overlay"><p data-name="图标"></p></sp-use></div>
+<div data-name="修饰键" class="flex flex-row gap-space-xs w-full h-control">
+<sp-use component="按钮" props="样式: 普通" data-name="Ctrl" class="w-full"><p data-name="文字">Ctrl</p></sp-use>
+<sp-use component="按钮" props="样式: 普通" data-name="Alt" class="w-full"><p data-name="文字">Alt</p></sp-use>
+<sp-use component="按钮" props="样式: 普通" data-name="Shift" class="w-full"><p data-name="文字">Shift</p></sp-use>
+<sp-use component="按钮" props="样式: 普通" data-name="Win" class="w-full"><p data-name="文字">Win</p></sp-use>
+</div>
+<div data-name="常用按键" class="flex flex-row gap-space-xs w-full h-control">
+<sp-use component="按钮" props="样式: 普通" data-name="Esc" class="w-full"><p data-name="文字">Esc</p></sp-use>
+<sp-use component="按钮" props="样式: 普通" data-name="Tab" class="w-full"><p data-name="文字">Tab</p></sp-use>
+<sp-use component="按钮" props="样式: 普通" data-name="CtrlAltDel" class="w-[108px]"><p data-name="文字">Ctrl Alt Del</p></sp-use>
+</div>
+<p data-name="更多按键" class="w-full text-muted type-detail">▸ 更多按键</p>
+</div></body></html>

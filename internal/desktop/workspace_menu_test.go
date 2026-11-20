@@ -10,6 +10,39 @@ import (
 	"sshclient/internal/approval"
 )
 
+func TestNewConnectionOpensFromTitleBarAndPreservesWorkspace(t *testing.T) {
+	for _, width := range []int{560, 1280} {
+		for _, compact := range []bool{false, true} {
+			t.Run(fmt.Sprintf("width=%d compact=%t", width, compact), func(t *testing.T) {
+				a := fileFollowDemo()
+				a.sidebarHidden = compact
+				first, pane := a.sessions[0], a.primaryFilePane
+				tt := ui.NewTester(a.view, width, 760)
+				tt.SetTitleBar(ui.TitleBar{Height: 48, Left: 70})
+				button, ok := tt.Find("新建连接")
+				if !ok || button.Y < 0 || button.Y+button.H > 48 {
+					t.Fatal("new connection is not in the title bar", button)
+				}
+				sidebar, sideOK := tt.Find(a.pageSidebarLabel(1))
+				_, terminalOK := tt.Find("新建终端标签")
+				tab, tabOK := tt.Find("终端 A")
+				if !sideOK || terminalOK || !tabOK || button.X < sidebar.X+sidebar.W || button.X+button.W > tab.X {
+					t.Fatal("new connection must stay beside the sidebar without a terminal icon", sidebar, button, tab)
+				}
+				if err := tt.Click("新建连接"); err != nil || !tt.HasText("新建连接对话框") {
+					t.Fatal("title bar action did not open the connection form", err)
+				}
+				if err := tt.Click("取消"); err != nil {
+					t.Fatal(err)
+				}
+				if a.page != 1 || a.sidebarHidden != compact || a.sessions[0] != first || a.primaryFilePane != pane {
+					t.Fatal("opening and cancelling changed workspace state")
+				}
+			})
+		}
+	}
+}
+
 func TestPrimaryPagesUseWholeContentAndRetainWorkspace(t *testing.T) {
 	a := fileFollowDemo()
 	a.ensureFileLayout()
@@ -83,7 +116,7 @@ func TestWorkspaceHeaderStaysSingleAndControlsFollowTheirPage(t *testing.T) {
 					if !ok || header.Y != 0 || header.H != 48 || header.W != float32(width) {
 						t.Fatal("global header moved", header)
 					}
-					for _, label := range []string{"设置", "传输任务", "隐藏工具面板", a.pageSidebarLabel(1)} {
+					for _, label := range []string{"设置", "任务中心", "隐藏工具面板", a.pageSidebarLabel(1)} {
 						r, found := tt.Find(label)
 						if !found || r.W < 24 || r.X < 0 || r.X+r.W > float32(width)+1 || r.Y < 0 || r.Y+r.H > header.H+1 {
 							t.Fatal("global control clipped", label, r, header)
@@ -225,7 +258,7 @@ func TestApprovalCollapseKeepsNarrowSelectionAndClearsPasswordOnNewTarget(t *tes
 	a.requests = []approval.Request{first, second}
 	a.selectedRequest = first.ID
 	tt := ui.NewTester(a.settingsWindowView, 720, 760)
-	if err := tt.Click("允许"); err != nil {
+	if err := tt.Click("允许操作"); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.Click("保险库主密码"); err != nil {
@@ -240,13 +273,13 @@ func TestApprovalCollapseKeepsNarrowSelectionAndClearsPasswordOnNewTarget(t *tes
 	if err := tt.Click("选择授权请求"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.Click("2. 我的 AI 助手 · 客户端会话授权"); err != nil {
+	if err := tt.Click("2. 我的 AI 助手 · 服务器操作会话授权"); err != nil {
 		t.Fatal(err)
 	}
 	if a.selectedRequest != second.ID || a.ownerPass != "" || !tt.HasText(second.Operation.Endpoint) {
 		t.Fatal("restored request selection reused authentication for another target")
 	}
-	for _, label := range []string{"拒绝", "允许"} {
+	for _, label := range []string{"拒绝", "允许操作"} {
 		r, found := tt.Find(label)
 		if !found || r.X < 0 || r.X+r.W > 720 || r.Y+r.H > 760 {
 			t.Fatal("narrow review clipped a required decision", label, r)

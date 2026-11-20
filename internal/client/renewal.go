@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
+	"sshclient/internal/protocol"
 )
 
 func (d *Delegation) renewalScopeMatches(op approval.Operation, requested approval.Operation) bool {
@@ -14,7 +14,7 @@ func (d *Delegation) renewalScopeMatches(op approval.Operation, requested approv
 }
 
 func (c Client) renewDelegation(ctx context.Context, d *Delegation, op approval.Operation) error {
-	r, err := c.CallWithSession(ctx, broker.Message{Action: "renewalChallenge", ID: d.ParentID, Ticket: d.Ticket}, d)
+	r, err := c.CallWithSession(ctx, protocol.Message{Action: "renewalChallenge", ID: d.ParentID, Ticket: d.Ticket}, d)
 	if err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func (c Client) renewDelegation(ctx context.Context, d *Delegation, op approval.
 		if signErr != nil {
 			return signErr
 		}
-		r, err = c.CallWithSession(ctx, broker.Message{Action: "renewSession", ID: challenge.ID, Proof: sig}, d)
+		r, err = c.CallWithSession(ctx, protocol.Message{Action: "renewSession", ID: challenge.ID, Proof: sig}, d)
 		if err != nil {
 			return err
 		}

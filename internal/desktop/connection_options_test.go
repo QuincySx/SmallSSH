@@ -16,9 +16,11 @@ func TestSavedConnectionImmediatelyReopensWithItsPublicOptions(t *testing.T) {
 	p.Terminal = connectcfg.Terminal{Encoding: "gb18030", Backspace: "bs"}
 	p.Network = connectcfg.Network{Proxy: connectcfg.Proxy{Mode: "socks5", Address: "127.0.0.1:1080", User: "example", Password: "synthetic proxy password"}, KeepaliveSeconds: 30}
 	h.a.form, h.a.port = p, strconv.Itoa(p.Port)
-	h.a.connection.trustedTarget, h.a.connection.connect = targetID(p.Host, p.Port), false
+	h.a.connection.trustedTarget = targetID(p.Host, p.Port)
+	h.a.connection.trustedTarget = targetID(p.Host, p.Port)
 	h.a.saveProfile()
 	h.wait(func() bool { return h.a.page == 1 })
+	h.a.selected = p.ID  // Saving does not activate tools for the new target.
 	h.a.editConnection() // No poll/refresh between saving and reopening.
 	if h.a.form.Terminal != p.Terminal || h.a.form.Network != p.Network.Public() {
 		t.Fatal("immediate edit lost terminal or route options", h.a.form.Terminal, h.a.form.Network.Public())
@@ -51,7 +53,7 @@ func TestConnectionTerminalAndNetworkOptionsSurviveEditing(t *testing.T) {
 	if err := tester.Click("连接分类：加速与代理"); err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"网络代理", "自有 SSH 中转", "路径实测"} {
+	for _, label := range []string{"网络代理", "自有 SSH 跳板机", "路径实测"} {
 		if !tester.HasText(label) {
 			t.Fatal("missing network option", label, tester.Texts())
 		}
@@ -101,5 +103,52 @@ func TestConnectionOptionSelectionsUpdateSavedValues(t *testing.T) {
 	}
 	if a.form.Network.KeepaliveSeconds != 30 {
 		t.Fatal("keepalive dropdown lost its chosen value between frames")
+	}
+}
+
+func TestKeepaliveHelpExplainsStatesAndPreservesTheInactiveWaitLimit(t *testing.T) {
+	a := &app{online: true}
+	a.newConnection()
+	a.connection.section = connectionTerminal
+	tt := ui.NewTester(a.connectionView, 1000, 900)
+	if !tt.HasText("关：不发送探测") || tt.HasText("最长等待") || a.connectionHasChanges() {
+		t.Fatal("disabled keepalive was not explained or viewing help changed the draft")
+	}
+	if err := tt.Click("SSH 保活间隔选择"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("30 秒"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("开：定时探测连接") || !tt.HasText("最长等待 90 秒") {
+		t.Fatal("default wait limit did not explain the actual response deadline")
+	}
+	if err := tt.Click("无响应等待上限选择"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("5 个保活间隔"); err != nil {
+		t.Fatal(err)
+	}
+	if a.form.Network.KeepaliveFailures != 5 || !tt.HasText("最长等待 150 秒") {
+		t.Fatal("wait selection did not update its plain-language deadline")
+	}
+	if err := tt.Click("SSH 保活间隔选择"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("关闭"); err != nil {
+		t.Fatal(err)
+	}
+	_ = tt.Click("无响应等待上限选择")
+	if tt.HasText("1 个保活间隔") || a.form.Network.KeepaliveFailures != 5 || a.form.Network.KeepaliveSeconds != 0 {
+		t.Fatal("inactive wait control opened or discarded its saved preference")
+	}
+	if err := tt.Click("SSH 保活间隔选择"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("30 秒"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("最长等待 150 秒") || a.form.Network.KeepaliveFailures != 5 {
+		t.Fatal("re-enabling keepalive did not restore its wait preference")
 	}
 }

@@ -12,6 +12,10 @@ func (a *app) openSettingsWindow(section string) {
 	if !a.online {
 		return
 	}
+	if a.presence.backgrounded {
+		// This entry is an explicit user action, unlike deferred creation.
+		a.showFromPresence()
+	}
 	if !a.settingsOpen {
 		a.clearInlineApproval()
 	}
@@ -21,7 +25,7 @@ func (a *app) openSettingsWindow(section string) {
 	a.selectSettingsSection(section)
 	a.settingsOpen = true
 	if a.settingsWin != nil {
-		a.settingsWin.Show()
+		a.showPresenceWindow(a.settingsWin)
 		a.invalidateWindows()
 		return
 	}
@@ -85,7 +89,7 @@ func (a *app) openSettingsWindow(section string) {
 			return
 		}
 		a.settingsWin = w
-		w.Show()
+		a.showPresenceWindow(w)
 		a.invalidateWindows()
 	}
 	if a.win != nil || a.dispatch != nil {
@@ -96,6 +100,7 @@ func (a *app) openSettingsWindow(section string) {
 }
 
 func (a *app) closeSettingsWindow() {
+	a.cancelIdentitySettings()
 	w := a.settingsWin
 	a.settingsWin = nil
 	a.settingsOpen, a.settingsWindowPending, a.settingsWindowReady = false, false, false

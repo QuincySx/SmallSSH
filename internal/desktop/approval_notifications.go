@@ -16,6 +16,14 @@ func approvalNoticeKey(r approval.Request) string {
 	return r.ID + ":" + r.Nonce
 }
 
+func (a *app) markApprovalHandled(r approval.Request) {
+	if a.notified == nil {
+		a.notified = make(map[string]bool)
+	}
+	a.notified[approvalNoticeKey(r)] = true
+	a.wakePoll()
+}
+
 // nextApprovalPopup returns the next pending request that deserves the owner's
 // attention. Every request that needs a decision qualifies: a one-shot exec,
 // a file operation, a new session, or a pending child. One window is shown at
@@ -46,9 +54,9 @@ func (a *app) nextApprovalPopup(now time.Time) (approval.Request, bool) {
 // request itself: the title says how many more prompts will follow.
 func (a *app) approvalWindowTitle(r approval.Request) string {
 	if remaining := a.otherPendingApprovals(r.ID); remaining > 0 {
-		return fmt.Sprintf(tr(nil, "访问授权 · 还有 %d 条待处理"), remaining)
+		return fmt.Sprintf(tr(nil, "服务器操作授权 · 还有 %d 条待处理"), remaining)
 	}
-	return tr(nil, "访问授权")
+	return tr(nil, "服务器操作授权")
 }
 
 // otherPendingApprovals counts requests that will still get their own popup.

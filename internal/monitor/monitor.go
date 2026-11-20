@@ -70,39 +70,40 @@ type Process struct {
 	cpuSeconds float64
 }
 type Stats struct {
-	SourceID         string          `json:"sourceId,omitempty"`
-	Time             time.Time       `json:"time"`
-	CPU              float64         `json:"cpu"`
-	MemoryTotal      uint64          `json:"memoryTotal"`
-	MemoryUsed       uint64          `json:"memoryUsed"`
-	RX               uint64          `json:"rx"`
-	TX               uint64          `json:"tx"`
-	RXPerSecond      float64         `json:"rxPerSecond"`
-	TXPerSecond      float64         `json:"txPerSecond"`
-	Load             string          `json:"load"`
-	Disks            []Disk          `json:"disks"`
-	Processes        []Process       `json:"processes"`
-	Uptime           float64         `json:"uptime"`
-	Inventory        *Inventory      `json:"inventory,omitempty"`
-	CPUDetail        CPUUsage        `json:"cpuDetail"`
-	Cores            []CPUUsage      `json:"cores,omitempty"`
-	MemoryAvailable  uint64          `json:"memoryAvailable"`
-	MemoryFree       uint64          `json:"memoryFree"`
-	MemoryCached     uint64          `json:"memoryCached"`
-	MemoryBuffers    uint64          `json:"memoryBuffers"`
-	SwapTotal        uint64          `json:"swapTotal"`
-	SwapUsed         uint64          `json:"swapUsed"`
-	Networks         []Network       `json:"networks,omitempty"`
-	DefaultNetwork   string          `json:"defaultNetwork,omitempty"`
-	BlockIO          []BlockIO       `json:"blockIO,omitempty"`
-	ProcessCount     int             `json:"processCount"`
-	ProcessNote      string          `json:"processNote,omitempty"`
-	BootID           string          `json:"bootId,omitempty"`
-	TCP              TCPInfo         `json:"tcp"`
-	DockerStats      *DockerSnapshot `json:"dockerStats,omitempty"`
-	PortSnapshot     *PortSnapshot   `json:"portSnapshot,omitempty"`
-	RunningProcesses int             `json:"runningProcesses"`
-	total            uint64
+	SampleIntervalSeconds int             `json:"sampleIntervalSeconds,omitempty"`
+	SourceID              string          `json:"sourceId,omitempty"`
+	Time                  time.Time       `json:"time"`
+	CPU                   float64         `json:"cpu"`
+	MemoryTotal           uint64          `json:"memoryTotal"`
+	MemoryUsed            uint64          `json:"memoryUsed"`
+	RX                    uint64          `json:"rx"`
+	TX                    uint64          `json:"tx"`
+	RXPerSecond           float64         `json:"rxPerSecond"`
+	TXPerSecond           float64         `json:"txPerSecond"`
+	Load                  string          `json:"load"`
+	Disks                 []Disk          `json:"disks"`
+	Processes             []Process       `json:"processes"`
+	Uptime                float64         `json:"uptime"`
+	Inventory             *Inventory      `json:"inventory,omitempty"`
+	CPUDetail             CPUUsage        `json:"cpuDetail"`
+	Cores                 []CPUUsage      `json:"cores,omitempty"`
+	MemoryAvailable       uint64          `json:"memoryAvailable"`
+	MemoryFree            uint64          `json:"memoryFree"`
+	MemoryCached          uint64          `json:"memoryCached"`
+	MemoryBuffers         uint64          `json:"memoryBuffers"`
+	SwapTotal             uint64          `json:"swapTotal"`
+	SwapUsed              uint64          `json:"swapUsed"`
+	Networks              []Network       `json:"networks,omitempty"`
+	DefaultNetwork        string          `json:"defaultNetwork,omitempty"`
+	BlockIO               []BlockIO       `json:"blockIO,omitempty"`
+	ProcessCount          int             `json:"processCount"`
+	ProcessNote           string          `json:"processNote,omitempty"`
+	BootID                string          `json:"bootId,omitempty"`
+	TCP                   TCPInfo         `json:"tcp"`
+	DockerStats           *DockerSnapshot `json:"dockerStats,omitempty"`
+	PortSnapshot          *PortSnapshot   `json:"portSnapshot,omitempty"`
+	RunningProcesses      int             `json:"runningProcesses"`
+	total                 uint64
 }
 
 func num(s string) uint64 { n, _ := strconv.ParseUint(s, 10, 64); return n }

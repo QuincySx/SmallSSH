@@ -5,35 +5,27 @@
   <title>核对服务器身份</title>
   <link rel="stylesheet" href="../../tokens.css">
 </head>
-<body class="flex flex-col w-[900px] h-[600px] bg-canvas">
-  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
-    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
-      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
-        <p data-name="标题文字" class="w-full text-text type-section">核对服务器身份</p>
-        <sp-use component="图标按钮" data-name="关闭弹窗">
-          <p data-name="图标"></p>
-        </sp-use>
+<body class="relative flex items-center justify-center w-[1000px] h-[640px] bg-canvas">
+    <div data-name="背景承载" class="absolute inset-0 flex flex-row">
+      <sp-use component="连接弹窗背景" data-name="工作台背景" class="w-full h-full" props="列表: 空"></sp-use>
+    </div>
+    <div data-name="模态遮罩" class="absolute inset-0 bg-dialog-shade">
+    </div>
+    <div data-name="首次连接对话框" class="flex flex-col w-dialog-small gap-space-md p-space-lg bg-surface rounded-window-panel shadow-native-dialog">
+      <p data-name="标题" class="w-full type-native-dialog text-text">首次连接</p>
+      <p data-name="目标" class="w-full type-native-copy text-muted">demo@192.0.2.10:22</p>
+      <div data-name="服务器指纹" class="flex flex-col w-full gap-0">
+        <p data-name="标签" class="type-native-copy text-text">服务器指纹</p>
+        <p data-name="完整指纹" class="type-native-copy text-text">SHA256:w1H85gE9C7qRE4zP0O4Wp5vM7Tg5J2Gr8RcbX6cVxfk</p>
       </div>
-      <div data-name="身份" class="flex flex-col gap-[8px] w-full">
-        <p data-name="目标" class="w-full text-text type-section">demo@192.0.2.10:22</p>
-        <div data-name="字段 公钥算法" class="flex flex-row items-center gap-[8px] w-full">
-          <p data-name="标签" class="w-[116px] text-text type-body">公钥算法</p>
-          <sp-use component="输入框" data-name="值" class="w-full">
-            <p data-name="值">ssh-ed25519</p>
-          </sp-use>
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
+        <div data-name="取消" class="flex flex-row items-center gap-space-sm w-fit h-field justify-center px-native-button-inline rounded-control bg-native-quiet" data-click="02 工作台/终端与底部文件">
+          <p data-name="文字" class="type-native-copy text-text">取消</p>
         </div>
-        <p data-name="指纹" class="w-full text-accent type-body">SHA256:EXAMPLE_PUBLIC_HOST_FINGERPRINT</p>
-        <p data-name="提醒" class="w-full text-muted type-body">请与服务器控制台核对；确认前不发送登录凭据。</p>
-      </div>
-      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
-        <sp-use component="按钮" props="样式: 普通" data-name="取消">
-          <p data-name="文字">取消</p>
-        </sp-use>
-        <sp-use component="按钮" data-name="信任并连接">
-          <p data-name="文字">信任并连接</p>
-        </sp-use>
+        <div data-name="信任指纹并连接" class="flex flex-row items-center gap-space-sm w-fit h-field justify-center px-native-button-inline rounded-control bg-accent">
+          <p data-name="文字" class="type-native-copy text-onaccent">信任指纹并连接</p>
+        </div>
       </div>
     </div>
-  </div>
 </body>
 </html>

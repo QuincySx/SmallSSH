@@ -11,11 +11,13 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 	"sshclient/internal/approval"
 	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/desktop/components"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 )
 
 type fileReadState struct {
+	route          connectcfg.RouteSelection
 	endpoint, name string
 	loading        bool
 	error          string
@@ -44,13 +46,15 @@ func (a *app) cancelEditorRead() {
 
 // The document exists before any disk or SSH work begins. Completion only
 // populates that document; it never selects a tab after the user moved away.
-func (a *app) readEditor(endpoint, name string) {
+func (a *app) readEditor(endpoint, name string, selectedRoute ...connectcfg.RouteSelection) {
 	a.cancelEditorRead()
 	a.editorSequence++
 	seq, gen := a.editorSequence, a.generation
 	a.installEditor(endpoint, name, "", "")
-	ctx, cancel := context.WithTimeout(a.operationContext(), 30*time.Second)
-	load := &fileReadState{endpoint: endpoint, name: name, loading: true, cancel: cancel, editor: a.edit}
+	route := a.fileRoute(endpoint, selectedRoute...)
+	a.editRoute = route
+	ctx, cancel := context.WithTimeout(client.WithRoute(a.operationContext(), endpoint, route), 30*time.Second)
+	load := &fileReadState{endpoint: endpoint, name: name, route: route, loading: true, cancel: cancel, editor: a.edit}
 	a.editorRead = load
 	current := func() bool {
 		return a.editorRead == load && a.editorSequence == seq && a.generation == gen && a.edit == load.editor
@@ -120,7 +124,6 @@ func (a *app) editorReadView(c *ui.Context, load *fileReadState) {
 			ui.Text(c, reviewText(load.error)).FillWidth().TextColor(c.Theme().Danger)
 		}
 		ui.Text(c, a.endpointName(load.endpoint)+" · "+reviewText(load.name)).FillWidth().FontSize(12).TextColor(c.Theme().TextMuted)
-		ui.Text(c, tr(c, "内置编辑器支持 4 MiB 以内、不含 NUL 的 UTF-8 文本；图片、PDF、压缩包和其他二进制文件请下载后打开。")).FillWidth().FontSize(12).TextColor(c.Theme().TextMuted)
 		ui.Row(c).Gap(8).Children(func() {
 			if load.loading {
 				if components.Button(c, tr(c, "取消读取")).Clicked() {
@@ -128,10 +131,10 @@ func (a *app) editorReadView(c *ui.Context, load *fileReadState) {
 					load.cancel()
 				}
 			} else if components.Button(c, tr(c, "重试读取")).Clicked() {
-				a.readEditor(load.endpoint, load.name)
+				a.readEditor(load.endpoint, load.name, load.route)
 			}
 			if load.endpoint != localEndpoint && components.Button(c, tr(c, "下载此文件…")).Clicked() {
-				a.promptDownload(load.endpoint, path.Dir(load.name), []sshconn.File{{Name: path.Base(load.name)}})
+				a.promptDownload(load.endpoint, path.Dir(load.name), []sshdata.File{{Name: path.Base(load.name)}}, load.route)
 			}
 		})
 	})
@@ -140,7 +143,7 @@ func (a *app) editorReadView(c *ui.Context, load *fileReadState) {
 // Keep feedback beside the originating list even when the editor is behind
 // another window. The action only shows the existing document, without I/O.
 func (a *app) fileOpenFeedback(c *ui.Context, p *filePane, dir string) {
-	if a.editPath == "" || a.editHost != p.endpoint || parentDir(p.endpoint == localEndpoint, a.editPath) != dir {
+	if a.editPath == "" || a.editHost != p.endpoint || a.editRoute != p.route || parentDir(p.endpoint == localEndpoint, a.editPath) != dir {
 		return
 	}
 	name := reviewText(baseName(p.endpoint == localEndpoint, a.editPath))

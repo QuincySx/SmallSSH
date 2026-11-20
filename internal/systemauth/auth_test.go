@@ -32,59 +32,62 @@ func (f *fakeBackend) Unwrap(ctx context.Context, _ json.RawMessage, _ string) (
 	}
 	return append([]byte(nil), f.key...), nil
 }
-func TestSystemGateCancelTamperAndFreshVerification(t *testing.T) {
-	dir := t.TempDir()
-	pass := []byte("independent test password")
+func unlockedTestVault(t *testing.T, dir string, pass []byte) *vault.Session {
+	t.Helper()
 	v, e := vault.New(pass)
 	if e != nil {
 		t.Fatal(e)
 	}
-	defer v.Close()
+	t.Cleanup(v.Close)
 	if e = vault.Save(filepath.Join(dir, "vault.json"), v, true); e != nil {
 		t.Fatal(e)
 	}
+	return v
+}
+
+func TestSystemGateCancelTamperAndFreshVerification(t *testing.T) {
+	dir := t.TempDir()
+	pass := []byte("independent test password")
+	v := unlockedTestVault(t, dir, pass)
 	b := &fakeBackend{}
 	s := &Service{backend: b}
 	ctx := context.Background()
-	if e = s.Enroll(ctx, dir, []byte("wrong")); e == nil {
-		t.Fatal("enrollment without master proof")
+	if _, e := s.Seal(ctx, nil); e == nil {
+		t.Fatal("sealed without an unlocked vault")
 	}
-	if e = s.Enroll(ctx, dir, pass); e != nil {
+	sealed, e := s.Seal(ctx, v)
+	if e != nil {
 		t.Fatal(e)
 	}
-	raw, _ := os.ReadFile(path(dir))
 	for _, secret := range [][]byte{pass, b.key} {
-		if contains(raw, secret) {
-			t.Fatal("plaintext key saved")
+		if contains(sealed, secret) {
+			t.Fatal("plaintext key in the sealed record")
 		}
 	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Fatal("sealing wrote beside the vault", entries)
+	}
 	b.deny = true
-	if _, e = s.Open(ctx, dir, "approve"); e == nil {
+	if _, e = s.OpenRecord(ctx, dir, sealed, "approve"); e == nil {
 		t.Fatal("cancel bypass")
 	}
 	b.deny = false
 	for i := 0; i < 2; i++ {
-		v, e = s.Open(ctx, dir, "approve")
+		opened, e := s.OpenRecord(ctx, dir, sealed, "approve")
 		if e != nil {
 			t.Fatal(e)
 		}
-		v.Close()
+		opened.Close()
 	}
 	if b.calls != 3 {
 		t.Fatal("verification cached", b.calls)
 	}
 	b.key[0] ^= 1
-	if _, e = s.Open(ctx, dir, "approve"); e == nil {
+	if _, e = s.OpenRecord(ctx, dir, sealed, "approve"); e == nil {
 		t.Fatal("wrong device key accepted")
 	}
-	if e = s.Disable(dir, []byte("wrong")); e == nil {
-		t.Fatal("removed without master")
-	}
-	if e = s.Disable(dir, pass); e != nil {
-		t.Fatal(e)
-	}
 	if s.Status(ctx, dir).Enabled {
-		t.Fatal("still enabled")
+		t.Fatal("status claims a record it does not hold")
 	}
 }
 func contains(b, s []byte) bool {
@@ -109,40 +112,38 @@ func (b *cleaningBackend) Remove(_ context.Context, _ json.RawMessage) error {
 	}
 	return nil
 }
-func TestDeviceRecordCleanupAndBoundedReading(t *testing.T) {
+func TestLegacyRecordRemovalAndBoundedRecords(t *testing.T) {
 	dir := t.TempDir()
 	pass := []byte("long cleanup test password")
-	v, _ := vault.New(pass)
-	vault.Save(filepath.Join(dir, "vault.json"), v, true)
-	v.Close()
+	v := unlockedTestVault(t, dir, pass)
 	b := &cleaningBackend{}
 	s := &Service{backend: b}
 	ctx := context.Background()
-	if e := s.Enroll(ctx, dir, pass); e != nil {
+	if existed, e := s.RemoveLegacy(ctx, dir); existed || e != nil {
+		t.Fatal("no legacy record", existed, e)
+	}
+	sealed, e := s.Seal(ctx, v)
+	if e != nil {
 		t.Fatal(e)
 	}
-	if e := s.Enroll(ctx, dir, pass); e != nil {
+	if e = os.WriteFile(legacyPath(dir), sealed, 0600); e != nil {
 		t.Fatal(e)
 	}
-	if b.count != 1 {
-		t.Fatal("old keyring item retained")
+	existed, e := s.RemoveLegacy(ctx, dir)
+	if !existed || e != nil || b.count != 1 {
+		t.Fatal("legacy record or its keyring entry kept", existed, e, b.count)
 	}
-	b.fail = true
-	if e := s.Disable(dir, pass); e == nil {
-		t.Fatal("cleanup failure hidden")
+	if _, e = os.Stat(legacyPath(dir)); !os.IsNotExist(e) {
+		t.Fatal("legacy file still on disk")
 	}
-	if !s.Status(ctx, dir).Enabled {
-		t.Fatal("record removed before cleanup")
+	s.Discard(ctx, sealed)
+	if b.count != 2 {
+		t.Fatal("discard did not release the keyring entry")
 	}
-	b.fail = false
-	if e := s.Disable(dir, pass); e != nil {
-		t.Fatal(e)
-	}
-	if e := os.WriteFile(path(dir), make([]byte, 65537), 0600); e != nil {
-		t.Fatal(e)
-	}
-	if _, e := s.Open(ctx, dir, "test"); e == nil {
-		t.Fatal("oversized record accepted")
+	for _, bad := range [][]byte{nil, make([]byte, 65537), []byte(`{"version":2}`), []byte(`not json`)} {
+		if _, e := s.OpenRecord(ctx, dir, bad, "test"); e == nil {
+			t.Fatal("invalid record accepted", len(bad))
+		}
 	}
 }
 
@@ -163,30 +164,19 @@ func (b *lateSuccessBackend) Wrap(ctx context.Context, key []byte) (json.RawMess
 	}
 	return data, err
 }
-func TestLateSystemSuccessAfterCancellationCannotReleaseOrEnroll(t *testing.T) {
+func TestLateSystemSuccessAfterCancellationCannotReleaseOrSeal(t *testing.T) {
 	dir := t.TempDir()
-	pass := []byte("isolated cancellation master password")
-	v, err := vault.New(pass)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = vault.Save(filepath.Join(dir, "vault.json"), v, true); err != nil {
-		t.Fatal(err)
-	}
-	v.Close()
+	v := unlockedTestVault(t, dir, []byte("isolated cancellation master password"))
 	b := &lateSuccessBackend{}
 	service := &Service{backend: b}
-	if err = service.Enroll(context.Background(), dir, pass); err != nil {
-		t.Fatal(err)
-	}
-	original, err := os.ReadFile(path(dir))
+	sealed, err := service.Seal(context.Background(), v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	b.cancel = cancel
-	if session, err := service.Open(ctx, dir, "test"); err == nil {
+	if session, err := service.OpenRecord(ctx, dir, sealed, "test"); err == nil {
 		session.Close()
 		t.Fatal("late cancelled verification accepted")
 	}
@@ -194,11 +184,7 @@ func TestLateSystemSuccessAfterCancellationCannotReleaseOrEnroll(t *testing.T) {
 	defer cancel()
 	b.cancel = cancel
 	b.onWrap = true
-	if err = service.Enroll(ctx, dir, pass); err == nil {
-		t.Fatal("cancelled enrollment accepted")
-	}
-	after, err := os.ReadFile(path(dir))
-	if err != nil || string(after) != string(original) {
-		t.Fatal("cancelled enrollment changed device record", err)
+	if again, err := service.Seal(ctx, v); err == nil || again != nil {
+		t.Fatal("cancelled sealing returned a record")
 	}
 }

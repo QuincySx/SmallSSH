@@ -2,12 +2,11 @@ package components
 
 import "github.com/egoist/mygo/ui"
 
-// SidebarSplit changes only widths and the grip's enabled state. Both panes
-// keep the same parent and identity when navigation becomes compact.
-func SidebarSplit(c *ui.Context, savedWidth *float32, compact bool, sidebar, content func()) ui.Element {
+// SidebarWidth keeps the full-height frame, title bar and content pane aligned.
+func SidebarWidth(c *ui.Context, savedWidth float32, compact bool) float32 {
 	windowWidth, _ := c.Size()
 	maximum := min(float32(400), max(float32(140), windowWidth-308))
-	width := *savedWidth
+	width := savedWidth
 	if width <= 0 {
 		width = 190
 	}
@@ -15,10 +14,19 @@ func SidebarSplit(c *ui.Context, savedWidth *float32, compact bool, sidebar, con
 	if compact {
 		width = RailWidth
 	}
+	return width
+}
+
+// SidebarSplit changes only widths and the grip's enabled state. Both panes
+// keep the same parent and identity when navigation becomes compact.
+func SidebarSplit(c *ui.Context, savedWidth *float32, compact bool, sidebar, content func()) ui.Element {
+	width := SidebarWidth(c, *savedWidth, compact)
+	windowWidth, _ := c.Size()
+	maximum := min(float32(400), max(float32(140), windowWidth-308))
 	return ui.Row(c).FillWidth().Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 		left := ui.Column(c).Key("navigation-pane").Width(width).Shrink(0).FillHeight().MinHeight(0)
 		left.Children(sidebar)
-		ui.Box(c).Key("navigation-divider").Width(8).Shrink(0).FillHeight()
+		ui.Box(c).Key("navigation-divider").Width(WorkspaceInset).Shrink(0).FillHeight()
 		ui.Column(c).Key("workspace-pane").FillHeight().Grow(1).MinWidth(0).MinHeight(0).Children(content)
 		// Submit the hit target after both panes so its overlap remains usable
 		// from either side of the divider rather than being covered by content.

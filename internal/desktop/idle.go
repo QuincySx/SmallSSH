@@ -1,7 +1,6 @@
 package desktop
 
 import (
-	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -41,27 +40,38 @@ func lockWhenIdleAfter(online bool, idle, unlockedFor, delay time.Duration) bool
 	return idle >= delay && unlockedFor >= delay
 }
 
-// watchIdle starts the watcher once per process, from the first rendered frame.
-//
-// The clock itself is the only thing that runs off the UI thread: every read of
-// app state, and the lock, happen in a UI callback, so nothing here touches
-// app.online or the power API from two goroutines at once.
+// watchIdle starts one watcher for this app, from its first rendered frame.
+// State reads and locking stay in UI callbacks; canceling the app stops its clock.
 func (a *app) watchIdle() {
-	idleWatch.Do(func() {
-		var done <-chan struct{}
-		if a.ctx != nil {
-			done = a.ctx.Done()
-		}
+	a.watchIdleWithTicker(func() (<-chan time.Time, func()) {
+		ticker := time.NewTicker(idleTick)
+		return ticker.C, ticker.Stop
+	})
+}
+
+func (a *app) watchIdleWithTicker(newTicker func() (<-chan time.Time, func())) {
+	if a.ctx == nil || a.ctx.Done() == nil || a.ctx.Err() != nil {
+		return
+	}
+	ctx := a.ctx
+	a.idleWatch.Do(func() {
+		ticks, stop := newTicker()
 		go func() {
-			ticker := time.NewTicker(idleTick)
-			defer ticker.Stop()
+			defer stop()
 			for {
 				select {
-				case <-done:
+				case <-ctx.Done():
 					return
-				case <-ticker.C:
+				case <-ticks:
 				}
-				a.postUI(a.checkIdle)
+				if ctx.Err() != nil {
+					return
+				}
+				a.postUI(func() {
+					if ctx.Err() == nil {
+						a.checkIdle()
+					}
+				})
 			}
 		}()
 	})
@@ -86,5 +96,3 @@ func (a *app) checkIdle() {
 func (a *app) idleExpired(now time.Time, unlockedAt time.Time) bool {
 	return lockWhenIdleAfter(a.online, idleTime(), now.Sub(unlockedAt), a.idleLockDelay())
 }
-
-var idleWatch sync.Once

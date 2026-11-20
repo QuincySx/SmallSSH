@@ -206,15 +206,20 @@ func TestMultipleFileWindowsTransferCompletionAndDropUseExactTargets(t *testing.
 	a.applyDirectory(from, true, "/local", []sshconn.File{{Name: "upload-multi.txt"}}, from.seq, true)
 	a.applyDirectory(to, false, "/srv/c", nil, to.seq, true)
 	tt := ui.NewTester(a.fileArea, 1200, 800)
-	source, _ := tt.Find("upload-multi.txt")
-	destination, _ := tt.Find(a.filePaneLabel(remote) + "文件列表")
-	x, y := source.X+source.W/2, source.Y+source.H/2
+	source, sourceOK := tt.Find("upload-multi.txt")
+	destination, destinationOK := tt.Find(a.filePaneLabel(remote) + "文件列表")
+	if !sourceOK || !destinationOK {
+		t.Fatal("missing drag source or destination", source, destination, tt.Texts())
+	}
+	// Find returns the whole virtual row. Start inside its filename column,
+	// which stays visible when the responsive metadata columns are added.
+	x, y := source.X+min(40, source.W/2), source.Y+source.H/2
 	tt.Press(x, y)
 	tt.Move(x+12, y)
 	tt.Move(destination.X+destination.W/2, destination.Y+destination.H/2)
 	tt.Release(destination.X+destination.W/2, destination.Y+destination.H/2)
 	if !a.prompt.open || !strings.Contains(a.prompt.target, "/local") || !strings.Contains(a.prompt.target, "/srv/c") {
-		t.Fatal("multi-window drop lost its source or destination", a.prompt.target)
+		t.Fatal("multi-window drop lost its source or destination", a.prompt.target, source, destination)
 	}
 	a.chooseFileEndpoint(remote, "b")
 	if !strings.Contains(a.prompt.target, "连接 C") || strings.Contains(a.prompt.target, "连接 B") {
@@ -265,8 +270,11 @@ func TestFileArrangementMenuKeepsTerminalVisibleAndWindowLimitExplicit(t *testin
 	for len(a.fileLayout.panes()) < maxFilePanes {
 		a.splitFilePane(a.activeFilePane, false, false)
 	}
+	// Keep all programmatically-created panes visible when exercising the
+	// global cap; nested horizontal splits are not the arrangement under test.
+	a.arrangeFilePanes("grid")
 	tt.Frame()
-	if err := tt.Click(a.paneSide(a.activeFilePane) + "文件窗口菜单"); err != nil {
+	if err := tt.Click(a.paneSide(a.fileLayout.panes()[0]) + "文件窗口菜单"); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.ChooseMenuItem("向下拆分"); err == nil || len(a.fileLayout.panes()) != maxFilePanes {

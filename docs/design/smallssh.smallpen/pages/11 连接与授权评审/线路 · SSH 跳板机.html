@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>线路 · SSH 跳板机</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" class="relative flex items-center justify-center w-[1100px] h-[760px] bg-canvas">
+  <div data-name="工作台承载" class="absolute inset-0 flex flex-row">
+      <sp-use data-name="工作台背景" class="w-full h-full" component="连接弹窗背景">
+        <div data-name="服务器侧栏">
+          <div data-name="服务器">
+            <p data-name="名称" class="">Web 生产环境</p>
+          </div>
+        </div>
+      </sp-use>
+    </div>
+    <div data-name="模态遮罩" class="absolute inset-0 bg-dialog-shade"></div>
+  <div data-name="线路窗口" class="flex flex-col gap-space-md w-[560px] h-fit p-space-lg bg-surface rounded-window-panel shadow-native-dialog">
+    <div data-name="标题栏" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="标题" class="type-native-dialog text-text flex-1">设置 SSH 跳板机</p>
+      <sp-use data-name="关闭" class="shrink-0" component="图标按钮" data-click="back">
+        <p data-name="图标" class=""></p>
+      </sp-use>
+    </div>
+    <div data-name="跳板信息" class="flex flex-col gap-space-sm w-full">
+      <div data-name="线路名称" class="flex flex-col gap-native-field w-full">
+        <p data-name="标签" class="type-native-small text-muted">线路名称</p>
+        <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface">
+          <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">自有中转</p>
+        </div>
+      </div>
+      <div data-name="线路类型" class="flex flex-col gap-native-field w-full">
+        <p data-name="标签" class="type-native-small text-muted">线路类型</p>
+        <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface" data-click="overlay:11 连接与授权评审/选择线路类型; position: manual 0px 44px; relative-to: self; close-outside">
+          <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">SSH 跳板机</p>
+          <p data-name="下拉" class="type-native-action-icon text-muted w-menu-icon shrink-0 text-center"></p>
+        </div>
+      </div>
+      <div data-name="跳板机" class="flex flex-col gap-native-field w-full">
+        <p data-name="标签" class="type-native-small text-muted">跳板机</p>
+        <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface">
+          <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">跳板机</p>
+          <p data-name="下拉" class="type-native-action-icon text-muted w-menu-icon shrink-0 text-center"></p>
+        </div>
+      </div>
+      <p data-name="跳板条件" class="type-native-hint text-muted">只使用已保存并核对指纹的服务器。每跳独立验证，最多 4 跳。</p>
+    </div>
+    <div data-name="底部分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+    <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
+      <sp-use data-name="取消" class="shrink-0" component="按钮" props="样式: 普通" data-click="back">
+        <p data-name="文字" class="">取消</p>
+      </sp-use>
+      <sp-use data-name="保存线路" class="shrink-0" component="按钮" props="样式: 主操作" data-click="back">
+        <p data-name="文字" class="">保存线路</p>
+      </sp-use>
+    </div>
+  </div>
+</body>
+</html>

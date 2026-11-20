@@ -31,6 +31,7 @@ jobs:
       # -serial: several suites assert on timing windows, so packages run one at
       # a time instead of competing for the runner's cores.
       - run: go run ./tools check -serial
+      - run: go run ./tools security -snapshot
       # Logs diagnose failures; a green run uploads nothing.
       - if: failure()
         uses: actions/upload-artifact@v7

@@ -3,6 +3,7 @@ package desktop
 import (
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/desktop/components"
@@ -118,6 +119,9 @@ func (a *app) toggleCanvasTool(kind int) {
 }
 
 func workspaceKindIcon(kind int) *ui.SVG {
+	if kind >= toolVNCBase {
+		return components.MonitorIcon
+	}
 	switch kind {
 	case -1:
 		return components.TerminalIcon
@@ -133,8 +137,8 @@ func workspaceKindIcon(kind int) *ui.SVG {
 }
 
 func (a *app) workspaceAppsRail(c *ui.Context) {
-	ui.Column(c).Width(36).Shrink(0).FillHeight().Gap(4).AlignItems(ui.Center).Label(tr(c, "画布功能开关")).Children(func() {
-		for _, kind := range []int{toolFiles, toolCommands, toolDiagnostics, toolTransfers} {
+	ui.Column(c).Width(32).Shrink(0).FillHeight().Gap(4).AlignItems(ui.Center).Label(tr(c, "画布功能开关")).Children(func() {
+		for _, kind := range []int{toolFiles, toolCommands, toolDiagnostics} {
 			name := workspaceToolTitle(c, kind)
 			button := components.SVGButton(c, workspaceKindIcon(kind), tr(c, "画布功能：")+name).Radius(8).Tooltip(name)
 			tool := a.workspaceTools[kind]
@@ -158,20 +162,23 @@ func (a *app) workspaceAppsRail(c *ui.Context) {
 }
 
 func (a *app) canvasPaneHeader(c *ui.Context, group *terminalGroup, bounds ui.Rect) {
-	entries := a.workspaceTabs(group)
-	if len(entries) != 1 {
+	tab := a.selectedWorkspaceTab(group)
+	if tab == (workspaceTab{}) {
 		return
 	}
-	tab := entries[0]
 	title := a.workspaceTabDisplayTitle(c, tab)
 	kind := -1
 	if tab.tool != nil {
 		kind = tab.tool.kind
 	}
-	head := components.HeaderBar(c).Height(32).Padding(0, 6, 0, 10).Gap(6).
+	height := float32(components.PanelHeaderHeight)
+	if tab.tool != nil {
+		height = components.CanvasToolHeaderHeight
+	}
+	head := components.HeaderBar(c).Height(height).Padding(0, components.PanelInset, 0, 16).Gap(6).
 		Label(tr(c, "画布面板：") + a.workspaceTabTitle(c, tab)).Drag(a.workspaceTabPayload(tab))
 	if a.activeTerminalGroup == group {
-		head.Background(c.Theme().Accent.Alpha(.055))
+		head.Background(c.Theme().Accent.Alpha(.035))
 	}
 	head.Children(func() {
 		if tab.session != nil {
@@ -183,7 +190,9 @@ func (a *app) canvasPaneHeader(c *ui.Context, group *terminalGroup, bounds ui.Re
 		}
 		ui.Icon(c, workspaceKindIcon(kind)).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted)
 		components.HeaderLabel(c, title).Grow(1).MinWidth(0).Tooltip(title)
-		components.ButtonGroup(c, func() { a.canvasPaneActions(c, group) }).MinWidth(0).Shrink(1)
+		if a.workspaceCanvas {
+			components.ButtonGroup(c, func() { a.canvasPaneActions(c, group) }).MinWidth(0).Shrink(1)
+		}
 		label := tr(c, "关闭标签：") + a.workspaceTabTitle(c, tab)
 		if tab.tool != nil && tab.tool.kind == toolFiles {
 			label = tr(c, "关闭文件标签")
@@ -193,8 +202,8 @@ func (a *app) canvasPaneHeader(c *ui.Context, group *terminalGroup, bounds ui.Re
 		}
 	})
 	head.ContextMenu(func(m *ui.Menu) { a.workspaceTabMenu(m, tab) })
-	// The header is also a drop target: center combines views into tabs; the
-	// narrow top strip forwards a top split to the whole card.
+	// Dropping at the center shares the pane; the global strip switches its views.
+	// The narrow top strip forwards a top split to the whole card.
 	a.workspaceGroupDrop(c, head, group, workspaceTab{}, false, bounds)
 	if head.Clicked() {
 		a.activateWorkspaceTab(group, tab)
@@ -214,7 +223,7 @@ func (a *app) canvasPaneActions(c *ui.Context, group *terminalGroup) {
 		if components.SVGButton(c, components.BottomPanelIcon, tr(c, "在下方新建终端")).Size(24, 24).Disabled(source.closed).Clicked() {
 			a.newCanvasTerminal(source, group, "bottom")
 		}
-	} else if tab.tool != nil {
+	} else if tab.tool != nil && tab.tool.vnc == nil {
 		if components.SVGButton(c, components.BottomPanelIcon, tr(c, "收回工具区")).Size(24, 24).Clicked() {
 			a.dockWorkspaceTool(tab.tool)
 		}
@@ -237,8 +246,7 @@ func (a *app) openCanvasFiles(source *session, group *terminalGroup) {
 		return
 	}
 	tool.source = source
-	a.ensureFileLayout()
-	a.chooseFileEndpoint(a.activeFilePane, followTerminalEndpoint)
+	a.chooseFileEndpoint(a.serverFilePane(), followTerminalEndpoint)
 	a.dropWorkspaceTab(a.workspaceTabPayload(workspaceTab{tool: tool}), group, workspaceTab{}, "bottom")
 }
 
@@ -255,9 +263,16 @@ func (a *app) newCanvasTerminal(source *session, group *terminalGroup, edge stri
 	}
 	a.activateTerminal(source, false)
 	pending := a.reserveTerminal(source.host, group, false)
+	pending.target.Route = source.target.Route
 	if source.target.Kind == "docker-terminal" {
-		pending.target, pending.containerName = source.target, source.containerName
-		pending.name = source.name + " +"
+		name := source.containerName
+		if name == "" {
+			name = strings.TrimPrefix(source.name, "容器 · ")
+		}
+		// The placeholder takes the title the connected terminal will keep, so
+		// repeated splits of one container stay distinguishable.
+		pending.target, pending.containerName = source.target, name
+		pending.name = a.containerTerminalName(name, pending)
 	}
 	// Placement belongs to the click, not a later successful handshake. Queue,
 	// failure and cancellation stay in this same card even if focus changes.
@@ -276,13 +291,6 @@ func (a *app) workspaceActivity(c *ui.Context) {
 		state = &tool.activityTable
 	}
 	ui.Column(c).Fill().MinHeight(0).MinWidth(0).Padding(8).Gap(6).Children(func() {
-		if len(a.dockerJobs) > 0 {
-			components.Tabs(c, &a.activityTab, tr(c, "传输"), tr(c, "服务器操作"))
-		}
-		if a.activityTab == 1 && len(a.dockerJobs) > 0 {
-			a.dockerJobsView(c)
-		} else {
-			a.transferViewWithState(c, state)
-		}
+		a.activityContent(c, state)
 	})
 }

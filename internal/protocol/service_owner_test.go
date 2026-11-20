@@ -67,8 +67,8 @@ func TestServiceOwnerPreparePayloadBindsEveryField(t *testing.T) {
 }
 
 func TestServiceProtocolOwnerFieldsRoundTrip(t *testing.T) {
-	if ServiceProtocolMajor != 1 || ServiceProtocolMinor != 1 {
-		t.Fatalf("service protocol = %d.%d, want 1.1", ServiceProtocolMajor, ServiceProtocolMinor)
+	if ServiceProtocolMajor != 1 || ServiceProtocolMinor != 3 {
+		t.Fatalf("service protocol = %d.%d, want 1.3", ServiceProtocolMajor, ServiceProtocolMinor)
 	}
 	if ServiceStateUnlocked != "unlocked" || ServiceStateStopping != "stopping" {
 		t.Fatalf("service states = %q, %q", ServiceStateUnlocked, ServiceStateStopping)

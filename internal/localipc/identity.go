@@ -18,6 +18,7 @@ type ProcessIdentity struct {
 	PID      int
 	Instance string
 	CodeID   string
+	AppID    string
 	mu       sync.Mutex
 	verify   func() error
 	close    func()
@@ -42,7 +43,7 @@ func (p *ProcessIdentity) Verify() error {
 }
 
 func (p *ProcessIdentity) Same(other *ProcessIdentity) bool {
-	return p != nil && other != nil && p.Instance == other.Instance && p.CodeID == other.CodeID && p.Verify() == nil && other.Verify() == nil
+	return p != nil && other != nil && p.Instance == other.Instance && p.CodeID == other.CodeID && p.AppID == other.AppID && p.Verify() == nil && other.Verify() == nil
 }
 
 func (p *ProcessIdentity) Close() {

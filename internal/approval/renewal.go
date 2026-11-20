@@ -61,7 +61,7 @@ func (m *Manager) SessionStatus(id string) (Request, error) {
 	defer m.mu.Unlock()
 	m.prune()
 	if e := m.pending[id]; e != nil && e.request.Operation.Kind == "grant" {
-		return e.request, nil
+		return e.snapshot(), nil
 	}
 	if e := m.dormant[id]; e != nil {
 		return e.request, nil
@@ -132,6 +132,9 @@ func (m *Manager) Renew(id string, signature []byte) (Request, bool, error) {
 	e.request.Status = "pending"
 	e.request.Expires = m.now().Add(5 * time.Minute).UTC()
 	e.lastUsed = time.Time{}
+	e.approvedAt = time.Time{}
+	e.idleOverride = nil
+	e.mediumReviewOverride = nil
 	e.cancel = nil
 	m.pending[c.SessionID] = e
 	return e.request, true, nil

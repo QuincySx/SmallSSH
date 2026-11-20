@@ -8,7 +8,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
+	"sshclient/internal/client"
 	"sshclient/internal/systemauth"
 	"sshclient/internal/vault"
 )
@@ -20,9 +20,10 @@ type approvalAuthFlow struct {
 	post         func(func())
 	current      func() bool
 	authenticate func(context.Context, []byte, bool) (*vault.Session, error)
-	denyOwner    func() (*vault.Session, error)
-	submit       func(context.Context, approval.Request, bool, *vault.Session) error
+	denyOwner    func() (client.OwnerProof, error)
+	submit       func(context.Context, approval.Request, bool, client.OwnerProof) error
 	done         func()
+	handled      func()
 	claimAuto    func() bool
 }
 
@@ -45,6 +46,11 @@ func (s *approvalPromptState) stopAttempt() {
 	}
 }
 
+func (s *approvalPromptState) cancelVerification() {
+	s.stopAttempt()
+	s.autoAttempted, s.autoRetryAt = true, time.Time{}
+}
+
 func (s *approvalPromptState) dispose() {
 	s.closed = true
 	s.stopAttempt()
@@ -61,8 +67,8 @@ func (s *approvalPromptState) expandPassword() {
 	if s.submitting {
 		return
 	}
-	s.stopAttempt()
-	s.passwordMode, s.autoAttempted = true, true
+	s.cancelVerification()
+	s.passwordMode = true
 	s.status = ""
 }
 
@@ -82,6 +88,9 @@ func (s *approvalPromptState) start(r approval.Request, allow, system, automatic
 		return !s.closed && s.sequence == seq && s.requestKey == key && ctx.Err() == nil && f.current()
 	}
 	finish := func(err error) {
+		if err == nil && f.handled != nil {
+			f.handled()
+		}
 		if !valid() {
 			cancel()
 			return
@@ -103,15 +112,17 @@ func (s *approvalPromptState) start(r approval.Request, allow, system, automatic
 			s.autoRetryUsed, s.autoAttempted, s.autoRetryAt, s.status = true, false, at, ""
 			return
 		}
+		if system && needsMasterPassword(err) {
+			s.passwordMode, s.autoAttempted = true, true
+		}
 		if systemauth.IsAuthenticationNotReady(err) {
 			// The embedded Touch ID view could not appear, even on the retry.
 			// Ask for the vault password in this window instead of opening a
 			// second system dialog.
-			s.passwordMode, s.autoAttempted = true, true
 			s.status = tr(nil, "系统验证暂时不可用，请在这里输入保险库主密码")
 			return
 		}
-		s.status = err.Error()
+		s.status = tr(nil, err.Error())
 	}
 	if !allow {
 		wipe(pass)
@@ -163,13 +174,19 @@ func (s *approvalPromptState) start(r approval.Request, allow, system, automatic
 func (a *app) bindApprovalFlow(r approval.Request, state *approvalPromptState, post func(func()), current func() bool, done func()) {
 	state.requestKey = approvalRequestKey(r)
 	a.initializeApprovalGrant(r, state)
-	auth, dir, cli := a.auth, a.dir, a.client
+	auth, dir, cli, store := a.auth, a.dir, a.client, a.quickStore()
+	epoch := a.epoch.Load()
 	if state.host != nil && auth != nil && auth.SupportsEmbedded() {
 		state.presentation = systemauth.NewEmbeddedPresentation(mygo.RunOnMain)
 	}
 	presentation := state.presentation
 	state.flow = &approvalAuthFlow{
 		context: a.operationContext(), post: post, current: current, done: done,
+		handled: func() {
+			if a.epoch.Load() == epoch {
+				a.markApprovalHandled(r)
+			}
+		},
 		claimAuto: func() bool {
 			key := approvalRequestKey(r)
 			if a.approvalAutoAttempted[key] {
@@ -183,27 +200,23 @@ func (a *app) bindApprovalFlow(r approval.Request, state *approvalPromptState, p
 		},
 		authenticate: func(ctx context.Context, pass []byte, system bool) (*vault.Session, error) {
 			if system {
-				if auth == nil {
-					return nil, errors.New(tr(nil, "系统验证不可用"))
-				}
-				if presentation != nil {
-					// Only the view embedded in our own window is acceptable
-					// here: the system's own sheet would put a second dialog on
-					// top of this one.
-					return auth.OpenEmbedded(ctx, dir, approvalAuthReason(r), presentation)
-				}
-				return auth.Open(ctx, dir, approvalAuthReason(r))
+				// Only the view embedded in our own window is acceptable here
+				// when the platform has one: the system's own sheet would put a
+				// second dialog on top of this one. The prompt names the request.
+				return openQuickUnlock(ctx, auth, store, dir, approvalAuthReason(r), presentation)
 			}
-			return vault.Read(broker.VaultPath(dir), pass)
+			return vault.Read(vault.Path(dir), pass)
 		},
 		denyOwner: a.unlockedOwner,
-		submit: func(ctx context.Context, reviewed approval.Request, allow bool, owner *vault.Session) error {
+		submit: func(ctx context.Context, reviewed approval.Request, allow bool, owner client.OwnerProof) error {
 			lifetime, idle := 0, 0
+			skipMediumReview := false
 			if allow && reviewed.Operation.Kind == "grant" {
 				lifetime = state.chosenLifetime(reviewed)
 				idle = state.chosenIdle(reviewed)
+				skipMediumReview = state.skipMediumReview
 			}
-			return cli.DecideReviewedWithLifetime(ctx, reviewed, allow, false, lifetime, idle, owner)
+			return cli.DecideReviewedWithTerms(ctx, reviewed, allow, false, lifetime, idle, skipMediumReview, owner)
 		},
 	}
 }

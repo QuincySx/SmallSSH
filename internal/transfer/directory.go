@@ -18,6 +18,7 @@ import (
 
 	"sshclient/internal/approval"
 	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 )
 
 const maxDirectoryFiles = 10000
@@ -35,14 +36,19 @@ type directoryManifest struct {
 
 // AddDownload reserves a persistent file or directory download. All remote
 // reads remain structured SFTP operations; this never executes an archive tool.
-func (m *Manager) AddDownload(host, local, remote, endpoint, fingerprint string, directory bool) (Job, error) {
+func (m *Manager) AddDownload(host, local, remote, endpoint, fingerprint string, directory bool, route ...connectcfg.RouteSelection) (Job, error) {
 	if !path.IsAbs(remote) || path.Clean(remote) != remote || strings.ContainsAny(remote, "\x00\r\n") {
 		return Job{}, errors.New("远程目录需为规范的绝对路径")
 	}
-	j, err := m.Add(host, "download", local, remote)
+	j, err := m.Add(host, "download", local, remote, route...)
 	if err != nil {
 		return j, err
 	}
+	release, err := m.lockJob(context.Background(), j.ID)
+	if err != nil {
+		return j, err
+	}
+	defer release()
 	j.Directory, j.Endpoint, j.HostFingerprint = directory, endpoint, fingerprint
 	err = m.save(j)
 	return j, err
@@ -324,7 +330,7 @@ func (m *Manager) downloadDirectory(ctx context.Context, j *Job, label string, o
 		child, readErr := children.read(id)
 		local, remote := filepath.Join(j.Local, filepath.FromSlash(file.Path)), path.Join(j.Remote, file.Path)
 		if os.IsNotExist(readErr) {
-			child = Job{ID: id, ParentID: j.ID, Host: j.Host, Direction: "download", Local: local, Remote: remote, Endpoint: j.Endpoint, HostFingerprint: j.HostFingerprint, Size: file.Size, State: "queued", Created: time.Now().UTC()}
+			child = Job{ID: id, ParentID: j.ID, Host: j.Host, Route: j.Route, Direction: "download", Local: local, Remote: remote, Endpoint: j.Endpoint, HostFingerprint: j.HostFingerprint, Size: file.Size, State: "queued", Created: time.Now().UTC()}
 			if err = children.save(child); err != nil {
 				return err
 			}

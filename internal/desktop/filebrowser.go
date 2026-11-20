@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +23,8 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 	"sshclient/internal/approval"
 	"sshclient/internal/client"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/connectcfg"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/transfer"
 )
 
@@ -32,11 +34,16 @@ const (
 )
 
 type directoryBrowser struct {
+	route        connectcfg.RouteSelection
 	dir, address string
-	cache        map[string][]sshconn.File
+	cache        map[string][]sshdata.File
 	open         map[string]*bool
 	chosen       ui.Selection[string]
 	table        ui.ListState
+	tableWidth   float32
+	fileSort     ui.SortOrder
+	indexedSort  ui.SortOrder
+	fileRows     []sshdata.File
 	selected     int
 	anchor       int
 	seq          uint64
@@ -44,6 +51,7 @@ type directoryBrowser struct {
 	filesByName  map[string]int
 	loading      map[string]*directoryLoad
 	loadError    map[string]string
+	moveFeedback string
 }
 type directoryLoad struct {
 	ctx      context.Context
@@ -52,6 +60,7 @@ type directoryLoad struct {
 	seq      uint64
 }
 type filePane struct {
+	route        connectcfg.RouteSelection
 	id           uint64
 	endpoint     string
 	states       map[string]*directoryBrowser
@@ -69,7 +78,8 @@ func (p *filePane) browser() *directoryBrowser {
 	if p.states == nil {
 		p.states = map[string]*directoryBrowser{}
 	}
-	b := p.states[p.endpoint]
+	key := fileRouteKey(p.endpoint, p.route)
+	b := p.states[key]
 	if b == nil {
 		dir := "/"
 		if p.endpoint == localEndpoint {
@@ -78,8 +88,9 @@ func (p *filePane) browser() *directoryBrowser {
 				dir = string(filepath.Separator)
 			}
 		}
-		b = &directoryBrowser{dir: dir, address: dir, cache: map[string][]sshconn.File{}, open: map[string]*bool{}, selected: -1, anchor: -1}
-		p.states[p.endpoint] = b
+		b = &directoryBrowser{dir: dir, address: dir, cache: map[string][]sshdata.File{}, open: map[string]*bool{}, selected: -1, anchor: -1}
+		b.route = p.route
+		p.states[key] = b
 		b.reveal(p.endpoint == localEndpoint, dir)
 	}
 	return b
@@ -127,6 +138,7 @@ func (a *app) ensurePanes() {
 	}
 	if a.primaryFilePane == nil {
 		a.primaryFilePane = newFilePane(a.activeFileEndpoint(), true)
+		a.primaryFilePane.route = a.activeFileRoute()
 	}
 	if a.edit == nil {
 		a.edit = &editor.State{Buffer: editor.NewBuffer("")}
@@ -152,9 +164,14 @@ func (a *app) activeFileEndpoint() string {
 }
 
 func (a *app) setFileEndpoint(p *filePane, endpoint string, follow bool) {
-	if p.endpoint != endpoint {
+	route := connectcfg.RouteSelection{}
+	if follow {
+		route = a.activeFileRoute()
+	}
+	if p.endpoint != endpoint || p.route != route {
 		cancelPaneLoads(p)
 		p.endpoint = endpoint
+		p.route = route
 	}
 	p.follow = follow
 }
@@ -185,7 +202,7 @@ func (a *app) initializeWorkspace() {
 		a.loadDirectory(a.primaryFilePane, a.primaryFilePane.browser().dir, true)
 	}
 }
-func sortedFiles(fs []sshconn.File) []sshconn.File {
+func sortedFiles(fs []sshdata.File) []sshdata.File {
 	valid := fs[:0]
 	for _, f := range fs {
 		if f.Name != "" && f.Name != "." && f.Name != ".." && !strings.ContainsAny(f.Name, "/\\\x00") {
@@ -201,16 +218,16 @@ func sortedFiles(fs []sshconn.File) []sshconn.File {
 	})
 	return fs
 }
-func localDirectory(dir string) ([]sshconn.File, error) {
+func localDirectory(dir string) ([]sshdata.File, error) {
 	return localDirectoryContext(context.Background(), dir)
 }
-func localDirectoryContext(ctx context.Context, dir string) ([]sshconn.File, error) {
+func localDirectoryContext(ctx context.Context, dir string) ([]sshdata.File, error) {
 	file, e := os.Open(dir)
 	if e != nil {
 		return nil, e
 	}
 	defer file.Close()
-	out := make([]sshconn.File, 0, 256)
+	out := make([]sshdata.File, 0, 256)
 	for {
 		if e = ctx.Err(); e != nil {
 			return nil, e
@@ -221,7 +238,7 @@ func localDirectoryContext(ctx context.Context, dir string) ([]sshconn.File, err
 			if e != nil {
 				continue
 			}
-			out = append(out, sshconn.File{Name: item.Name(), Directory: info.IsDir(), Size: info.Size(), Mode: info.Mode().String(), Modified: info.ModTime()})
+			out = append(out, sshdata.File{Name: item.Name(), Directory: info.IsDir(), Size: info.Size(), Mode: info.Mode().String(), Modified: info.ModTime()})
 		}
 		if readErr == io.EOF {
 			break
@@ -241,7 +258,7 @@ func canonicalDirectory(local bool, p string) (string, error) {
 	}
 	return path.Clean(p), nil
 }
-func (a *app) applyDirectory(b *directoryBrowser, local bool, dir string, fs []sshconn.File, seq uint64, navigate bool) {
+func (a *app) applyDirectory(b *directoryBrowser, local bool, dir string, fs []sshdata.File, seq uint64, navigate bool) {
 	b.cache[dir] = fs
 	b.indexDirectory(local, dir)
 	if navigate && seq == b.seq {
@@ -250,6 +267,9 @@ func (a *app) applyDirectory(b *directoryBrowser, local bool, dir string, fs []s
 }
 
 func (b *directoryBrowser) showDirectory(local bool, dir string) {
+	if b.dir != dir {
+		b.moveFeedback = ""
+	}
 	b.dir = dir
 	b.address = dir
 	b.chosen.Clear()
@@ -317,12 +337,12 @@ func (a *app) loadDirectory(p *filePane, dir string, navigate bool) {
 	if parent == nil {
 		parent = context.Background()
 	}
-	ctx, cancel := context.WithCancel(parent)
+	ctx, cancel := context.WithCancel(client.WithRoute(parent, endpoint, p.route))
 	request := &directoryLoad{ctx: ctx, cancel: cancel, navigate: navigate, seq: b.seq}
 	b.loading[dir] = request
 	delete(b.loadError, dir)
 	gen, slots := a.generation, a.directorySlots
-	finish := func(fs []sshconn.File, e error) {
+	finish := func(fs []sshdata.File, e error) {
 		if b.loading[dir] != request {
 			return
 		}
@@ -399,12 +419,9 @@ func (a *app) endpointName(endpoint string) string {
 	}
 	return a.hostName(endpoint)
 }
-func chosenFiles(b *directoryBrowser) []sshconn.File {
-	fs := b.cache[b.dir]
-	if len(b.filesByName) != len(fs) {
-		b.indexFiles()
-	}
-	out := make([]sshconn.File, 0, b.chosen.Len())
+func chosenFiles(b *directoryBrowser) []sshdata.File {
+	fs := b.displayedFiles()
+	out := make([]sshdata.File, 0, b.chosen.Len())
 	for name := range b.chosen.All() {
 		if i, ok := b.filesByName[name]; ok && i < len(fs) {
 			out = append(out, fs[i])
@@ -429,6 +446,7 @@ func (a *app) installEditor(endpoint, name, text, hash string) {
 	a.editPath = name
 	a.editHash = hash
 	a.editHost = endpoint
+	a.editRoute = connectcfg.RouteSelection{}
 	a.editLocal = endpoint == localEndpoint
 	a.editShown = false
 	a.openEditorWindow()
@@ -583,7 +601,7 @@ func (a *app) nativeTerminal(c *ui.Context, s *session) {
 func (a *app) fileOperation(p *filePane, kind string) {
 	a.fileOperationAt(p, p.browser().dir, chosenFiles(p.browser()), kind)
 }
-func (a *app) fileOperationAt(p *filePane, dir string, fs []sshconn.File, kind string) {
+func (a *app) fileOperationAt(p *filePane, dir string, fs []sshdata.File, kind string) {
 	b, endpoint := p.browser(), p.endpoint
 	local := endpoint == localEndpoint
 	if kind == "remove" {
@@ -679,7 +697,7 @@ func (a *app) fileOperationAt(p *filePane, dir string, fs []sshconn.File, kind s
 			op.Kind = "put"
 			op.ContentHash = textHash(nil)
 		}
-		a.begin(op, func(s *client.Stream) (func(), error) {
+		a.beginContext(client.WithRoute(a.operationContext(), endpoint, b.route), op, func(s *client.Stream) (func(), error) {
 			defer s.Close()
 			if kind == "new" {
 				if e := s.End(); e != nil {
@@ -688,16 +706,16 @@ func (a *app) fileOperationAt(p *filePane, dir string, fs []sshconn.File, kind s
 			}
 			_, _, e := s.Copy(io.Discard, io.Discard)
 			return complete, e
-		})
+		}, nil)
 	})
 	a.prompt.danger = kind == "remove"
 	a.prompt.validate = func(value string) error { return validateFileInput(local, kind, value) }
 }
 func updateMutationCache(b *directoryBrowser, local bool, dir, kind, name, dest string, mode uint32) {
-	fs := append([]sshconn.File(nil), b.cache[dir]...)
+	fs := append([]sshdata.File(nil), b.cache[dir]...)
 	base := baseName(local, name)
 	if kind == "new" || kind == "mkdir" {
-		fs = append(fs, sshconn.File{Name: base, Directory: kind == "mkdir", Modified: time.Now()})
+		fs = append(fs, sshdata.File{Name: base, Directory: kind == "mkdir", Modified: time.Now()})
 	}
 	for i := 0; i < len(fs); i++ {
 		if fs[i].Name != base {
@@ -716,8 +734,13 @@ func updateMutationCache(b *directoryBrowser, local bool, dir, kind, name, dest 
 			if parent == dir {
 				fs = append(fs, f)
 				kind = "renamed"
-			} else if _, loaded := b.cache[parent]; loaded {
-				b.cache[parent] = sortedFiles(append(b.cache[parent], f))
+			} else if target, loaded := b.cache[parent]; loaded {
+				if at := slices.IndexFunc(target, func(entry sshdata.File) bool { return entry.Name == f.Name }); at >= 0 {
+					target[at] = f
+				} else {
+					target = append(target, f)
+				}
+				b.cache[parent] = sortedFiles(target)
 				b.indexDirectory(local, parent)
 			}
 		case "chmod":
@@ -764,12 +787,14 @@ func mutateLocal(kind, name, dest string, mode uint32) error {
 		}
 		return err
 	case "rename":
-		if _, e := os.Lstat(dest); e == nil {
+		err := renameLocalExclusive(name, dest)
+		if errors.Is(err, os.ErrExist) {
 			return errors.New(tr(nil, "目标已存在，请使用新名称"))
-		} else if !os.IsNotExist(e) {
-			return e
 		}
-		return os.Rename(name, dest)
+		if err != nil {
+			return &os.LinkError{Op: "rename", Old: name, New: dest, Err: err}
+		}
+		return nil
 	case "chmod":
 		st, e := os.Lstat(name)
 		if e != nil {
@@ -800,9 +825,9 @@ func (a *app) transferBetween(from, to *filePane) {
 		return
 	}
 	source, destination := from.browser(), to.browser()
-	a.transferEntries(from.endpoint, source.dir, chosenFiles(source), to.endpoint, destination.dir)
+	a.transferEntries(from.endpoint, source.dir, chosenFiles(source), to.endpoint, destination.dir, transferRoute(from.endpoint, from.route, to.route))
 }
-func (a *app) transferEntries(fromEndpoint, sourceDir string, entries []sshconn.File, toEndpoint, destinationDir string) {
+func (a *app) transferEntries(fromEndpoint, sourceDir string, entries []sshdata.File, toEndpoint, destinationDir string, selectedRoute ...connectcfg.RouteSelection) {
 	if fromEndpoint == "" || toEndpoint == "" || (fromEndpoint == localEndpoint) == (toEndpoint == localEndpoint) || len(entries) == 0 {
 		return
 	}
@@ -820,9 +845,18 @@ func (a *app) transferEntries(fromEndpoint, sourceDir string, entries []sshconn.
 	for _, f := range entries {
 		names = append(names, reviewText(f.Name))
 	}
-	entries = append([]sshconn.File(nil), entries...)
-	a.ask(tr(nil, "传输文件"), a.endpointName(fromEndpoint)+" · "+sourceDir+"\n→ "+a.endpointName(toEndpoint)+" · "+destinationDir, strings.Join(names, "\n")+tr(nil, "\n\n已有目标不会覆盖；下载文件夹会保留层级，符号链接和特殊文件会报错。"), "", "", tr(nil, "加入队列"), func(string) {
-		a.queueFileEntries(fromEndpoint, sourceDir, entries, toEndpoint, destinationDir)
+	entries = append([]sshdata.File(nil), entries...)
+	host := fromEndpoint
+	if host == localEndpoint {
+		host = toEndpoint
+	}
+	route := a.fileRoute(host, selectedRoute...)
+	message := strings.Join(names, "\n") + tr(nil, "\n\n已有目标不会覆盖；下载文件夹会保留层级，符号链接和特殊文件会报错。")
+	if fromEndpoint == localEndpoint {
+		message = strings.Join(names, "\n")
+	}
+	a.ask(tr(nil, "传输文件"), a.endpointName(fromEndpoint)+" · "+sourceDir+"\n→ "+a.endpointName(toEndpoint)+" · "+destinationDir, message, "", "", tr(nil, "加入队列"), func(string) {
+		a.queueFileEntries(fromEndpoint, sourceDir, entries, toEndpoint, destinationDir, route)
 	})
 }
 
@@ -836,7 +870,7 @@ func (a *app) transferArrived(job transfer.Job) {
 		if pane == nil {
 			continue
 		}
-		b := pane.states[endpoint]
+		b := pane.states[fileRouteKey(endpoint, job.Route)]
 		if b == nil {
 			continue
 		}
@@ -844,18 +878,21 @@ func (a *app) transferArrived(job transfer.Job) {
 		if !loaded {
 			continue
 		}
-		files = append([]sshconn.File(nil), files...)
+		files = append([]sshdata.File(nil), files...)
 		found := false
 		for i := range files {
 			if files[i].Name == base {
 				files[i].Size = job.Size
 				files[i].Directory = job.Directory
+				if job.Backup != "" {
+					files[i].Modified = time.Now()
+				}
 				found = true
 				break
 			}
 		}
 		if !found {
-			files = append(files, sshconn.File{Name: base, Size: job.Size, Directory: job.Directory, Modified: time.Now()})
+			files = append(files, sshdata.File{Name: base, Size: job.Size, Directory: job.Directory, Modified: time.Now()})
 		}
 		b.cache[dir] = sortedFiles(files)
 		b.indexDirectory(local, dir)
@@ -887,7 +924,7 @@ func readLocalText(name string) ([]byte, error) {
 	}
 	return io.ReadAll(io.LimitReader(file, (4<<20)+1))
 }
-func permissionValue(f sshconn.File) string {
+func permissionValue(f sshdata.File) string {
 	if len(f.Mode) < 10 {
 		if f.Directory {
 			return "755"

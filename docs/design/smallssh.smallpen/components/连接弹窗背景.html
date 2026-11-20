@@ -1,0 +1,53 @@
+<sp-component name="连接弹窗背景" props="列表: 显示 | 空">
+    <div data-name="工作台" class="w-[1100px] h-[760px] flex flex-row gap-space-sm px-space-sm pb-space-sm pt-space-sm bg-canvas">
+      <div data-name="服务器侧栏" class="flex flex-col gap-space-xs w-connection-sample-rail shrink-0 bg-surface rounded-panel px-connection-sidebar">
+        <div data-name="侧栏操作" class="flex flex-row items-center gap-toolbar h-control">
+          <div data-name="侧栏开关" class="flex flex-row items-center gap-space-sm w-control h-control justify-center">
+            <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-text"></p>
+          </div>
+          <div data-name="新增连接" class="flex flex-row items-center gap-space-sm w-control h-control justify-center">
+            <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-text"></p>
+          </div>
+        </div>
+        <div data-name="搜索服务器" class="flex flex-row items-center gap-space-sm w-full h-connection-search px-field-inline border border-border rounded-control">
+          <p data-name="提示" class="type-native-small text-muted">搜索服务器</p>
+        </div>
+        <p data-name="分组" class="type-native-hint text-muted">⌄ 未分组</p>
+        <div data-name="服务器" class="flex flex-row items-center gap-space-sm h-control">
+          <div data-name="图标容器" class="flex flex-row items-center gap-space-sm w-connection-avatar h-connection-avatar justify-center rounded-connection-symbol bg-accent">
+            <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-onaccent"></p>
+          </div>
+          <p data-name="名称" class="type-native-copy text-text">自有 SSH 中转</p>
+        </div>
+      </div>
+      <div data-name="终端工作区" class="flex flex-col flex-1 min-w-0">
+        <div data-name="工作区栏" class="flex flex-row items-start gap-space-sm w-full h-dialog-category pl-space-sm">
+          <div data-name="终端标题区" class="flex flex-row items-center flex-1 h-control">
+            <p data-name="终端" class="type-native-small text-muted">终端</p>
+          </div>
+          <div data-name="工具按钮" class="flex flex-row items-center gap-toolbar h-control">
+            <div data-name="运行中的代理" class="flex flex-row items-center gap-space-sm w-control h-control justify-center">
+              <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-text"></p>
+            </div>
+            <div data-name="任务" class="flex flex-row items-center gap-space-sm w-control h-control justify-center">
+              <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-text"></p>
+            </div>
+            <div data-name="工具区" class="flex flex-row items-center gap-space-sm w-control h-control justify-center">
+              <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-text"></p>
+            </div>
+            <div data-name="设置" class="flex flex-row items-center gap-space-sm w-control h-control justify-center">
+              <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-text"></p>
+            </div>
+          </div>
+        </div>
+        <div data-name="终端背景" class="flex-1 bg-surface rounded-panel">
+        </div>
+      </div>
+    </div>
+  <sp-variant when="列表: 空">
+    <div data-name="服务器侧栏">
+      <p data-name="分组" class="hidden"></p>
+      <div data-name="服务器" class="hidden"></div>
+    </div>
+  </sp-variant>
+</sp-component>

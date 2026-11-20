@@ -5,46 +5,46 @@
   <title>页面地图 5</title>
   <link rel="stylesheet" href="../../tokens.css">
 </head>
-<body class="flex flex-col w-[1400px] h-[2580px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+<body class="flex flex-col w-[1400px] h-[2920px] bg-canvas">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-full bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="独立原生文件窗口" class="flex flex-col gap-[12px] w-full">
+    <div data-name="独立原生文件窗口" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">独立原生文件窗口</p>
-      <div data-name="editor" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="editor" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">单文件编辑</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：文件列表打开文本文件</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：语法高亮、搜索、编辑、保存、另存为；标题/来源/状态栏</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：后台加载、取消/重试、格式不支持可下载、未保存关闭确认、保存中/失败/冲突</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：立即显示读取窗口；列表进度与显示文件窗口按钮；搜索、编辑、保存、另存为、关闭</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：读取中与失败分开呈现；取消/重试；失败原因与下载入口；未保存关闭确认、保存失败/冲突</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：仅≤4 MiB UTF-8文本；非文本不伪装成文本编辑；真实文件访问不属于离线样例</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/editor_window.go; internal/desktop/file_open.go; internal/desktop/filebrowser.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 独立文件编辑、04 文件 / 文件加载与失败</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 独立文件编辑、04 文件 / 文件加载与失败、04 文件 / 列表右键与打开反馈、04 文件 / 文件读取中</p>
       </div>
     </div>
-    <div data-name="主窗全局弹层；可出现在工具窗" class="flex flex-col gap-[12px] w-full">
-      <p data-name="标题" class="w-full text-text type-section">主窗全局弹层；可出现在工具窗</p>
-      <div data-name="transfer" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+    <div data-name="全局任务弹层；保留已有任务卡片的定位能力" class="flex flex-col gap-space-md w-full">
+      <p data-name="标题" class="w-full text-text type-section">全局任务弹层；保留已有任务卡片的定位能力</p>
+      <div data-name="transfer" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">传输与任务中心</p>
-        <p data-name="入口" class="w-full text-muted type-detail">入口：顶栏任务图标</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：排队、进度/速率、暂停、继续/重试；服务器操作任务</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：空、等待、运行、失败、完成、扫描目录</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：传输不作为dock独立tab；续传包含校验</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/transfer_activity.go; internal/desktop/workspace.go; internal/desktop/compose_work.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：09 工具 / 传输与任务中心</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：主窗顶栏唯一任务图标，画布与标签聚合模式均可用</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：顶栏唯一任务中心显示进行中/失败数量，面板标题列出进行中 / 已暂停 / 失败数；当前任务/历史记录切换；运行中可暂停或取消，已暂停可继续或取消，失败可重试或移除，「清除失败」一次移除全部失败；已完成记录单条移除和清空；服务器操作行内停止等待、失败记录移除及详情</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：默认当前任务、空、等待、运行（百分比）、暂停、失败（红色状态与原因，未传输时不显示空进度）、正在取消、完成历史、清理中/失败、扫描目录</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：传输队列只有一份展示；右侧画布图标栏和底部/右侧工具标签不重复提供任务入口；进度更新不自动弹出、不抢占现有工具；续传包含校验；完成记录默认隐藏，重开面板恢复当前任务；关闭面板不中断任务；取消先停止运行再移除，取消或移除未完成下载只删除本任务创建的私有部分文件（.名称.ssh-part-ID）及目录任务标记，已完成文件、上传源及服务器内容不动；上传取消后服务器上的未完成临时文件不会自动删除；清空历史只删已完成元数据，不删文件、服务或审计</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/transfer_activity.go; internal/desktop/workspace_canvas.go; internal/desktop/filepanes.go; internal/desktop/workspace.go; internal/desktop/compose_work.go; internal/transfer/history.go; internal/transfer/transfer.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：09 工具 / 传输与任务中心、09 工具 / 传输历史</p>
       </div>
     </div>
-    <div data-name="工具面板分类" class="flex flex-col gap-[12px] w-full">
+    <div data-name="工具面板分类" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">工具面板分类</p>
-      <div data-name="commands" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="commands" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">常用命令</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：工具→命令</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：分组/搜索、选择、新建/编辑/删除、向指定终端填入或发送</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：分组/搜索、选择、新建/编辑/删除、向指定终端填入或发送；空列表直接提供「新建命令」，搜索无结果提供「清除搜索」</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：空、筛选无结果、加载/错误、会话不可用</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：批量执行/跨服务器广播未实现</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/commands.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：05 命令 / 命令列表</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：05 命令 / 命令列表、05 命令 / 命令空态</p>
       </div>
-      <div data-name="server-status" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="server-status" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">服务器状态</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：工具→服务器状态</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：概览、进程、自启服务、系统信息、Docker、端口</p>
@@ -54,21 +54,30 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 资源概览</p>
       </div>
     </div>
-    <div data-name="状态分类/详情面板" class="flex flex-col gap-[12px] w-full">
+    <div data-name="状态分类/详情面板" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">状态分类/详情面板</p>
-      <div data-name="status-overview" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="status-overview" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">资源概览与详情</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态→概览；点CPU/内存/网络/磁盘</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：趋势时间范围、CPU/内存/网络/磁盘卡片，详情和返回</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：无样本、未知、过期、窄布局</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：进程CPU为ps平均；GPU未实现</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/status_resources.go; internal/desktop/status_chart.go</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：六个状态分类、右侧采样反馈及⋯设置菜单；CPU/内存/网络/磁盘卡片，详情和返回</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：无样本、未知、过期、窄布局；时间范围仅在更多菜单中选择，分类切换保留范围</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：进程CPU为ps平均；GPU未实现；状态内容区顶部内边距4，左右8，缩短外层标签到分类/操作的距离；进入画布卡片时标题32、分类区顶部0，保留左右8；趋势时间范围收进右侧⋯菜单，不常驻显示选择框；范围为1/5/15分钟的图表窗口，实际采样仍每2秒</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/status_resources.go; internal/desktop/status_chart.go; internal/desktop/diagnostics.go; internal/desktop/workspace_canvas.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 资源概览、06 状态 / 资源详情</p>
       </div>
     </div>
-    <div data-name="服务器状态子页" class="flex flex-col gap-[12px] w-full">
+    <div data-name="服务器状态子页" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">服务器状态子页</p>
-      <div data-name="status-process" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="status-menu" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">状态更多菜单</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态分类栏右侧⋯</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：选择1/5/15分钟趋势时间范围；打开显示当前选中项；点击外部关闭</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：默认5分钟、选中项、打开与关闭；分类切换不重置</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：复用原生菜单，不新开Dialog；仅调整图表时间窗口，不修改2秒采样间隔；SmallPen菜单为默认5分钟示意，选项只演示关闭菜单，真实选择由原生UI测试核验</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/diagnostics.go; internal/desktop/status_chart.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 状态更多菜单</p>
+      </div>
+      <div data-name="status-process" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">进程</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态→进程</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：搜索、排序、查看PID/账户/CPU/内存；TERM/KILL</p>
@@ -77,34 +86,34 @@
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/diagnostics.go; internal/desktop/server_management.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 进程</p>
       </div>
-      <div data-name="status-services" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="status-services" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">自启服务</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态→自启服务</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：搜索、排序，systemd启停/重启和自启开关</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：无服务、非systemd回退、确认、操作失败</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：无服务、非systemd回退、确认、执行中可「停止等待」（服务器可能仍完成该操作）、操作失败；结果提示可关闭</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：OpenRC/SysV为自启清单回退</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/diagnostics.go; internal/desktop/server_management.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 自启服务</p>
       </div>
-      <div data-name="status-system" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="status-system" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">系统信息</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态→系统信息</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：系统/硬件、各核、网络接口/地址、磁盘与I/O</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：系统/内核/架构/运行时间与服务管理器；服务器型号、处理器、逻辑核心、内存与Swap</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：数据未知、不可用、长文本换行</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：非Linux未适配；GPU未实现</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：非Linux未适配；GPU未实现；网卡、磁盘与I/O在相应资源详情中</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/status_resources.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 系统信息</p>
       </div>
-      <div data-name="status-ports" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="status-ports" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">端口</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态→端口</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：非回环监听/当前外部连接切换、TCP/UDP、IPv4/IPv6、端点、进程/PID、搜索排序</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：非回环监听/UDP绑定、本机监听、当前外部连接三种范围；协议、状态、本地/对端地址、进程/PID；搜索排序</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：工具不可用、部分进程不可见、解析不全、结果截断、无结果</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：非回环/通配不等于公网可达；不推断连接发起方</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/ports.go; internal/monitor/ports.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：06 状态 / 端口与对外连接</p>
       </div>
-      <div data-name="docker" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="docker" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">Docker总览</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器状态→Docker</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：容器、镜像、Compose视图；搜索/排序与显示设置</p>

@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>加速与代理</title>
+    <link rel="stylesheet" href="../../tokens.css">
+  </head>
+  <body class="flex flex-col w-[1080px] h-[760px] bg-canvas">
+    <div data-name="设置窗口" class="w-[1080px] h-[760px] bg-canvas">
+      <div data-name="设置导航" class="flex flex-col gap-space-xs pr-space-md pb-space-md pl-space-md left-[8px] top-[8px] w-[200px] h-[744px] bg-surface rounded-window-panel">
+        <div data-name="设置标题" class="flex flex-row items-center gap-space-sm pl-window-title-inset w-full h-[32px]">
+          <p data-name="标题" class="w-full text-text type-section">设置</p>
+        </div>
+        <sp-use component="导航项" data-name="工作区" class="w-full h-control" data-click="08 设置/工作区" props="图标: 隐藏">
+          <p data-name="标签">工作区</p>
+          <div data-name="图标">
+            <p data-name="字标">工</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="安全与解锁" class="w-full h-control" data-click="08 设置/安全与解锁" props="图标: 隐藏">
+          <p data-name="标签">安全与解锁</p>
+          <div data-name="图标">
+            <p data-name="字标">安</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="SSH 密钥" class="w-full h-control" data-click="08 设置/SSH 密钥" props="图标: 隐藏"><p data-name="标签">SSH 密钥</p></sp-use>
+        <sp-use component="导航项" data-name="加速与代理" class="w-full h-control" data-click="08 设置/加速与代理" props="状态: 选中; 图标: 隐藏">
+          <p data-name="标签">加速与代理</p>
+        </sp-use>
+        <sp-use component="导航项" props="图标: 隐藏" data-name="运行与后台" class="w-full h-control" data-click="08 设置/运行与后台">
+          <p data-name="标签">运行与后台</p>
+          <div data-name="图标">
+            <p data-name="字标">运</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="授权中心" class="w-full h-control" data-click="08 设置/授权中心 · 待处理" props="图标: 隐藏">
+          <p data-name="标签">授权中心</p>
+          <div data-name="图标">
+            <p data-name="字标">授</p>
+          </div>
+        </sp-use>
+      </div>
+      <div data-name="设置内容" class="flex flex-col gap-space-sm pr-space-md pb-space-md pl-space-md left-[216px] top-[8px] w-[856px] h-[744px] bg-surface rounded-window-panel">
+        <div data-name="分类标题" class="flex flex-row items-center gap-space-sm w-full h-[32px]">
+          <p data-name="标题" class="w-full text-text type-section">加速与代理</p>
+          <sp-use component="图标按钮" data-name="关闭设置">
+            <p data-name="图标"></p>
+          </sp-use>
+        </div>
+        <div data-name="设置滚动内容" class="flex flex-col items-start w-full h-full">
+          <div data-name="设置内容容器" class="flex flex-col gap-space-md w-full max-w-settings-content">
+            <sp-use component="按钮" data-name="新建线路" data-click="overlay:03 连接/新建线路; position: center"><p data-name="文字">新建线路</p></sp-use>
+            <div data-name="工作代理" class="flex flex-col gap-space-sm py-space-md w-full">
+              <p data-name="名称" class="w-full text-text type-record-title">日常工作代理</p>
+              <p data-name="类型与地址" class="w-full text-muted type-control">AnyTLS · proxy.example:443</p>
+              <p data-name="引用" class="w-full text-muted type-detail">3 个连接使用</p>
+              <div data-name="操作" class="flex flex-row gap-space-sm w-full">
+                <sp-use component="按钮" props="样式: 普通" data-name="编辑线路" data-click="overlay:03 连接/编辑导入线路; position: center"><p data-name="文字">编辑</p></sp-use>
+                <sp-use component="按钮" props="样式: 普通" data-name="已引用禁用删除"><p data-name="文字" class="text-muted">删除</p></sp-use>
+              </div>
+            </div>
+            <div data-name="线路分隔" class="w-full h-[1px] bg-border"></div>
+            <div data-name="自有中转" class="flex flex-col gap-space-sm py-space-md w-full">
+              <p data-name="名称" class="w-full text-text type-record-title">自有中转</p>
+              <p data-name="类型与地址" class="w-full text-muted type-control">跳板机</p>
+              <div data-name="操作" class="flex flex-row gap-space-sm w-full">
+                <sp-use component="按钮" props="样式: 普通" data-name="编辑中转" data-click="overlay:03 连接/编辑中转线路; position: center"><p data-name="文字">编辑</p></sp-use>
+                <sp-use component="按钮" props="样式: 轻量" data-name="删除中转" data-click="overlay:08 设置/删除线路确认; position: center"><p data-name="文字" class="text-danger">删除</p></sp-use>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
+    </div>
+  </body>
+</html>

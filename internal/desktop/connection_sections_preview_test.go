@@ -29,10 +29,13 @@ func TestConnectionSectionSnapshotsWithoutWindows(t *testing.T) {
 	}
 	for _, section := range connectionSections {
 		for _, style := range []struct {
-			name, locale string
-			width        int
-			dark         bool
-		}{{"wide", "zh-Hans", 1100, false}, {"narrow", "zh-Hans", 560, false}, {"dark", "zh-Hans", 1100, true}, {"english", "en", 560, false}} {
+			name, locale    string
+			width           int
+			dark, keepalive bool
+		}{{"wide", "zh-Hans", 1100, false, false}, {"narrow", "zh-Hans", 560, false, false}, {"dark", "zh-Hans", 1100, true, false}, {"english", "en", 560, false, false}, {"keepalive-wide", "zh-Hans", 1100, false, true}, {"keepalive-narrow", "zh-Hans", 560, true, true}, {"keepalive-english", "en", 560, false, true}} {
+			if style.keepalive && section.id != connectionTerminal {
+				continue
+			}
 			t.Run(section.id+"-"+style.name, func(t *testing.T) {
 				t.Setenv("MYGO_LOCALE", style.locale)
 				a := &app{ctx: context.Background(), online: true, toolsHidden: true, sidebarWidth: 190, groups: map[string]*bool{}}
@@ -40,6 +43,9 @@ func TestConnectionSectionSnapshotsWithoutWindows(t *testing.T) {
 				a.form.Name, a.form.Host, a.form.User = "示例服务器", "192.0.2.10", "example"
 				a.form.Network.Proxy = connectcfg.Proxy{Mode: "socks5", Address: "127.0.0.1:1080", User: "example"}
 				a.connections = []vault.Summary{{ID: "relay", Name: "自有 SSH 中转"}}
+				if style.keepalive {
+					a.form.Network.KeepaliveSeconds = 30
+				}
 				a.connection.section = section.id
 				widths := make(map[string]float32)
 				var sidebarLabel, contentLabel string

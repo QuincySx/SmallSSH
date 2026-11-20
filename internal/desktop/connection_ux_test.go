@@ -10,8 +10,41 @@ import (
 	"github.com/egoist/mygo/ui/editor"
 	"sshclient/internal/approval"
 	"sshclient/internal/broker"
+	"sshclient/internal/sshconn"
 	"sshclient/internal/vault"
 )
+
+func TestIdentityConfirmationFitsSmallDialogWithoutHidingTrustActions(t *testing.T) {
+	for _, locale := range []string{"zh-Hans", "en"} {
+		t.Run(locale, func(t *testing.T) {
+			t.Setenv("MYGO_LOCALE", locale)
+			a := &app{ctx: context.Background(), online: true, page: 1}
+			target := vault.Summary{Host: "2001:db8::10", Port: 22, User: "demo"}
+			identity := sshconn.HostIdentity{Fingerprint: "SHA256:w1H85gE9C7qRE4zP0O4Wp5vM7Tg5J2Gr8RcbX6cVxfk"}
+			a.showHostIdentityPrompt(target, identity, func() { t.Fatal("cancel accepted trust") })
+			tt := ui.NewTester(a.view, 560, 480)
+			tt.SetLocale(locale)
+			dialog, ok := tt.Find(a.prompt.title + tr(nil, "对话框"))
+			trust, found := tt.Find(a.prompt.accept)
+			back, cancelFound := tt.Find(tr(nil, "取消"))
+			fp, fpFound := tt.Find(a.prompt.message)
+			if !ok || !found || !cancelFound || !fpFound || dialog.W != 480 || dialog.H >= 380 {
+				t.Fatal("identity dialog oversized or missing content", dialog, trust, back, fp)
+			}
+			for _, r := range []ui.Rect{trust, back, fp} {
+				if r.X < dialog.X || r.X+r.W > dialog.X+dialog.W+0.5 || r.Y < dialog.Y || r.Y+r.H > dialog.Y+dialog.H+0.5 {
+					t.Fatal("identity content escaped dialog", r, dialog)
+				}
+			}
+			if math.Abs(float64(trust.X+trust.W-(dialog.X+dialog.W-16))) > 0.5 || back.X+back.W > trust.X {
+				t.Fatal("actions not grouped right", trust, back)
+			}
+			if err := tt.Click(tr(nil, "取消")); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
 
 func TestConnectionModalKeepsWorkspaceAndProtectsDraft(t *testing.T) {
 	for _, dark := range []bool{false, true} {
@@ -24,7 +57,7 @@ func TestConnectionModalKeepsWorkspaceAndProtectsDraft(t *testing.T) {
 			t.Fatal("modal replaced the workspace or did not focus its first input", tt.Texts())
 		}
 		dialog, ok := tt.Find("新建连接对话框")
-		save, found := tt.Find("保存并连接")
+		save, found := tt.Find("保存连接")
 		name, named := tt.Find("名称输入")
 		if !ok || !found || !named || math.Abs(float64(dialog.X+dialog.W/2-500)) > 1 || math.Abs(float64(dialog.Y+dialog.H/2-380)) > 1 || name.Y < dialog.Y || save.Y+save.H > dialog.Y+dialog.H {
 			t.Fatal("dialog is not centered or its footer escaped the window", dialog, save, name)
@@ -144,25 +177,8 @@ func TestUnlockedSessionSavesWithoutPasswordAndCannotApproveOtherRequests(t *tes
 	h := newConnectionFlowHarness(t)
 	h.fillTarget()
 	h.input("服务器密码", h.fixture.Profile().Password)
-	h.a.connection.connect = false
 	h.ui.Frame()
-	h.confirmIdentity()
-	if h.a.form.Fingerprint != "" || len(h.server.Vault.Summaries()) != 0 {
-		t.Fatal("probe silently trusted or saved")
-	}
-	h.click("返回修改")
-	if h.a.form.Name == "" || h.a.form.Password == "" || h.a.connection.review {
-		t.Fatal("back lost form")
-	}
-	h.click("保存连接")
-	if !h.a.connection.review {
-		t.Fatal("known candidate must still require explicit trust")
-	}
-	h.click("信任并保存")
-	h.wait(func() bool { return h.a.page == 1 || h.a.connection.phase == "" })
-	if h.a.page != 1 || len(h.a.connections) != 1 {
-		t.Fatal("first save did not close form", h.a.connection.errors)
-	}
+	h.saveOnly()
 	id := h.a.connections[0].ID
 	// An unrelated external request must not inherit the desktop session.
 	other := h.fixture.Profile()

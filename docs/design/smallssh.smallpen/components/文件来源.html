@@ -1,0 +1,8 @@
+<sp-component name="文件来源" props="模式: 跟随 | 固定">
+  <div class="flex flex-row items-center gap-space-xs px-space-sm w-file-source h-field">
+    <p data-name="来源" class="w-full text-text type-file-label">Web 生产环境</p>
+    <p data-name="跟随" class="w-[14px] text-muted font-icons text-icon-compact leading-[1] text-center"></p>
+    <p data-name="展开" class="w-selector-icon text-muted font-icons text-icon-compact leading-[1] text-center"></p>
+  </div>
+  <sp-variant when="模式: 固定"><p data-name="跟随" class="hidden"></p></sp-variant>
+</sp-component>

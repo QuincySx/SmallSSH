@@ -147,10 +147,18 @@ func (a *app) commandsView(c *ui.Context) {
 		items := a.filteredSnippets()
 		if len(items) == 0 {
 			ui.Column(c).FillWidth().Grow(1).MinHeight(0).AlignItems(ui.Center).Justify(ui.Center).Gap(8).Children(func() {
+				// An empty state offers the action that ends it, rather than
+				// leaving the user to find the small ＋ in the toolbar.
 				if len(a.snippets) == 0 {
 					ui.Text(c, tr(c, "暂无常用命令")).FontSize(11).TextColor(c.Theme().TextMuted)
+					if components.Button(c, tr(c, "新建命令")).Clicked() {
+						a.newSnippet()
+					}
 				} else {
 					ui.Text(c, tr(c, "没有符合条件的命令")).FontSize(11).TextColor(c.Theme().TextMuted)
+					if a.snippetSearch != "" && components.Button(c, tr(c, "清除搜索")).Clicked() {
+						a.snippetSearch, a.snippetSelected = "", -1
+					}
 				}
 			})
 			return
@@ -267,88 +275,91 @@ func (a *app) filteredSnippets() []snippet.Command {
 }
 
 func (a *app) snippetDialog(c *ui.Context) {
-	components.Dialog(c, &a.snippetOpen, components.DialogOptions{Title: tr(c, "保存常用命令"), Width: 640, Height: 600}, func() {
-		ui.Form(c, func() {
-			ui.TextInput(c, &a.snippetForm.Name).Label(tr(c, "命令名称")).Placeholder(tr(c, "命令名称")).FillWidth().AutoFocus()
-			ui.Field(c, tr(c, "分类"), func() {
-				components.EditableChoice(c, &a.snippetForm.Group, a.snippetGroups(), tr(c, "分类"), false).FillWidth().
-					Placeholder(tr(c, "选择已有分类，或输入新分类"))
-			})
-			ui.Field(c, tr(c, "命令内容"), func() {
-				body := ui.TextArea(c, &a.snippetForm.Body).Label(tr(c, "命令内容")).Height(96).FillWidth().
-					Placeholder(tr(c, "命令内容，用 $1、$2 表示参数"))
-				if body.Changed() {
-					a.syncSnippetArgs()
-				}
-			})
-			ask := !a.snippetForm.SkipConfirm
-			if ui.Checkbox(c, &ask, tr(c, "发送时询问")).Changed() {
-				a.snippetForm.SkipConfirm = !ask
-			}
-			if len(a.snippetForm.Args) == 0 && snippet.PlaceholderCount(a.snippetForm) > 0 {
-				if components.Button(c, tr(c, "识别占位符")).Width(140).Clicked() {
-					a.syncSnippetArgs()
-					c.Invalidate()
-				}
-			}
-			removeVariant := -1
-			for i := range a.snippetForm.Variants {
-				variant := &a.snippetForm.Variants[i]
-				ui.Field(c, tr(c, "系统"), func() {
-					ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-						snippetSystemSelect(c, &variant.OS, snippet.SystemKeys(), fmt.Sprintf(tr(c, "系统选择 %d"), i+1)).Grow(1)
-						if components.SVGButton(c, components.CloseIcon, tr(c, "删除系统命令")).Clicked() {
-							removeVariant = i
-						}
-					})
+	_, windowHeight := c.Size()
+	components.Dialog(c, &a.snippetOpen, components.DialogOptions{Title: tr(c, "保存常用命令"), Width: 640}, func() {
+		ui.Scroll(c).FillWidth().MaxHeight(min(520, max(120, windowHeight-144))).Children(func() {
+			ui.Form(c, func() {
+				ui.TextInput(c, &a.snippetForm.Name).Label(tr(c, "命令名称")).Placeholder(tr(c, "命令名称")).FillWidth().AutoFocus()
+				ui.Field(c, tr(c, "分类"), func() {
+					components.EditableChoice(c, &a.snippetForm.Group, a.snippetGroups(), tr(c, "分类"), false).FillWidth().
+						Placeholder(tr(c, "选择已有分类，或输入新分类"))
 				})
 				ui.Field(c, tr(c, "命令内容"), func() {
-					body := ui.TextArea(c, &variant.Body).Label(fmt.Sprintf(tr(c, "系统命令 %d"), i+1)).Height(64).FillWidth()
+					body := ui.TextArea(c, &a.snippetForm.Body).Label(tr(c, "命令内容")).Height(96).FillWidth().
+						Placeholder(tr(c, "命令内容，用 $1、$2 表示参数"))
 					if body.Changed() {
 						a.syncSnippetArgs()
 					}
 				})
-			}
-			if removeVariant >= 0 {
-				a.snippetForm.Variants = slices.Delete(a.snippetForm.Variants, removeVariant, removeVariant+1)
-				if len(a.snippetForm.Args) > 0 {
-					a.syncSnippetArgs()
+				ask := !a.snippetForm.SkipConfirm
+				if ui.Checkbox(c, &ask, tr(c, "发送时询问")).Changed() {
+					a.snippetForm.SkipConfirm = !ask
 				}
-				c.Invalidate()
-			}
-			if components.Button(c, tr(c, "添加系统命令")).Width(150).Disabled(!a.canAddSnippetVariant()).Clicked() {
-				a.addSnippetVariant()
-				c.Invalidate()
-			}
-			if len(a.snippetForm.Args) > 0 {
-				ui.Field(c, tr(c, "参数"), func() {
-					ui.Column(c).FillWidth().Gap(6).Children(func() {
-						for i := range a.snippetForm.Args {
-							arg := &a.snippetForm.Args[i]
-							ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-								ui.Text(c, fmt.Sprintf("$%d", i+1)).Width(28).FontSize(12)
-								ui.TextInput(c, &arg.Name).Width(112).Height(30).
-									Label(fmt.Sprintf(tr(c, "参数 %d 名称"), i+1)).Placeholder(tr(c, "名称"))
-								snippetTypeSelect(c, &arg.Type, fmt.Sprintf(tr(c, "参数 %d 类型"), i+1)).Width(96)
-								ui.TextInput(c, &arg.Preset).Grow(1).MinWidth(80).Height(30).
-									Label(fmt.Sprintf(tr(c, "参数 %d 默认值"), i+1)).Placeholder(tr(c, "默认值"))
-								fill := !arg.SkipPrompt
-								if ui.Checkbox(c, &fill, tr(c, "发送时填写")).Changed() {
-									arg.SkipPrompt = !fill
-								}
-							})
-							remember := !arg.NoHistory
-							if ui.Checkbox(c, &remember, tr(c, "记录输入历史")).Tooltip(tr(c, "历史随保险库加密保存；敏感参数可关闭记录")).Changed() {
-								arg.NoHistory = !remember
+				if len(a.snippetForm.Args) == 0 && snippet.PlaceholderCount(a.snippetForm) > 0 {
+					if components.Button(c, tr(c, "识别占位符")).Width(140).Clicked() {
+						a.syncSnippetArgs()
+						c.Invalidate()
+					}
+				}
+				removeVariant := -1
+				for i := range a.snippetForm.Variants {
+					variant := &a.snippetForm.Variants[i]
+					ui.Field(c, tr(c, "系统"), func() {
+						ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+							snippetSystemSelect(c, &variant.OS, snippet.SystemKeys(), fmt.Sprintf(tr(c, "系统选择 %d"), i+1)).Grow(1)
+							if components.SVGButton(c, components.CloseIcon, tr(c, "删除系统命令")).Clicked() {
+								removeVariant = i
 							}
+						})
+					})
+					ui.Field(c, tr(c, "命令内容"), func() {
+						body := ui.TextArea(c, &variant.Body).Label(fmt.Sprintf(tr(c, "系统命令 %d"), i+1)).Height(64).FillWidth()
+						if body.Changed() {
+							a.syncSnippetArgs()
 						}
 					})
-				})
+				}
+				if removeVariant >= 0 {
+					a.snippetForm.Variants = slices.Delete(a.snippetForm.Variants, removeVariant, removeVariant+1)
+					if len(a.snippetForm.Args) > 0 {
+						a.syncSnippetArgs()
+					}
+					c.Invalidate()
+				}
+				if components.Button(c, tr(c, "添加系统命令")).Width(150).Disabled(!a.canAddSnippetVariant()).Clicked() {
+					a.addSnippetVariant()
+					c.Invalidate()
+				}
+				if len(a.snippetForm.Args) > 0 {
+					ui.Field(c, tr(c, "参数"), func() {
+						ui.Column(c).FillWidth().Gap(6).Children(func() {
+							for i := range a.snippetForm.Args {
+								arg := &a.snippetForm.Args[i]
+								ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+									ui.Text(c, fmt.Sprintf("$%d", i+1)).Width(28).FontSize(12)
+									ui.TextInput(c, &arg.Name).Width(112).Height(30).
+										Label(fmt.Sprintf(tr(c, "参数 %d 名称"), i+1)).Placeholder(tr(c, "名称"))
+									snippetTypeSelect(c, &arg.Type, fmt.Sprintf(tr(c, "参数 %d 类型"), i+1)).Width(96)
+									ui.TextInput(c, &arg.Preset).Grow(1).MinWidth(80).Height(30).
+										Label(fmt.Sprintf(tr(c, "参数 %d 默认值"), i+1)).Placeholder(tr(c, "默认值"))
+									fill := !arg.SkipPrompt
+									if ui.Checkbox(c, &fill, tr(c, "发送时填写")).Changed() {
+										arg.SkipPrompt = !fill
+									}
+								})
+								remember := !arg.NoHistory
+								if ui.Checkbox(c, &remember, tr(c, "记录输入历史")).Tooltip(tr(c, "历史随保险库加密保存；敏感参数可关闭记录")).Changed() {
+									arg.NoHistory = !remember
+								}
+							}
+						})
+					})
+				}
+			})
+			if a.snippetError != "" {
+				ui.Text(c, a.snippetError).FillWidth().FontSize(12).TextColor(c.Theme().Danger).Label(tr(c, "命令错误"))
 			}
 		})
-		if a.snippetError != "" {
-			ui.Text(c, a.snippetError).FillWidth().FontSize(12).TextColor(c.Theme().Danger).Label(tr(c, "命令错误"))
-		}
 	}, func() {
 		if components.Button(c, tr(c, "取消")).Clicked() {
 			a.snippetOpen = false

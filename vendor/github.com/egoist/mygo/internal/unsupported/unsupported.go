@@ -43,12 +43,14 @@ func (*Backend) Power() platform.Power                                      { re
 func (*Backend) Network() platform.Network                                  { return network{} }
 func (*Backend) NowPlaying() platform.NowPlaying                            { return nowPlaying{} }
 func (*Backend) Secrets() platform.Secrets                                  { return secrets{} }
-func (*Backend) NewTray(platform.TrayHandler) (platform.Tray, error)        { return nil, errUnsupported }
-func (*Backend) RegisterHotkey(int, string) error                           { return errUnsupported }
-func (*Backend) UnregisterHotkey(int)                                       {}
-func (*Backend) NotificationsSupported() bool                               { return false }
-func (*Backend) WebViewAvailable() bool                                     { return false }
-func (*Backend) RemoveNotification(string)                                  {}
+func (*Backend) NewTray(string, platform.TrayHandler) (platform.Tray, error) {
+	return nil, errUnsupported
+}
+func (*Backend) RegisterHotkey(int, string, string) error { return errUnsupported }
+func (*Backend) UnregisterHotkey(int)                     {}
+func (*Backend) NotificationsSupported() bool             { return false }
+func (*Backend) WebViewAvailable() bool                   { return false }
+func (*Backend) RemoveNotification(string)                {}
 
 func (*Backend) ShowNotification(_ *platform.Notification, done func(error)) {
 	done(errUnsupported)
@@ -85,17 +87,26 @@ func (app) SetOpenAtLogin(bool, string, string, string) error { return errUnsupp
 func (app) OpenAtLogin(string, string, string) bool           { return false }
 func (app) OpenedAtLogin() bool                               { return false }
 func (app) SetDockMenu(*platform.Menu)                        {}
-func (app) ClearBrowsingData(done func(error))                { done(errUnsupported) }
-func (app) AddRecentDocument(string) error                    { return errUnsupported }
-func (app) ClearRecentDocuments() error                       { return errUnsupported }
-func (app) SetJumpList(platform.JumpList) error               { return errUnsupported }
+func (app) ClearBrowsingData(_ platform.DataStore, _ platform.SiteData, done func(error)) {
+	done(errUnsupported)
+}
+func (app) NewDataStore(platform.DataStoreOptions) (platform.DataStore, error) {
+	return nil, errUnsupported
+}
+func (app) AddRecentDocument(string) error      { return errUnsupported }
+func (app) ClearRecentDocuments() error         { return errUnsupported }
+func (app) SetJumpList(platform.JumpList) error { return errUnsupported }
 
-func (app) ListCookies(_ string, done func([]platform.Cookie, error)) {
+func (app) ListCookies(_ platform.DataStore, _ string, done func([]platform.Cookie, error)) {
 	done(nil, platform.ErrUnsupported)
 }
-func (app) SetCookie(_ platform.Cookie, done func(error))       { done(platform.ErrUnsupported) }
-func (app) DeleteCookie(_ platform.CookieKey, done func(error)) { done(platform.ErrUnsupported) }
-func (app) ClearCookies(done func(error))                       { done(platform.ErrUnsupported) }
+func (app) SetCookie(_ platform.DataStore, _ platform.Cookie, done func(error)) {
+	done(platform.ErrUnsupported)
+}
+func (app) DeleteCookie(_ platform.DataStore, _ platform.CookieKey, done func(error)) {
+	done(platform.ErrUnsupported)
+}
+func (app) ClearCookies(_ platform.DataStore, done func(error)) { done(platform.ErrUnsupported) }
 func (app) CompileContentRules(_, _, _ string, done func(any, error)) {
 	done(nil, platform.ErrUnsupported)
 }
@@ -114,13 +125,17 @@ func (dialogs) ShowMessageBox(_ platform.Window, _ *platform.MessageBoxOptions, 
 
 type clipboard struct{}
 
+func (clipboard) WatchChanges(func()) (func(), error) {
+	return nil, platform.ErrUnsupported
+}
+
 func (clipboard) ReadData([]transfer.Format) (transfer.Data, error) {
 	return transfer.Data{}, errUnsupported
 }
-func (clipboard) WriteData(transfer.Data, func()) error { return errUnsupported }
-func (clipboard) Formats() []transfer.Format            { return nil }
-func (clipboard) Flush() error                          { return errUnsupported }
-func (clipboard) Close()                                {}
+func (clipboard) WriteData(transfer.Data, bool, func()) error { return errUnsupported }
+func (clipboard) Formats() []transfer.Format                  { return nil }
+func (clipboard) Flush() error                                { return errUnsupported }
+func (clipboard) Close()                                      {}
 
 func (clipboard) ReadText() string           { return "" }
 func (clipboard) WriteText(string)           {}
@@ -133,13 +148,19 @@ func (clipboard) AvailableFormats() []string { return nil }
 
 type shell struct{}
 
-func (shell) OpenExternal(string) error            { return errUnsupported }
-func (shell) OpenPath(string) error                { return errUnsupported }
-func (shell) ShowItemInFolder(string)              {}
-func (shell) TrashItem(string) error               { return errUnsupported }
-func (shell) Beep()                                {}
-func (shell) FileIcon(string, int) ([]byte, error) { return nil, errUnsupported }
-func (shell) OpenApplication(string) error         { return errUnsupported }
+func (shell) OpenExternal(string) error              { return errUnsupported }
+func (shell) OpenPath(string) error                  { return errUnsupported }
+func (shell) ShowItemInFolder(string)                {}
+func (shell) TrashItem(string) error                 { return errUnsupported }
+func (shell) TrashItemResult(string) (string, error) { return "", platform.ErrUnsupported }
+func (shell) PreviewItem(string) error               { return errUnsupported }
+func (shell) Beep()                                  {}
+func (shell) FileIcon(string, int) ([]byte, error)   { return nil, errUnsupported }
+func (shell) TypeIcon(string, int) ([]byte, error)   { return nil, errUnsupported }
+func (shell) OpenApplication(string) error           { return errUnsupported }
+func (shell) DefaultApp(string) (platform.Application, error) {
+	return platform.Application{}, errUnsupported
+}
 
 func (*Backend) Applications() ([]platform.Application, error) { return nil, errUnsupported }
 
@@ -162,6 +183,7 @@ type power struct{}
 
 func (power) Watch()                        {}
 func (power) KeepAwake(bool, string) func() { return func() {} }
+func (power) KeepRunning(string) func()     { return func() {} }
 func (power) OnBattery() bool               { return false }
 func (power) IdleTime() time.Duration       { return 0 }
 

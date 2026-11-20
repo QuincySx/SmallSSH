@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -126,7 +127,7 @@ func (a *app) startContainerLogs(s *dockerDialogState) {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	ctx, cancel := context.WithCancel(a.operationContext())
+	ctx, cancel := context.WithCancel(client.WithRoute(a.operationContext(), s.session.host, s.session.target.Route))
 	s.ctx, s.cancel = ctx, cancel
 	s.log = &dockerLogView{buffer: &dockerlog.Buffer{}, follow: true}
 	s.streaming = true
@@ -320,6 +321,26 @@ func (a *app) containerDetailsView(c *ui.Context, s *dockerDialogState) {
 	})
 }
 
+// containerTerminalName is the first free title for a terminal in container
+// name. Sessions in except, such as the placeholder being replaced, do not
+// count as taking a title.
+func (a *app) containerTerminalName(name string, except ...*session) string {
+	title := tr(nil, "容器 · ") + name
+	for n := 2; ; n++ {
+		taken := false
+		for _, existing := range a.sessions {
+			if existing.name == title && !slices.Contains(except, existing) {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			return title
+		}
+		title = fmt.Sprintf(tr(nil, "容器 · %s (%d)"), name, n)
+	}
+}
+
 func (a *app) openContainerTerminal(source *session, target serverops.DockerTarget, name, shell string, replace *session) {
 	if source == nil || !a.hasSession(source) || !a.online {
 		return
@@ -335,7 +356,7 @@ func (a *app) openContainerTerminal(source *session, target serverops.DockerTarg
 	if replace != nil {
 		group = replace.group
 	}
-	ctx, cancel := context.WithCancel(a.operationContext())
+	ctx, cancel := context.WithCancel(client.WithRoute(a.operationContext(), source.host, source.target.Route))
 	if replace != nil && replace.connectionState != "" {
 		replace.connectionCancel = cancel
 	}
@@ -366,20 +387,7 @@ func (a *app) openContainerTerminal(source *session, target serverops.DockerTarg
 				cancel()
 				return
 			}
-			attached.name, attached.containerName = tr(nil, "容器 · ")+name, name
-			for n := 2; ; n++ {
-				collision := false
-				for _, existing := range a.sessions {
-					if existing != attached && existing != replace && existing.name == attached.name {
-						collision = true
-						break
-					}
-				}
-				if !collision {
-					break
-				}
-				attached.name = fmt.Sprintf(tr(nil, "容器 · %s (%d)"), name, n)
-			}
+			attached.name, attached.containerName = a.containerTerminalName(name, attached, replace), name
 			if replace != nil {
 				a.replaceClosedTerminal(replace, attached)
 			}

@@ -28,7 +28,7 @@ func TestApprovalHistoryUsesPersistentEventsAndSanitizesMetadata(t *testing.T) {
 	a.requests = []approval.Request{{ID: "ephemeral", Status: "denied", Operation: approval.Operation{Client: "ephemeral-only-client"}}}
 	a.approvalHistory.events[0].Client = "Assistant\n\u202E"
 	tt := ui.NewTester(a.approvalView, 1100, 760)
-	for _, text := range []string{"访问历史", "Example server", `自报 · Assistant\n\u202e`, "未记录", "已拒绝 · 保护模式不开放此操作", "已拒绝 · 超出授权范围", "更早记录"} {
+	for _, text := range []string{"审计记录", "Example server", `自报 · Assistant\n\u202e`, "未记录", "已拒绝 · 保护模式不开放此操作", "已拒绝 · 超出授权范围", "更早记录"} {
 		if !tt.HasText(text) {
 			t.Fatal("persisted audit fact missing", text, tt.Texts())
 		}
@@ -198,13 +198,13 @@ func TestApprovalHistoryFreshUnlockVisibleInFullWorkspace(t *testing.T) {
 			h.resetApp()
 			h.a.page = 3
 			h.ui = ui.NewTester(h.a.view, width, 800)
-			h.click("授权分类：历史")
+			h.click("授权分类：审计记录")
 			h.wait(func() bool { return h.a.approvalHistory.loaded && !h.a.approvalHistory.loading })
 			state := &h.a.approvalHistory
 			if state.err != "" || len(state.events) != 1 || state.events[0].Event != "unlocked" {
 				t.Fatal("fresh unlocked history missing", len(state.events), state.err)
 			}
-			for text, minWidth := range map[string]float32{"访问历史": 50, "刷新历史": 48, "已解锁": 30, "本页 1 条": 42} {
+			for text, minWidth := range map[string]float32{"审计记录": 50, "刷新历史": 48, "已解锁": 30, "本页 1 条": 42} {
 				bounds, ok := h.ui.Find(text)
 				if !ok || bounds.W < minWidth || bounds.H < 12 || bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.W > float32(width+1) || bounds.Y+bounds.H > 801 {
 					t.Fatal("full workspace clipped fresh history", text, bounds, h.ui.Texts())
@@ -238,7 +238,7 @@ func TestApprovalHistoryOwnerOperationAppearsInFullWorkspace(t *testing.T) {
 	h.resetApp()
 	h.a.page = 3
 	h.ui = ui.NewTester(h.a.view, 1100, 800)
-	h.click("授权分类：历史")
+	h.click("授权分类：审计记录")
 	h.wait(func() bool { return h.a.approvalHistory.loaded && !h.a.approvalHistory.loading })
 	state := &h.a.approvalHistory
 	if state.err != "" {
@@ -311,7 +311,7 @@ func TestApprovalHistoryShowsWhatRanAndExplainsTheChosenRow(t *testing.T) {
 	detail := historyUIFixture()
 	detail.approvalHistory.detail = 0
 	tt := ui.NewTester(detail.approvalView, 1100, 760)
-	for _, want := range []string{"详情", "完整命令", "systemctl restart nginx", "请求 ID", "generated-request"} {
+	for _, want := range []string{"详情", "命令", "systemctl restart nginx", "请求 ID", "generated-request"} {
 		if !tt.HasText(want) {
 			t.Fatal("chosen record was not explained", want, tt.Texts())
 		}
@@ -322,7 +322,7 @@ func TestApprovalHistoryShowsWhatRanAndExplainsTheChosenRow(t *testing.T) {
 	narrow := historyUIFixture()
 	narrow.approvalHistory.detail = 0
 	nt := ui.NewTester(narrow.approvalView, 560, 760)
-	if !nt.HasText("完整命令") {
+	if !nt.HasText("命令") {
 		t.Fatal("the narrow layout hid the chosen command")
 	}
 	if pager, ok := nt.Find("更早记录"); !ok || pager.Y+pager.H > 761 {
@@ -332,7 +332,7 @@ func TestApprovalHistoryShowsWhatRanAndExplainsTheChosenRow(t *testing.T) {
 	stale := historyUIFixture()
 	stale.approvalHistory.detail = 7
 	st := ui.NewTester(stale.approvalView, 1100, 760)
-	if st.HasText("完整命令") || stale.approvalHistory.detail != -1 {
+	if st.HasText("详情") || stale.approvalHistory.detail != -1 {
 		t.Fatal("a stale selection survived the page")
 	}
 }

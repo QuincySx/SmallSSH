@@ -27,6 +27,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/egoist/mygo/internal/gpu"
+	"github.com/egoist/mygo/internal/pacing"
 	"github.com/egoist/mygo/internal/scene"
 )
 
@@ -84,6 +85,9 @@ const (
 	pixelFormatRGBA16Float = 115
 	pixelFormatRGBA32Float = 125
 
+	// gpuFamilyMac2 is MTLGPUFamilyMac2.
+	gpuFamilyMac2 = 2002
+
 	usageShaderRead   = 1
 	usageRenderTarget = 4
 	storageManaged    = 1
@@ -99,8 +103,11 @@ const (
 	blendOneMinusSrc1A     = 18
 	filterLinear           = 1
 	statusError            = 5
-	layerWidthSizable      = 1 << 1
-	layerHeightSizable     = 1 << 4
+	// commandBufferErrorTimeout is MTLCommandBufferErrorTimeout, the code
+	// of a frame the watchdog killed because the GPU never finished it.
+	commandBufferErrorTimeout = 2
+	layerWidthSizable         = 1 << 1
+	layerHeightSizable        = 1 << 4
 )
 
 var (
@@ -341,10 +348,18 @@ func need(obj id, what string, methods ...string) error {
 }
 
 type texture struct {
-	tex       id
+	tex id
+	// chroma is the texture of the chroma of a frame of video in NV12,
+	// whose luma tex is, and cv the CVMetalTextures tex and chroma wrap,
+	// owned, for a frame in a CVPixelBuffer (see video.go).
+	chroma    id
+	cv        [2]uintptr
 	w, h      int
 	gen, ver  uint64
 	lastFrame uint64
+	// gpu marks an image's texture that its GPUSource gave, which shows
+	// memory of its own (an IOSurface): never one to upload pixels into.
+	gpu bool
 }
 
 // drawState is what drawing scenes into a target keeps from frame to
@@ -414,6 +429,11 @@ type Renderer struct {
 	// pipelines of the classes and the worker that makes them.
 	source string
 	pipes  pipeState
+	// canSpecialize tells that the device draws with the pipelines of the
+	// classes: those of Metal's Mac2 family, Apple's among them, do. Older
+	// ones, as Intel's Haswell (#1566), draw every batch with the general
+	// pipeline, and their batches are not separated by class.
+	canSpecialize bool
 	// formats has what draws into BGRA8 targets, as frames do, and into
 	// RGBA16Float ones, as frames showing colors outside the sRGB gamut do
 	// (SetWide), made for the first of those; cur is that of the target
@@ -449,6 +469,7 @@ type Renderer struct {
 	color  texture
 	empty  id // a texture to bind where there is none
 	images map[uint64]*texture
+	video  videoState
 	// canvases are the textures canvases are drawn into.
 	canvases map[uint64]*canvasTexture
 	// blurred are the textures of the images the frame draws blurred
@@ -460,11 +481,15 @@ type Renderer struct {
 	blurTmp  [2]texture
 	stopsTex id
 	frame    uint64
+	swept    uint64 // the frame of the last sweep
 	// Command buffers retain every resource used by their frame slot.
 	inflight    [ringSize]id
 	slot, inUse int
 	err         error
-	checked     bool
+	// timeout tells that err is a frame the GPU did not finish in time:
+	// the device is still there, but it cannot draw now.
+	timeout bool
+	checked bool
 
 	// lastRender is when the last frame drew; trimTimer trims the
 	// drawables once none has for a while, armed until it fires, and
@@ -523,6 +548,15 @@ func New(layer uintptr) (r *Renderer, err error) {
 		if respondsTo(ml, "setMaximumDrawableCount:") {
 			send(ml, "setMaximumDrawableCount:", 3)
 		}
+		// Uncapped (MYGO_UNCAPPED), a drawable presents as soon as the
+		// GPU has drawn it, not at the display's next refresh, as
+		// MoltenVK's immediate present mode does: frames come as fast as
+		// they draw. The window server still composites a window once a
+		// refresh, showing the newest frame, without tearing; only a
+		// window it shows directly, full screen, may show frames torn.
+		if pacing.Uncapped && respondsTo(ml, "setDisplaySyncEnabled:") {
+			send(ml, "setDisplaySyncEnabled:", 0)
+		}
 		// The first frame shows with the window's other changes; render
 		// decides for each frame.
 		send(ml, "setPresentsWithTransaction:", 1)
@@ -550,7 +584,6 @@ func newRenderer() (r *Renderer, err error) {
 	// pixel more, as they draw at whole pixels.
 	r.diff.Reach = 2
 	r.ages.Forget = func(tex uintptr) { release(&tex) }
-	r.b.Classes = true
 	r.b.Opaque = true // Metal's GPUs discard what opaque cores cover
 	r.formats = [2]formatState{{format: pixelFormatBGRA8Unorm}, {format: pixelFormatRGBA16Float}}
 	r.cur = &r.formats[0]
@@ -559,6 +592,7 @@ func newRenderer() (r *Renderer, err error) {
 		r.Release()
 		return nil, err
 	}
+	r.b.Classes = r.canSpecialize
 	return r, nil
 }
 
@@ -569,6 +603,11 @@ func (r *Renderer) init() (err error) {
 		"newBufferWithLength:options:"); err != nil {
 		return err
 	}
+	// Specialized pipelines compile on a worker while frames draw: a
+	// Haswell GPU on macOS 14 (through OpenCore Legacy Patcher) hung in
+	// a frame drawn while two of them compiled (#1566). GPUs older than
+	// the Mac2 family keep to the general pipeline, from the first frame.
+	r.canSpecialize = respondsTo(r.device, "supportsFamily:") && byte(send(r.device, "supportsFamily:", gpuFamilyMac2)) != 0
 	return nil
 }
 
@@ -640,12 +679,10 @@ func (r *Renderer) makePipelines(f *formatState) (err error) {
 	if f.holePipe, err = r.newPipeline(lib, "ps", f.format, blendHole); err != nil {
 		return err
 	}
-	if f.format == pixelFormatRGBA16Float {
-		// Opaque cores are exactly 1 in coverage only to within the rasterizer's
-		// interpolation of the fragment's position, whose noise (a unit in the
-		// last place of a half, in the columns where the position crosses a
-		// power of two) blending hides in the destination's alpha but a plain
-		// write keeps: float16 targets blend them, byte for byte as whole fills.
+	if r.coresBlend(f.format) {
+		// The cores draw with the pipeline the frame already uses (see
+		// coresBlend); what they lose is the tile-based win of writing
+		// without blending.
 		f.opaquePipe = send(f.pipeline, "retain")
 	} else if f.opaquePipe, err = r.newPipeline(lib, "ps", f.format, blendNone); err != nil {
 		return err
@@ -707,6 +744,19 @@ const (
 	blendHole                  // takes the coverage of holes away
 	blendNone                  // none: writes the colors, for opaque cores
 )
+
+// coresBlend reports whether the cores of opaque fills draw with the blended
+// pipeline in targets of format. Float16 targets blend them: a core is exactly
+// 1 in coverage only to within the rasterizer's interpolation of the
+// fragment's position, and blending hides that noise in the destination's
+// alpha where a plain write keeps it. GPUs outside Metal's Mac2 family blend
+// them too: one, an Intel Iris (Haswell) whose driver OpenCore Legacy Patcher
+// backported, hung in the unblended pipeline (#1566) — a 320×740 opaque fill
+// never completed, while the same fill blended drew every time. What those
+// GPUs lose is the tile-based win of writing without blending.
+func (r *Renderer) coresBlend(format uint) bool {
+	return format == pixelFormatRGBA16Float || !r.canSpecialize
+}
 
 // newPipeline returns a pipeline drawing instances with the vertex
 // function vs and the fragment function fs of lib, blending premultiplied
@@ -966,7 +1016,23 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 		return 0
 	}
+	if img.GPU != nil {
+		if tex := r.gpuTexture(img); tex != 0 {
+			return tex
+		}
+		// None for Metal: its pixels, as any image's.
+	}
+	if s := img.Surface; s != nil && (s.Native != 0 || s.Format == scene.SurfaceNV12 && s.Planes[1].Pix != nil) {
+		return r.surfaceTexture(img, s)
+	}
 	t := r.images[img.ID()]
+	if t != nil && (t.gpu || t.chroma != 0 || t.cv != [2]uintptr{}) {
+		// The texture its GPUSource gave before, or a frame of video it
+		// showed and no longer does: pixels go to one of their own.
+		r.dropTexture(t)
+		delete(r.images, img.ID())
+		t = nil
+	}
 	if t == nil {
 		pix := img.Pixels()
 		if pix == nil {
@@ -1001,6 +1067,30 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	return t.tex
 }
 
+// gpuTexture returns the texture its GPUSource gives of an image that
+// something draws on the GPU (native.Texture), made again as the image's
+// version changes, or 0 when it gives none.
+func (r *Renderer) gpuTexture(img *scene.Image) uintptr {
+	t := r.images[img.ID()]
+	if t != nil && t.gpu && t.ver == img.Version() && t.w == img.W && t.h == img.H {
+		t.lastFrame = r.frame
+		return t.tex
+	}
+	tex := id(img.GPU.GPUTexture(scene.Metal, uintptr(r.device)))
+	if tex == 0 {
+		return 0
+	}
+	if t == nil {
+		t = &texture{}
+		r.images[img.ID()] = t
+	} else {
+		// The previous frame's, or a texture of its pixels.
+		release(&t.tex)
+	}
+	t.tex, t.w, t.h, t.ver, t.lastFrame, t.gpu = tex, img.W, img.H, img.Version(), r.frame, true
+	return t.tex
+}
+
 // ringSize bounds frames in flight. Each slot owns the main target's and
 // every canvas's instance buffer, so CPU encoding can overlap GPU drawing.
 // A slot is reused only after its previous frame completes; in-place atlas
@@ -1018,9 +1108,14 @@ func (r *Renderer) waitSlot(slot int) {
 	}
 	send(cb, "waitUntilCompleted")
 	if int(send(cb, "status")) == statusError && r.err == nil {
-		r.err = fmt.Errorf("metal: a frame failed: %s", describe(send(cb, "error")))
+		e := send(cb, "error")
+		r.err = fmt.Errorf("metal: a frame failed: %s", describe(e))
+		// A frame the watchdog killed leaves the device wedged rather than
+		// gone: another one submitted now waits the same timeout through.
+		r.timeout = e != 0 && int(send(e, "code")) == commandBufferErrorTimeout
 	}
 	release(&r.inflight[slot])
+	r.releaseHeld(slot)
 }
 
 // waitLast waits for the GPU to finish the frames in flight, so that this
@@ -1159,8 +1254,9 @@ func (r *Renderer) build(cb id, s *scene.Scene, d *drawState) (*scene.Scene, err
 	d.b.ClipSkip = true
 	d.b.SplitCorners() // only Metal's shader draws continuous corners
 	d.b.BlurredImage = func(img *scene.Image, bk scene.Backdrop) uintptr { return r.blurImage(cb, img, bk) }
+	d.b.Chroma = r.chromaTexture
 	s = d.b.Build(s, r.imageTexture)
-	d.b.BlurredImage = nil
+	d.b.BlurredImage, d.b.Chroma = nil, nil
 	if err := r.syncStops(d); err != nil {
 		return nil, err
 	}
@@ -1276,6 +1372,9 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 		if b.Image != 0 && b.Image != st.image {
 			st.image = b.Image
 			msg2(enc, selSetFragmentTexture, st.image, 2)
+			if b.Chroma != 0 {
+				msg2(enc, selSetFragmentTexture, b.Chroma, 10)
+			}
 		}
 		if clip := or(id(b.ClipMask), r.empty); clip != st.clip {
 			st.clip = clip
@@ -1393,6 +1492,7 @@ func (r *Renderer) begin(cb, target id, load uintptr, s *scene.Scene, b *gpu.Bui
 	send(enc, "setFragmentTexture:atIndex:", r.empty, 2)
 	send(enc, "setFragmentTexture:atIndex:", r.empty, 3)
 	send(enc, "setFragmentTexture:atIndex:", or(r.stopsTex, r.empty), 9)
+	send(enc, "setFragmentTexture:atIndex:", r.empty, 10) // chroma (gpu.Batch.Chroma)
 	return enc, nil
 }
 
@@ -1599,6 +1699,12 @@ func or(a, b id) id {
 	return b
 }
 
+// TimedOut reports whether the frame that failed did so because the GPU did
+// not finish it in time, rather than the device going away: the driver is
+// wedged, so a frame submitted now would wait the timeout through again,
+// while the device may draw again a moment later.
+func (r *Renderer) TimedOut() bool { return r.timeout }
+
 // Render draws s into the layer and presents it.
 func (r *Renderer) Render(s *scene.Scene) (err error) {
 	if s.Width <= 0 || s.Height <= 0 || r.layer == 0 {
@@ -1713,9 +1819,7 @@ func (r *Renderer) render(s *scene.Scene) error {
 	r.track(cb)
 	r.lastRender = time.Now()
 	r.armTrim()
-	if r.frame%120 == 0 {
-		r.sweep()
-	}
+	r.sweepIfDue()
 	return nil
 }
 
@@ -1838,7 +1942,7 @@ func (r *Renderer) releaseTextures() {
 	release(&r.mask.tex)
 	release(&r.color.tex)
 	for key, t := range r.images {
-		release(&t.tex)
+		r.dropTexture(t)
 		delete(r.images, key)
 	}
 	for key, t := range r.canvases {
@@ -1862,7 +1966,7 @@ func (r *Renderer) releaseTextures() {
 		}
 	}
 	r.b.Release()
-	r.b.Classes = true
+	r.b.Classes = r.canSpecialize
 	r.b.Opaque = true // Release empties the builder
 }
 
@@ -1983,6 +2087,7 @@ func (r *Renderer) Release() {
 			release(&r.layer)
 		}
 		r.releaseTextures()
+		r.releaseVideo()
 		r.ages.Reset()
 		release(&r.empty)
 		release(&r.sampler)
@@ -2019,13 +2124,27 @@ func (r *Renderer) FrameInfo() string {
 	return info
 }
 
+// sweepEvery is how many frames go by between sweeps.
+const sweepEvery = 120
+
+// sweepIfDue sweeps once sweepEvery frames went by since the last sweep.
+// Every frame presented calls it, whether render drew it at once or
+// finishPending once its drawable came: frames of an animation mostly
+// take the second way, and counting only the first, they swept seldom if
+// ever, while each frame's transient canvases piled up on the GPU.
+func (r *Renderer) sweepIfDue() {
+	if r.frame-r.swept >= sweepEvery {
+		r.swept = r.frame
+		r.sweep()
+	}
+}
+
 // sweep frees the textures of images no frame drew for a while, and
-// those of canvases gone, or transient and not drawn this frame: render
-// calls it every 120 frames.
+// those of canvases gone, or transient and not drawn this frame.
 func (r *Renderer) sweep() {
 	for key, t := range r.images {
 		if r.frame-t.lastFrame > 240 {
-			release(&t.tex)
+			r.dropTexture(t)
 			delete(r.images, key)
 		}
 	}

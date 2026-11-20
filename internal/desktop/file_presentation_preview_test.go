@@ -81,7 +81,7 @@ func TestFilePresentationSnapshotsWithoutWindows(t *testing.T) {
 					t.Fatal("file control clipped", variant, label, r)
 				}
 			}
-			if !tt.HasText("8 项 · 已选 1 项") {
+			if !tt.HasText("6 个文件 · 2 个目录 · 已选 1 项") {
 				t.Fatal("file status missing", tt.Texts())
 			}
 			f, err := os.Create(filepath.Join(dir, "files-"+variant+".png"))

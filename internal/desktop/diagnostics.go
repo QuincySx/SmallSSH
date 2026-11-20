@@ -12,28 +12,30 @@ import (
 
 func (a *app) diagnosticsView(c *ui.Context) {
 	sess := a.serverStateSession()
-	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(8).Gap(6).Children(func() {
-		narrow := a.statusPaneWidth(c) < 650
-		controls := func() {
-			if a.diagnosticTab == 0 {
-				if a.statusRange == "" {
-					a.statusRange = "5 分钟"
+	topInset := float32(4)
+	if a.renderingWorkspaceTool != nil {
+		topInset = 0
+	}
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(topInset, components.ToolInset, components.ToolInset, components.ToolInset).Gap(6).Children(func() {
+		labels := []string{tr(c, "概览"), tr(c, "进程"), tr(c, "自启服务"), tr(c, "系统信息"), "Docker", tr(c, "端口")}
+		ui.Row(c).FillWidth().Shrink(0).Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
+			c.Key("server-status-categories")
+			components.Tabs(c, &a.diagnosticTab, labels...).Shrink(0)
+			ui.Row(c).Grow(1).Shrink(0).AlignItems(ui.Center).Justify(ui.End).Gap(8).Children(func() {
+				if sess != nil && sess.stats != nil {
+					a.statusIndicator(c, sess)
 				}
-				sourceSelect(c, &a.statusRange, []string{"1 分钟", "5 分钟", "15 分钟"}).MinWidth(0).Width(96).Label(tr(c, "趋势时间范围"))
-			}
-			if sess != nil && sess.stats != nil {
-				a.statusIndicator(c, sess)
-			}
-		}
-		ui.Row(c).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
-			components.Tabs(c, &a.diagnosticTab, tr(c, "概览"), tr(c, "进程"), tr(c, "自启服务"), tr(c, "系统信息"), "Docker", tr(c, "端口")).Grow(1)
-			if !narrow {
-				controls()
-			}
+				components.SVGButton(c, components.MoreIcon, tr(c, "服务器状态设置")).Size(28, 28).Shrink(0).Menu(a.workspaceBoundMenu(func(m *ui.Menu) {
+					m.Item(tr(c, "趋势时间范围")).Disabled(true)
+					for _, value := range []string{"1 分钟", "5 分钟", "15 分钟"} {
+						selected := a.statusRange == value || a.statusRange == "" && value == "5 分钟"
+						if m.Item(tr(c, value)).Checked(selected).Chosen() {
+							a.statusRange = value
+						}
+					}
+				}))
+			})
 		})
-		if narrow {
-			ui.Row(c).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(8).Children(controls)
-		}
 		if sess == nil {
 			ui.Text(c, tr(c, "连接服务器后自动显示状态")).FontSize(11).TextColor(c.Theme().TextMuted)
 			return

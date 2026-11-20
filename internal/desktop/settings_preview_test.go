@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
 	"sshclient/internal/broker"
 	"sshclient/internal/desktop/components"
 	"sshclient/internal/systemauth"
@@ -55,28 +56,21 @@ func TestSettingsSnapshotsWithoutWindows(t *testing.T) {
 			}{{"wide", 1280, 800}, {"narrow", 560, 760}} {
 				t.Run(section+"-"+size.name+sidebar.name, func(t *testing.T) {
 					a := &app{
-						ctx: context.Background(), online: true, page: 4, settingsSection: section,
-						server:        server,
+						ctx: context.Background(), online: true, page: 4, settingsSection: section, settingsOpen: true,
+						server:        testDesktopSession(server),
 						sidebarHidden: sidebar.hidden,
 						authStatus:    systemauth.Status{Available: true, Enabled: true, Name: "Touch ID"},
 					}
-					tt := ui.NewTester(a.view, size.width, size.height)
-					region, width := "设置分类", float32(152)
-					if sidebar.hidden {
-						region, width = "设置分类窄栏", components.RailWidth
-					}
-					navigation, ok := tt.Find(region)
-					if !ok || navigation.W != width {
+					tt := ui.NewTester(a.settingsWindowView, size.width, size.height)
+					tt.SetTitleBar(ui.TitleBar{Height: 48, Left: 70})
+					navigation, ok := tt.Find("设置分类")
+					if !ok || navigation.X != 20 || navigation.W != design.Length("size-settings-nav")-24 {
 						t.Fatal("settings snapshot lost its category navigation", navigation)
 					}
 					for _, category := range settingsCategories {
 						item, ok := tt.Find("设置分类：" + category.title)
-						icon, iconOK := tt.Find(category.title + "图标")
-						if !ok || !iconOK || item.H != components.NavigationItemHeight || item.X < navigation.X || item.X+item.W > navigation.X+navigation.W || icon.W != 28 || icon.H != 28 || icon.X != item.X+4 || icon.Y != item.Y+(components.NavigationItemHeight-28)/2 {
-							t.Fatal("settings snapshot changed the shared target or icon geometry", category.title, item, icon)
-						}
-						if sidebar.hidden && item.W != components.NavigationIconSlotSize {
-							t.Fatal("collapsed settings snapshot lost its compact target", item)
+						if !ok || item.H != components.ControlHeight || item.X != navigation.X || item.W != navigation.W {
+							t.Fatal("settings navigation depends on the workbench sidebar or differs from its fixed text layout", category.title, item)
 						}
 					}
 					path := filepath.Join(dir, "settings-"+section+"-"+size.name+sidebar.name+".png")

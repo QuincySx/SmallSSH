@@ -12,15 +12,27 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"sshclient/internal/approval"
 	"sshclient/internal/monitor"
 	"sshclient/internal/sshconn"
 	"sshclient/internal/testserver"
+	"sshclient/internal/vault"
 )
 
 func newSharedMonitorTestServer(t *testing.T) *Server {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	server := &Server{ctx: ctx}
+	owner, err := vault.New([]byte("synthetic shared monitor audit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(owner.Close)
+	log, err := openAudit(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.close() })
+	server := &Server{ctx: ctx, Vault: owner, audit: log, Approvals: approval.New(nil)}
 	t.Cleanup(func() {
 		cancel()
 		server.stopMonitorCollectors()

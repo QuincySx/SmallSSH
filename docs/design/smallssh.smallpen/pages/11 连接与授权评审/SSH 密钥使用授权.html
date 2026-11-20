@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SSH 密钥使用授权</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" data-flow="SSH 密钥使用授权" class="flex flex-col gap-space-md w-[520px] h-[400px] p-space-lg bg-canvas">
+  <div data-name="标题区" class="flex flex-col w-full gap-native-field">
+    <p data-name="标题" class="type-native-dialog text-text">SSH 密钥使用授权</p>
+    <p data-name="说明" class="type-native-hint text-muted">终端有 2 个请求等待确认。</p>
+  </div>
+  <div data-name="请求对象" class="flex flex-col w-full gap-space-sm p-space-md bg-surface border border-border rounded-window-panel">
+    <div data-name="密钥" class="flex flex-row items-center gap-space-sm w-full">
+      <div data-name="钥匙图标" class="flex flex-col items-center justify-center w-control h-control shrink-0 rounded-control bg-native-tab-selected">
+        <p data-name="图标" class="type-native-action-icon text-accent w-menu-icon text-center"></p>
+      </div>
+      <div data-name="标识" class="flex flex-col gap-native-field flex-1 min-w-0">
+        <p data-name="标签" class="type-native-hint text-muted">SSH 密钥</p>
+        <p data-name="名称" class="type-native-label text-text">工作 Mac</p>
+      </div>
+      <sp-use data-name="查看指纹" class="shrink-0" component="按钮" props="样式: 轻量" data-click="overlay:11 连接与授权评审/SSH 密钥 · 指纹详情; position: center; backdrop; close-outside">
+        <p data-name="文字">查看指纹</p>
+      </sp-use>
+    </div>
+    <div data-name="目标分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+    <div data-name="用途和账号" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="用途标签" class="type-native-hint text-muted">用途</p>
+      <p data-name="用途" class="type-native-copy text-text flex-1">SSH 登录</p>
+      <p data-name="账号标签" class="type-native-hint text-muted">登录账号</p>
+      <p data-name="账号" class="type-native-copy text-text">deploy</p>
+    </div>
+    <div data-name="主机" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="标签" class="type-native-hint text-muted">主机</p>
+      <p data-name="值" class="type-native-copy text-muted">可核对主机指纹</p>
+    </div>
+  </div>
+  <div data-name="请求列表" class="flex flex-col w-full gap-native-field px-space-md py-space-sm bg-surface border border-border rounded-window-panel">
+    <div data-name="第 1 条" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="说明" class="type-native-copy text-text flex-1">第 1 个登录请求</p>
+      <sp-use data-name="确认第 1 条" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/SSH 密钥 · 单次验证">
+        <p data-name="文字">确认这条</p>
+      </sp-use>
+    </div>
+    <div data-name="请求分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+    <div data-name="第 2 条" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="说明" class="type-native-copy text-text flex-1">第 2 个登录请求</p>
+      <sp-use data-name="确认第 2 条" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/SSH 密钥 · 单次验证">
+        <p data-name="文字">确认这条</p>
+      </sp-use>
+    </div>
+  </div>
+  <div data-name="批准范围" class="flex flex-row items-center gap-space-sm w-full">
+    <p data-name="说明" class="type-native-hint text-muted flex-1">整组确认只涵盖这 2 个请求。</p>
+    <sp-use data-name="确认这 2 个请求" class="shrink-0" component="按钮" props="样式: 主操作" data-click="11 连接与授权评审/SSH 密钥 · 系统验证">
+      <p data-name="文字">确认这 2 个请求</p>
+    </sp-use>
+  </div>
+</body>
+</html>

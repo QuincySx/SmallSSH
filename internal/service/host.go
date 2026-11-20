@@ -15,6 +15,7 @@ import (
 	"sshclient/internal/broker"
 	"sshclient/internal/localipc"
 	"sshclient/internal/protocol"
+	"sshclient/internal/systemauth"
 )
 
 const (
@@ -26,29 +27,31 @@ const (
 const serviceControlDeadline = 30 * time.Second
 
 type Host struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	listener      net.Listener
-	configuration *tls.Config
-	release       func()
-	dir           string
-	epoch         string
-	startedAt     time.Time
-	generation    uint64
-	acceptDone    chan struct{}
-	done          chan struct{}
-	closeOnce     sync.Once
-	wg            sync.WaitGroup
-	coreWatchWG   sync.WaitGroup
-	lifecycle     sync.Mutex
-	mu            sync.Mutex
-	active        map[net.Conn]struct{}
-	core          *broker.Server
-	pending       map[*preparedOwner]struct{}
-	pendingOwners int
-	closing       bool
-	stopping      bool
-	failure       error
+	ctx            context.Context
+	cancel         context.CancelFunc
+	listener       net.Listener
+	configuration  *tls.Config
+	release        func()
+	dir            string
+	epoch          string
+	startedAt      time.Time
+	generation     uint64
+	unlockNoticeAt time.Time
+	acceptDone     chan struct{}
+	done           chan struct{}
+	closeOnce      sync.Once
+	wg             sync.WaitGroup
+	coreWatchWG    sync.WaitGroup
+	lifecycle      sync.Mutex
+	mu             sync.Mutex
+	active         map[net.Conn]struct{}
+	quick          quickUnlock
+	core           *broker.Server
+	pending        map[*preparedOwner]struct{}
+	pendingOwners  int
+	closing        bool
+	stopping       bool
+	failure        error
 }
 
 func Open(dir string) (*Host, error) {
@@ -60,6 +63,12 @@ func Open(dir string) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The old daemon is gone once its kernel lock is acquired. Before accepting
+	// any new envelopes, remove its registered external device keys. A locked or
+	// unavailable keyring keeps its identifiers for a later startup retry.
+	cleanupContext, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	_ = systemauth.CleanupOrphans(cleanupContext, dir)
+	cleanupCancel()
 	listener, err := localipc.Listen(serviceDir)
 	if err != nil {
 		release()
@@ -110,6 +119,12 @@ func (h *Host) Close() error {
 func (h *Host) Done() <-chan struct{} { return h.done }
 
 func (h *Host) Status() protocol.ServiceStatus {
+	return h.status(protocol.ServiceProtocolMinor, 0)
+}
+
+// A locked service records only a short-lived signal. It has no broker core
+// to accept an operation, and the signal carries no requester or server data.
+func (h *Host) status(minor int, requestGeneration uint64) protocol.ServiceStatus {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	state := protocol.ServiceStateLocked
@@ -118,13 +133,23 @@ func (h *Host) Status() protocol.ServiceStatus {
 	} else if h.core != nil {
 		state = protocol.ServiceStateUnlocked
 	}
-	return protocol.ServiceStatus{
+	status := protocol.ServiceStatus{
 		State:         state,
 		StartedAt:     h.startedAt,
 		ProtocolMajor: protocol.ServiceProtocolMajor,
-		ProtocolMinor: protocol.ServiceProtocolMinor,
+		ProtocolMinor: minor,
 		Generation:    h.generation,
 	}
+	if state == protocol.ServiceStateLocked && minor >= protocol.ServiceUnlockNoticeMinor {
+		now := time.Now()
+		if requestGeneration == h.generation && now.Sub(h.unlockNoticeAt) >= 30*time.Second {
+			h.unlockNoticeAt = now
+		}
+		if until := h.unlockNoticeAt.Add(10 * time.Second); now.Before(until) {
+			status.UnlockNoticeUntil = &until
+		}
+	}
+	return status
 }
 
 func Run(ctx context.Context, dir string) error {
@@ -169,6 +194,9 @@ func (h *Host) shutdown() {
 		core.Close()
 	}
 	h.lifecycle.Unlock()
+	h.mu.Lock()
+	h.quick.wipe()
+	h.mu.Unlock()
 	h.coreWatchWG.Wait()
 	localipc.DestroyServerTLS(h.configuration)
 	if h.release != nil {
@@ -361,8 +389,7 @@ func (h *Host) handle(raw net.Conn) {
 		if activeLease != nil {
 			switch message.Action {
 			case "status":
-				status := h.Status()
-				status.ProtocolMinor = minor
+				status := h.status(minor, 0)
 				if err := wire.Send(protocol.ServiceMessage{
 					Action: "status", Major: protocol.ServiceProtocolMajor, Minor: minor, Epoch: h.epoch,
 					Generation: status.Generation, Status: &status,
@@ -423,6 +450,13 @@ func (h *Host) handle(raw net.Conn) {
 				})
 				go h.Close()
 				return
+			case serviceActionDepositQuickUnlock, serviceActionQuickUnlockStatus, serviceActionQuickUnlockRecord, serviceActionClearQuickUnlock:
+				if !h.ownerControlLive(controlCtx, activeCore, activeLease, activeGeneration) {
+					return
+				}
+				if !h.handleQuickUnlock(wire, identity, minor, activeGeneration, true, message) {
+					return
+				}
 			default:
 				_ = wire.Send(protocol.ServiceMessage{
 					Action: "error", Major: protocol.ServiceProtocolMajor, Minor: minor, Epoch: h.epoch,
@@ -434,11 +468,18 @@ func (h *Host) handle(raw net.Conn) {
 			continue
 		}
 		switch message.Action {
-		case "status":
-			status := h.Status()
-			status.ProtocolMinor = minor
+		case "status", protocol.ServiceActionRequestUnlock:
+			var requestGeneration uint64
+			if message.Action == protocol.ServiceActionRequestUnlock {
+				if pending != nil || minor < protocol.ServiceUnlockNoticeMinor || message.Major != protocol.ServiceProtocolMajor ||
+					message.Minor != minor || message.Epoch != h.epoch || message.Generation != generation {
+					return
+				}
+				requestGeneration = message.Generation
+			}
+			status := h.status(minor, requestGeneration)
 			if err := wire.Send(protocol.ServiceMessage{
-				Action: "status", Major: protocol.ServiceProtocolMajor, Minor: minor, Epoch: h.epoch,
+				Action: message.Action, Major: protocol.ServiceProtocolMajor, Minor: minor, Epoch: h.epoch,
 				Generation: status.Generation, Status: &status,
 			}); err != nil {
 				return
@@ -446,6 +487,18 @@ func (h *Host) handle(raw net.Conn) {
 		case serviceActionLock, serviceActionStop:
 			clear(message.UnlockKey)
 			clear(message.Proof)
+			_ = wire.Send(protocol.ServiceMessage{
+				Action: "error", Major: protocol.ServiceProtocolMajor, Minor: minor, Epoch: h.epoch,
+				Generation: h.generationSnapshot(), ErrorCode: "owner_required",
+				Error: "需要当前连接的有效所有者会话",
+			})
+			return
+		case serviceActionQuickUnlockStatus, serviceActionQuickUnlockRecord, serviceActionClearQuickUnlock:
+			if pending != nil || !h.handleQuickUnlock(wire, identity, minor, h.generationSnapshot(), false, message) {
+				return
+			}
+		case serviceActionDepositQuickUnlock:
+			clear(message.QuickUnlock)
 			_ = wire.Send(protocol.ServiceMessage{
 				Action: "error", Major: protocol.ServiceProtocolMajor, Minor: minor, Epoch: h.epoch,
 				Generation: h.generationSnapshot(), ErrorCode: "owner_required",

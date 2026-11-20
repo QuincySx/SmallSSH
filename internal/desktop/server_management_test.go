@@ -249,7 +249,7 @@ esac
 	a.ctx = ctx
 	a.dir = dir
 	a.client = client.Client{Dir: dir, Owner: server.Vault}
-	a.server = server
+	a.server = testDesktopSession(server)
 	a.dispatch = func(fn func()) { updates <- fn }
 	profile := fixture.Profile()
 	a.sessions[0].target = approval.Operation{Endpoint: fmt.Sprintf("%s@%s:%d", profile.User, profile.Host, profile.Port), HostFingerprint: profile.Fingerprint}

@@ -1,0 +1,8 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>删除线路确认</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col gap-space-md p-space-lg w-[520px] h-fit bg-surface rounded-window-panel">
+<p data-name="标题" class="w-full text-text type-section">删除线路</p>
+<p data-name="目标" class="w-full text-muted type-control">自有中转</p>
+<p data-name="说明" class="w-full text-text type-control">删除后无法恢复。正在被连接引用的线路不能删除。</p>
+<div data-name="操作" class="flex flex-row justify-end gap-space-sm w-full"><sp-use component="按钮" props="样式: 普通" data-name="取消" data-click="close-overlay"><p data-name="文字">取消</p></sp-use><sp-use component="按钮" props="样式: 危险" data-name="删除" data-click="close-overlay"><p data-name="文字">删除</p></sp-use></div>
+</body></html>

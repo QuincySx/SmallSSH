@@ -1,10 +1,13 @@
 package desktop
 
 import (
+	"errors"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
+	"sshclient/internal/desktop/components"
 	"sshclient/internal/systemauth"
 )
 
@@ -39,6 +42,44 @@ func retryAutomatic(err error, automatic, retryUsed bool, now time.Time) (time.T
 	return now.Add(automaticAuthDelay), true
 }
 
+func masterPasswordAction(c *ui.Context, disabled bool) ui.Element {
+	label := tr(c, "改用保险库主密码")
+	return components.Button(c, tr(c, "使用主密码"), components.ButtonOptions{Variant: components.Quiet, Disabled: disabled}).
+		Height(34).Padding(0, 4).FontSize(11).TextColor(c.Theme().TextMuted).Label(label).Tooltip(label)
+}
+
+func cancelVerificationButton(c *ui.Context) ui.Element {
+	label := tr(c, "取消验证")
+	return components.Button(c, tr(c, "取消")).Height(34).Radius(8).Label(label).Tooltip(label)
+}
+
+func (a *app) systemAuthenticationMethod(c *ui.Context) components.SystemAuthenticationMethod {
+	switch a.authStatus.Name {
+	case "Touch ID":
+		return components.SystemAuthenticationMethod{Label: tr(c, "触控 ID")}
+	case systemauth.LinuxFingerprintName:
+		return components.SystemAuthenticationMethod{Label: tr(c, "指纹验证"), Caption: tr(c, "指纹验证")}
+	case "":
+		label := tr(c, "系统验证")
+		return components.SystemAuthenticationMethod{Label: label, Caption: label}
+	default:
+		label := tr(c, a.authStatus.Name)
+		return components.SystemAuthenticationMethod{Label: label, Caption: label}
+	}
+}
+
+func (a *app) authenticationHint(c *ui.Context, systemAttempt bool) {
+	if systemAttempt && a.authStatus.Name == systemauth.LinuxFingerprintName {
+		ui.Text(c, tr(c, "请将手指放在指纹读取器上")).FillWidth().Shrink(0).FontSize(11).TextColor(c.Theme().TextMuted)
+	}
+}
+
+// A rejected fingerprint can be tried again. Other failures can interrupt the
+// system path, so the password should now be visible in the same window.
+func needsMasterPassword(err error) bool {
+	return systemauth.AuthenticationErrorCode(err) != "authenticationFailed" && !errors.Is(err, systemauth.ErrFingerprintNotRecognized)
+}
+
 // placeAuthenticationFrame points a native authentication view at the host window
 // and the anchor of the previous committed frame, or detaches it when the host
 // cannot display it. Without an anchor the view must not keep a stale handle.
@@ -46,7 +87,8 @@ func placeAuthenticationFrame(host *mygo.Window, p *systemauth.EmbeddedPresentat
 	if p == nil {
 		return
 	}
-	if host == nil || host.IsDestroyed() || !host.IsVisible() || bounds.W <= 0 || bounds.H <= 0 {
+	size := design.Length("size-authentication-action")
+	if host == nil || host.IsDestroyed() || !host.IsVisible() || bounds.W < size || bounds.H < size {
 		p.SetFrame(0, systemauth.EmbeddedRect{})
 		return
 	}

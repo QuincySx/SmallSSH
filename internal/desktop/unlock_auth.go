@@ -8,7 +8,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"sshclient/internal/broker"
 	"sshclient/internal/systemauth"
 	"sshclient/internal/vault"
 )
@@ -23,10 +22,10 @@ type unlockState struct {
 	presentation                      *systemauth.EmbeddedPresentation
 	anchor                            anchorTracker
 	attempt                           *unlockAttempt
-	// Isolated tests substitute authentication and broker creation, never an
-	// authentication-success flag. Both paths still transfer a real vault.
+	// Isolated tests substitute authentication and backend attachment, never an
+	// authentication-success flag. Both paths still consume a real authenticated vault.
 	authenticate func(context.Context, []byte, bool) (*vault.Session, error)
-	openBroker   func(string, *vault.Session) (*broker.Server, error)
+	openBroker   func(context.Context, string, *vault.Session) (*desktopSession, error)
 }
 
 // An authenticated vault remains revocable until the final UI handoff. The
@@ -126,9 +125,14 @@ func (a *app) disposeUnlockState() {
 }
 
 func (a *app) expandUnlockPassword() {
+	a.cancelUnlockVerification()
+	a.ensureUnlockState().passwordMode = true
+}
+
+func (a *app) cancelUnlockVerification() {
 	a.cancelUnlockAttempt()
 	s := a.ensureUnlockState()
-	s.passwordMode, s.autoAttempted = true, true
+	s.autoAttempted, s.autoRetryAt = true, time.Time{}
 	a.unlockError = ""
 }
 
@@ -213,26 +217,28 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 	stopCancellation := context.AfterFunc(ctx, u.reject)
 	s.cancel, s.attempt, s.busy, s.systemAttempt = cancel, u, true, system
 	a.busy, a.unlockError = true, ""
-	pass, dir, auth, presentation := []byte(a.pass), a.dir, a.auth, s.presentation
+	pass, dir, auth, presentation, store := []byte(a.pass), a.dir, a.auth, s.presentation, a.quickStore()
 	a.pass = ""
 	authenticate := s.authenticate
 	if authenticate == nil {
 		authenticate = func(ctx context.Context, pass []byte, system bool) (*vault.Session, error) {
 			if system {
-				if auth == nil {
-					return nil, errors.New(tr(nil, "系统验证不可用"))
-				}
-				if presentation != nil {
-					return auth.OpenEmbedded(ctx, dir, tr(nil, "解锁 SmallSSH 保险库"), presentation)
-				}
-				return auth.Open(ctx, dir, tr(nil, "解锁 SmallSSH 保险库"))
+				return openQuickUnlock(ctx, auth, store, dir, tr(nil, "解锁 SmallSSH 保险库（AI 请求仍需逐条批准）"), presentation)
 			}
-			return vault.Read(broker.VaultPath(dir), pass)
+			return vault.Read(vault.Path(dir), pass)
 		}
+	}
+	// Only a master-password unlock arms quick unlock; a quick unlock reuses
+	// the envelope the service already holds, so its age limit still counts.
+	var seal func(context.Context, *vault.Session) ([]byte, error)
+	if !system {
+		seal = a.quickUnlockSealer()
 	}
 	openBroker := s.openBroker
 	if openBroker == nil {
-		openBroker = broker.OpenSession
+		openBroker = func(ctx context.Context, dir string, owner *vault.Session) (*desktopSession, error) {
+			return openDesktopSession(ctx, dir, owner, seal)
+		}
 	}
 	valid := func() bool {
 		return a.unlockState == s && !s.closed && s.sequence == seq && a.generation == gen && !a.online && !a.create && ctx.Err() == nil &&
@@ -252,12 +258,11 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 		} else if system && s.retryAutomaticUnlock(err, automatic, time.Now()) {
 			a.status, a.unlockError = "", ""
 		} else {
-			// A temporary system interruption does not mean the device is
-			// unavailable, and does not choose password mode for the user.
-			if system && !systemauth.IsAuthenticationNotReady(err) {
+			if system && needsMasterPassword(err) {
 				s.passwordMode = true
 			}
-			a.status, a.unlockError = err.Error(), err.Error()
+			message := tr(nil, err.Error())
+			a.status, a.unlockError = message, message
 		}
 		cancel()
 	}
@@ -302,7 +307,7 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 					u.reject()
 					return
 				}
-				server, err := openBroker(dir, owner) // Takes ownership, even on failure.
+				server, err := openBroker(ctx, dir, owner) // Takes ownership, even on failure.
 				if err != nil {
 					if ctx.Err() != nil {
 						u.reject()
@@ -320,6 +325,7 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 							return
 						}
 						a.server, a.online, a.page, a.create = server, true, 1, false
+						a.client.BrokerKey = server.PublicKeyPin()
 						a.generation++
 						a.epoch.Add(1)
 						a.startUnlockedSession()
@@ -327,11 +333,11 @@ func (a *app) beginVaultUnlockAttempt(system, automatic bool) {
 						s.busy = false
 						a.disposeUnlockState() // Accepted owner now belongs to a.server.
 						a.initializeWorkspace()
+						a.refreshAuth() // a password unlock may have armed quick unlock
 					})
 				}
 				if !<-u.decision {
-					server.Vault.Close()
-					server.Close()
+					server.Abandon()
 				}
 			}()
 		})

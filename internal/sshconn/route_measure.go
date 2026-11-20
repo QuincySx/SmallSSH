@@ -3,17 +3,13 @@ package sshconn
 import (
 	"context"
 	"errors"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/vault"
 	"sync"
 	"time"
 )
 
-type RouteMeasurement struct {
-	Relay           bool   `json:"relay"`
-	Available       bool   `json:"available"`
-	HandshakeMillis int64  `json:"handshakeMillis"`
-	Error           string `json:"error,omitempty"`
-}
+type RouteMeasurement = sshdata.RouteMeasurement
 
 // MeasureRoutes stops before destination authentication and checks the saved
 // fingerprint. This measures connection setup, not sustained transfer speed.

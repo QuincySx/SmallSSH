@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"errors"
+	"sshclient/internal/client"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,7 +44,7 @@ func newApprovalAuthHarness(t *testing.T) *approvalAuthHarness {
 			r := <-h.results // Deliberately ignores cancellation, like a late native callback.
 			return r.owner, r.err
 		},
-		submit: func(_ context.Context, reviewed approval.Request, _ bool, _ *vault.Session) error {
+		submit: func(_ context.Context, reviewed approval.Request, _ bool, _ client.OwnerProof) error {
 			h.submitted <- reviewed
 			<-h.submitDone
 			return nil
@@ -237,8 +238,8 @@ func TestApprovalAutomaticReadinessInterruptionRetriesOnce(t *testing.T) {
 	awaitApprovalValue(t, h.started)
 	h.results <- approvalAuthResult{err: notReady}
 	awaitApprovalValue(t, h.ui)()
-	if h.state.status == "" {
-		t.Fatal("the second readiness interruption was retried or hidden")
+	if h.state.status == "" || !h.state.passwordMode {
+		t.Fatal("the second readiness interruption did not offer the master password")
 	}
 	h.state.queueAutomatic(h.request, approvalReady(), func() time.Time { return retryAt.Add(time.Hour) }, post, current)
 	select {
@@ -329,8 +330,8 @@ func TestApprovalBusyRejectionCancelsAuthenticationInOneAction(t *testing.T) {
 	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 	h := newApprovalAuthHarness(t)
 	var denied atomic.Int32
-	h.state.flow.denyOwner = func() (*vault.Session, error) { return generatedApprovalOwner(t), nil }
-	h.state.flow.submit = func(_ context.Context, reviewed approval.Request, allow bool, _ *vault.Session) error {
+	h.state.flow.denyOwner = func() (client.OwnerProof, error) { return generatedApprovalOwner(t), nil }
+	h.state.flow.submit = func(_ context.Context, reviewed approval.Request, allow bool, _ client.OwnerProof) error {
 		if allow {
 			t.Error("cancelled authentication approved a request")
 		} else {
@@ -373,12 +374,43 @@ func TestApprovalBusyRejectionCancelsAuthenticationInOneAction(t *testing.T) {
 	}
 }
 
+func TestApprovalEscapeStopsVerificationAndKeepsRequestPending(t *testing.T) {
+	a, _ := reviewFixture("full")
+	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
+	h := newApprovalAuthHarness(t)
+	decisions, closes := 0, 0
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.approvalPrompt(c, h.request, h.state, func(bool, bool) { decisions++ }, func() { closes++ })
+	}, 380, 540)
+	h.state.start(h.request, true, true, false)
+	awaitApprovalValue(t, h.started)
+	tt.Frame()
+	if tt.HasText("取消") || tt.HasText("允许操作") || !tt.HasText("拒绝") {
+		t.Fatal("verification showed a second decision button")
+	}
+	tt.Key(0, ui.KeyEscape)
+	if h.state.busy || !h.state.autoAttempted || decisions != 0 || closes != 0 || !tt.HasText("触控 ID") {
+		t.Fatal("cancelling authentication unexpectedly decided or dismissed the request")
+	}
+	owner := generatedApprovalOwner(t)
+	h.results <- approvalAuthResult{owner: owner}
+	awaitApprovalValue(t, h.ui)()
+	select {
+	case <-h.submitted:
+		t.Fatal("a late authentication submitted the cancelled request")
+	default:
+	}
+	if _, err := owner.Proof([]byte("late-success")); err == nil {
+		t.Fatal("a late authentication retained a usable owner session")
+	}
+}
+
 func TestApprovalCenterEscapeCancelsVerificationAndKeepsExpandedPassword(t *testing.T) {
 	a, r := reviewFixture("full")
 	a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
 	a.requests = []approval.Request{r}
 	tt := ui.NewTester(a.approvalView, 560, 760)
-	if err := tt.Click("允许"); err != nil {
+	if err := tt.Click("改用保险库主密码"); err != nil {
 		t.Fatal(err)
 	}
 	var cancelled int

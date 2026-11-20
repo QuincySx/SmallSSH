@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"sshclient/internal/desktopcontrol"
@@ -54,12 +55,15 @@ func runDev(args []string) error {
 	if _, err := desktopcontrol.Command(context.Background(), *dir, "status"); err == nil {
 		return errors.New("开发进程已运行；状态检查不会显示窗口")
 	}
+	if err := stageDaemon(target{goos: runtime.GOOS, goarch: runtime.GOARCH}); err != nil {
+		return err
+	}
 	version, err := project.MyGo()
 	if err != nil {
 		return err
 	}
 	cmd := exec.Command("go", "run", "github.com/egoist/mygo/cmd/mygo@"+version, "dev")
-	cmd.Env = developmentEnv(os.Environ(), *dir)
+	cmd.Env = project.RuntimeEnv(developmentEnv(os.Environ(), *dir))
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }

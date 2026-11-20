@@ -34,6 +34,9 @@ func Button(c *ui.Context, label string, options ...ButtonOptions) ui.Element {
 		theme.AccentHover = theme.Danger.Mix(ui.Hex("#000000"), .12)
 		theme.AccentPressed = theme.Danger.Mix(ui.Hex("#000000"), .24)
 		theme.AccentText = ui.Hex("#ffffff")
+		if theme.Dark {
+			theme.AccentText = ui.Hex("#35131b")
+		}
 	case Quiet:
 		theme.Surface, theme.Border = ui.Transparent, ui.Transparent
 	}
@@ -68,15 +71,14 @@ func IconButton(c *ui.Context, glyph, label string) ui.Element {
 		Padding(0).FontSize(16).Label(label).Tooltip(label)
 }
 
-// ActionGroup is a row of related actions. End alignment is used for dialogs;
-// callers can put a Spacer between secondary and primary actions in forms.
+// ActionGroup keeps dialog actions together at the end. Narrow dialogs wrap
+// the group rather than clipping long action labels or pushing controls out.
 func ActionGroup(c *ui.Context, align ui.Align, children func()) ui.Element {
-	return ui.Row(c).FillWidth().Gap(ActionGap).AlignItems(ui.Center).Children(func() {
-		if align == ui.End {
-			ui.Spacer(c).Grow(1)
-		}
-		children()
-	})
+	row := ui.Row(c).FillWidth().Gap(ActionGap).AlignItems(ui.Center)
+	if align == ui.End {
+		row.Justify(ui.End).Wrap()
+	}
+	return row.Children(children)
 }
 
 // ButtonGroup provides native toolbar arrow-key navigation between actions.

@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>VNC 登录</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col w-[520px] h-fit bg-canvas">
+  <div data-name="登录承载" class="flex flex-col p-dialog-backdrop w-full h-fit">
+    <div data-name="VNC 登录" class="flex flex-col gap-space-md p-space-xl w-[440px] h-fit bg-surface rounded-window-panel">
+      <p data-name="标题" class="w-full text-text type-section">VNC 登录</p>
+      
+      <div data-name="密码字段" class="flex flex-col gap-space-xs w-full">
+        <p data-name="标签" class="w-full text-text type-body">VNC 密码</p>
+        <sp-use component="输入框" data-name="密码" class="w-full"><p data-name="值">••••••••</p></sp-use>
+      </div>
+      <sp-use component="复选框" props="状态: 选中" data-name="保存密码" class="w-full"><p data-name="标签">保存 VNC 密码</p></sp-use>
+      <div data-name="底部操作" class="flex flex-row justify-end items-center gap-space-sm w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消" data-click="09 工具/VNC 远程桌面连接"><p data-name="文字">取消</p></sp-use>
+        <sp-use component="按钮" data-name="登录" data-click="09 工具/VNC 远程桌面"><p data-name="文字">登录</p></sp-use>
+      </div>
+    </div>
+  </div>
+</body></html>

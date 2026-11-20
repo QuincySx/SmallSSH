@@ -21,7 +21,7 @@ import (
 	"sshclient/internal/vault"
 )
 
-func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
+func TestConnectionUISaveThenExplicitConnectCreatesWorkingTerminal(t *testing.T) {
 	f := testserver.New(t)
 	dir, err := os.MkdirTemp("", "conn-terminal-")
 	if err != nil {
@@ -48,7 +48,7 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	updates := make(chan func(), 64)
-	a := &app{ctx: ctx, dir: dir, client: client.Client{Dir: dir, Owner: server.Vault}, online: true, server: server, dispatch: func(fn func()) { updates <- fn }}
+	a := &app{ctx: ctx, dir: dir, client: client.Client{Dir: dir, Owner: server.Vault}, online: true, server: testDesktopSession(server), dispatch: func(fn func()) { updates <- fn }}
 	a.newConnection()
 	a.form = f.Profile()
 	a.form.ID = "new-ui-terminal"
@@ -57,7 +57,7 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 	a.saveProfile()
 	deadline := time.NewTimer(15 * time.Second)
 	defer deadline.Stop()
-	for readyTerminalCount(a) == 0 {
+	for a.page != 1 {
 		select {
 		case update := <-updates:
 			update()
@@ -65,6 +65,19 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 			t.Fatal("save and connect did not open terminal", a.connection.errors)
 		}
 	}
+	if len(a.sessions) != 0 || f.Auths.Load() != 0 {
+		t.Fatal("save started SSH")
+	}
+	a.openShellForHostAfter("new-ui-terminal", true, nil)
+	for readyTerminalCount(a) == 0 {
+		select {
+		case update := <-updates:
+			update()
+		case <-deadline.C:
+			t.Fatal("explicit connect did not open terminal", a.status)
+		}
+	}
+
 	term := a.sessions[0].term
 	defer term.Close()
 	term.Send([]byte("saved connection · 中文 echo"))
@@ -97,9 +110,7 @@ func TestConnectionUISaveAndConnectCreatesWorkingTerminal(t *testing.T) {
 
 func (h *connectionFlowHarness) expectUITerminal() {
 	h.t.Helper()
-	h.wait(func() bool {
-		return readyTerminalCount(h.a) > 0 || (len(h.a.connecting) == 0 && h.a.connection.phase == "")
-	})
+	h.wait(func() bool { return readyTerminalCount(h.a) > 0 })
 	if len(h.a.sessions) != 1 || h.a.page != 1 {
 		h.t.Fatal("save and connect did not open one terminal", h.a.connection.errors)
 	}
@@ -127,21 +138,28 @@ func TestConnectionFormRetriesWrongPasswordWithoutDuplicatingConnection(t *testi
 	h.fillTarget()
 	h.input("服务器密码", "deliberately incorrect test password")
 	h.confirmIdentity()
-	id := h.a.form.ID
-	h.click("信任并连接")
-	h.idle()
-	if len(h.a.sessions) != 0 || h.a.page != 0 || !h.ui.HasText("服务器未接受登录凭据") || !h.ui.HasText("连接已保存；登录未成功") {
-		t.Fatal("authentication failure did not return to editable form", h.a.connection.errors)
+	id := h.a.connections[0].ID
+	h.click("信任指纹并连接")
+	h.wait(func() bool { return len(h.a.connecting) == 0 && h.fixture.Auths.Load() > 0 })
+	if readyTerminalCount(h.a) != 0 || len(h.a.sessions) != 1 || h.a.sessions[0].connectionState != "error" {
+		t.Fatal("failed login lost retryable card", h.a.status)
 	}
+	h.a.selected = id
+	h.a.editConnection()
+	h.ui.Frame()
+	h.wait(func() bool { return h.a.connection.notes != nil && !h.a.connection.notes.loading })
+	h.click("更换登录凭据")
+	h.ui.Frame()
 	h.input("服务器密码", h.fixture.Profile().Password)
-	h.click("保存并连接")
-	h.expectUITerminal()
-	if h.a.sessions[0].host != id || len(h.a.connections) != 1 {
-		t.Fatal("retry duplicated saved connection")
+	h.click("保存连接")
+	h.wait(func() bool { return h.a.page == 1 })
+	before := h.fixture.Auths.Load()
+	h.a.openShellForHostAfter(id, false, nil)
+	h.wait(func() bool { return readyTerminalCount(h.a) > 0 })
+	if len(h.a.connections) != 1 || len(h.a.sessions) != 1 || h.fixture.Auths.Load() <= before || h.stored(id).Password != h.fixture.Profile().Password {
+		t.Fatal("explicit retry failed or duplicated connection")
 	}
-	if h.stored(id).Password != h.fixture.Profile().Password {
-		t.Fatal("retry did not replace saved password")
-	}
+
 }
 
 func TestConnectionFormImportedKeysSaveAndConnect(t *testing.T) {
@@ -163,7 +181,7 @@ func TestConnectionFormImportedKeysSaveAndConnect(t *testing.T) {
 				t.Fatal("key selection did not complete", h.a.connection.errors)
 			}
 			h.confirmIdentity()
-			h.click("信任并连接")
+			h.click("信任指纹并连接")
 			h.expectUITerminal()
 			id := h.a.sessions[0].host
 			h.a.selected = id
@@ -201,22 +219,34 @@ func TestConnectionFormChangedHostIdentityRequiresExplicitRecheck(t *testing.T) 
 	if h.a.connection.notes.loadError != "" {
 		t.Fatal("connection notes failed to load", h.a.connection.notes.loadError)
 	}
-	h.click("保存后连接")
-	h.click("保存并连接")
-	h.idle()
-	if h.fixture.Auths.Load() != 0 || !h.ui.HasText("服务器身份与已保存记录不同") || len(h.a.sessions) != 0 {
-		t.Fatal("changed identity was authenticated or missing recovery", h.a.connection.errors)
-	}
-	h.click("重新核对服务器身份")
-	h.confirmIdentity()
+	h.click("保存连接")
+	h.wait(func() bool { return h.a.page == 1 })
 	if h.fixture.Auths.Load() != 0 {
-		t.Fatal("rechecking identity sent login credentials")
+		t.Fatal("save authenticated changed identity")
 	}
-	h.click("信任并连接")
-	h.expectUITerminal()
+	h.ui = ui.NewTester(h.a.view, 1100, 900)
+	h.a.openShellForHostAfter(p.ID, true, nil)
+	h.wait(func() bool { return len(h.a.connecting) == 0 })
+	if h.fixture.Auths.Load() != 0 || !h.a.sessions[0].connectionMismatch {
+		t.Fatal("changed identity was authenticated or mismatch missing")
+	}
+	h.a.editConnection()
+	h.ui.Frame()
+	h.wait(func() bool { return h.a.connection.notes != nil && !h.a.connection.notes.loading })
+	h.click("重新核对服务器身份")
+	h.click("保存连接")
+	h.wait(func() bool { return h.a.page == 1 })
+	h.a.openShellForHostAfter(p.ID, false, nil)
+	h.wait(func() bool { return h.a.prompt.open })
+	if h.fixture.Auths.Load() != 0 {
+		t.Fatal("recheck sent credentials")
+	}
+	h.click("信任指纹并连接")
+	h.wait(func() bool { return readyTerminalCount(h.a) > 0 })
 	if h.stored(p.ID).Fingerprint != h.fixture.Profile().Fingerprint {
-		t.Fatal("verified identity was not saved")
+		t.Fatal("verified identity not saved")
 	}
+
 }
 
 func TestUnlockedDesktopDoubleClickConnectsWithoutPasswordAndCloseStopsStream(t *testing.T) {

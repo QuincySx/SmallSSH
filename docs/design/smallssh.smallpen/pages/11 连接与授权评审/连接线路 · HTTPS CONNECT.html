@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>连接线路 · HTTPS CONNECT</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" class="relative flex items-center justify-center w-[1100px] h-[760px] bg-canvas">
+  <div data-name="工作台承载" class="absolute inset-0 flex flex-row">
+    <sp-use data-name="工作台背景" class="w-full h-full" component="连接弹窗背景">
+      <div data-name="服务器侧栏">
+        <div data-name="服务器">
+          <p data-name="名称" class="">Web 生产环境</p>
+        </div>
+      </div>
+    </sp-use>
+  </div>
+  <div data-name="模态遮罩" class="absolute inset-0 bg-dialog-shade"></div>
+  <div data-name="连接对话框" class="flex flex-col gap-space-md w-dialog-large h-connection-editor-height p-space-lg bg-surface rounded-window-panel shadow-native-dialog">
+    <div data-name="标题栏" class="flex flex-row items-center gap-space-sm w-full h-control shrink-0">
+      <p data-name="窗口标题" class="flex-1 type-native-dialog text-text">新建连接</p>
+      <sp-use data-name="关闭" class="shrink-0" component="图标按钮">
+        <p data-name="图标" class=""></p>
+      </sp-use>
+    </div>
+    <div data-name="分类与内容" class="flex flex-row flex-1 min-h-0 w-full gap-space-xl">
+      <div data-name="连接分类" class="flex flex-col gap-space-xs w-dialog-sidebar shrink-0 h-full bg-subtle border border-border p-dialog-sidebar rounded-control">
+        <sp-use data-name="常规" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/新建连接">
+          <p data-name="标签" class="">常规</p>
+        </sp-use>
+        <sp-use data-name="加速与代理" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 选中" data-click="11 连接与授权评审/连接线路 · HTTPS CONNECT">
+          <p data-name="标签" class="">加速与代理</p>
+        </sp-use>
+        <sp-use data-name="终端设置" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/终端设置">
+          <p data-name="标签" class="">终端设置</p>
+        </sp-use>
+        <sp-use data-name="访问策略" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/访问策略">
+          <p data-name="标签" class="">访问策略</p>
+        </sp-use>
+      </div>
+      <div data-name="分类表单" class="flex flex-col gap-space-md flex-1 min-w-0 h-full overflow-hidden pr-connection-form-end">
+        <div data-name="默认线路" class="flex flex-col gap-space-sm w-full">
+          <div data-name="选择线路" class="flex flex-row items-center gap-space-sm w-full items-end">
+            <div data-name="默认线路" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">默认线路</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface" data-click="overlay:11 连接与授权评审/选择默认线路; position: manual 0px 44px; relative-to: self; close-outside">
+                <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">直连 / 连接专用配置</p>
+                <p data-name="下拉" class="type-native-action-icon text-muted w-menu-icon shrink-0 text-center"></p>
+              </div>
+            </div>
+            <sp-use data-name="新建并选用线路" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/新建线路 · 导入">
+              <p data-name="文字" class="">新建并选用线路</p>
+            </sp-use>
+          </div>
+        </div>
+        <div data-name="连接路径" class="flex flex-row items-center gap-space-md w-full p-space-sm bg-subtle rounded-control">
+          <div data-name="本机" class="flex flex-col gap-native-field w-fit shrink-0">
+            <p data-name="标签" class="type-native-hint text-muted">起点</p>
+            <p data-name="节点" class="type-native-label text-text">本机</p>
+          </div>
+          <p data-name="第一段" class="type-native-label text-muted">→</p>
+          <div data-name="中间节点" class="flex flex-col gap-native-field flex-1 min-w-0">
+            <p data-name="标签" class="type-native-hint text-muted">网络代理</p>
+            <p data-name="节点" class="type-native-label text-text">HTTPS CONNECT</p>
+            <p data-name="详情" class="type-native-hint text-muted">proxy.example:443</p>
+          </div>
+          <p data-name="目标前连接线" class="type-native-label text-muted">→</p>
+          <div data-name="目标" class="flex flex-col gap-native-field flex-1 min-w-0">
+            <p data-name="标签" class="type-native-hint text-muted">目标服务器</p>
+            <p data-name="节点" class="type-native-label text-text">Web 生产环境</p>
+            <p data-name="地址" class="type-native-hint text-muted">192.0.2.10:22</p>
+          </div>
+        </div>
+        <div data-name="连接专用配置" class="flex flex-col gap-space-sm w-full">
+          <div data-name="代理和地址" class="flex flex-row items-center gap-space-sm w-full">
+            <div data-name="网络代理" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">网络代理</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface" data-click="overlay:11 连接与授权评审/选择网络代理; position: manual 0px 44px; relative-to: self; close-outside">
+                <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">HTTPS CONNECT</p>
+                <p data-name="下拉" class="type-native-action-icon text-muted w-menu-icon shrink-0 text-center"></p>
+              </div>
+            </div>
+            <div data-name="代理主机:端口" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">代理主机:端口</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">proxy.example:443</p>
+              </div>
+            </div>
+          </div>
+          <div data-name="认证" class="flex flex-row items-center gap-space-sm w-full">
+            <div data-name="代理用户名（可选）" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">代理用户名（可选）</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field px-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">example</p>
+              </div>
+            </div>
+            <div data-name="代理密码" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">代理密码</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="type-native-copy text-text flex-1 min-w-0">••••••••</p>
+                <sp-use data-name="显示密码" component="隐藏密码图标"></sp-use>
+              </div>
+            </div>
+          </div>
+          <p data-name="限制" class="type-native-hint text-muted">仅用于此连接。代理解析目标域名，同一跳只能选择代理或 SSH 跳板机。</p>
+        </div>
+        <div data-name="分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+        <div data-name="路径实测" class="flex flex-col gap-space-sm w-full">
+          <p data-name="标题" class="type-section text-text">路径实测</p>
+          <div data-name="测量操作" class="flex flex-row items-center gap-space-sm w-full">
+            <sp-use data-name="测量耗时" class="shrink-0 opacity-disabled" component="按钮" props="样式: 普通">
+              <p data-name="文字" class="">测量耗时</p>
+            </sp-use>
+            <p data-name="前置条件" class="type-native-hint text-muted">核对目标服务器指纹后可测量。</p>
+          </div>
+          <p data-name="测量口径" class="type-native-hint text-muted">记录 SSH 握手耗时，反映建立连接所需时间。</p>
+        </div>
+      </div>
+    </div>
+    <div data-name="底部" class="flex flex-col gap-space-sm w-full">
+      <div data-name="操作分隔" class="w-full h-review-divider bg-border"></div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full h-field">
+        <p data-name="保存说明" class="flex-1 type-native-hint text-muted">保存连接后，从服务器列表打开连接。</p>
+        <sp-use data-name="取消" component="按钮" props="样式: 普通">
+          <p data-name="文字" class="">取消</p>
+        </sp-use>
+        <sp-use data-name="保存连接" component="按钮" props="样式: 主操作">
+          <p data-name="文字" class="">保存连接</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

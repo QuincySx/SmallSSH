@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>密钥签名通知</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col w-[460px] h-fit bg-canvas">
+<div data-name="系统签名通知示意" class="flex flex-col gap-space-sm p-space-lg w-full h-fit bg-surface rounded-window-panel">
+  <p data-name="通知标题" class="w-full text-text type-section">终端 使用了 SSH 密钥</p>
+  <p data-name="密钥" class="w-full text-text type-control">开发机</p>
+  <p data-name="签名用途" class="w-full text-muted type-control">tester · 未知主机</p>
+  <p data-name="公钥指纹" class="w-full text-muted type-panel-label">SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDE12</p>
+  <div data-name="限时授权动作" class="flex flex-col gap-space-xs w-full h-fit">
+    <sp-use component="按钮" props="样式: 普通" data-name="一分钟"><p data-name="文字">1 分钟</p></sp-use>
+    <sp-use component="按钮" props="样式: 普通" data-name="五分钟"><p data-name="文字">5 分钟</p></sp-use>
+    <sp-use component="按钮" props="样式: 普通" data-name="一小时"><p data-name="文字">1 小时</p></sp-use>
+    <sp-use component="按钮" props="样式: 普通" data-name="一天"><p data-name="文字">24 小时</p></sp-use>
+  </div>
+</div>
+</body></html>

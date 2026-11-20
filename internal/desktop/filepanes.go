@@ -5,7 +5,7 @@ import (
 	"sshclient/internal/desktop/components"
 
 	"github.com/egoist/mygo/ui"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 )
 
 // File panes share their one-line actions with existing context menus; all
@@ -20,17 +20,15 @@ const (
 func (a *app) showTool(index int) {
 	if tool := a.workspaceTools[index]; tool != nil {
 		a.activateWorkspaceTab(tool.group, workspaceTab{tool: tool})
+		a.page = 1
 		a.invalidateWindows()
 		return
 	}
-	if index == toolTransfers && !a.workspaceCanvas {
+	if index == toolTransfers {
 		a.showTransfers()
 		return
 	}
 	a.dock, a.toolsHidden, a.page = index, false, 1
-	if index == toolTransfers {
-		a.transfersOpen = false
-	}
 	if a.toolsDetached {
 		a.detachTools()
 	}
@@ -38,14 +36,11 @@ func (a *app) showTool(index int) {
 
 func (a *app) fileArea(c *ui.Context) {
 	a.ensureFileLayout()
-	if a.dock == toolTransfers && !a.workspaceCanvas {
+	if a.dock == toolTransfers {
 		a.dock = toolFiles // Reserved persisted ID; transfers now have a global entry.
 	}
 	var tabs []components.PanelTab
 	kinds := []int{toolCommands, toolFiles, toolDiagnostics}
-	if a.workspaceCanvas {
-		kinds = append(kinds, toolTransfers)
-	}
 	for _, kind := range kinds {
 		if a.workspaceTools[kind] == nil {
 			tabs = append(tabs, components.PanelTab{ID: kind, Title: workspaceToolTitle(c, kind)})
@@ -159,6 +154,7 @@ func (a *app) browserPane(c *ui.Context, p *filePane) {
 			}, list).FillWidth().Grow(1).MinHeight(0)
 		}
 	})
+	a.nativeFileDropTarget(c, pane, p, p.browser().dir)
 	if pane.FocusWithin() {
 		a.activeFilePane = p
 	}
@@ -178,8 +174,12 @@ func (a *app) filePaneFooter(c *ui.Context, p *filePane, b *directoryBrowser) {
 	if b.loadError[b.dir] != "" {
 		text = tr(c, "读取失败 · ") + reviewText(b.loadError[b.dir])
 	}
-	ui.Row(c).FillWidth().Shrink(0).Padding(3, 8).Gap(8).Justify(ui.End).Children(func() {
+	ui.Row(c).FillWidth().MinHeight(28).Shrink(0).Padding(4, 8).Gap(8).AlignItems(ui.Center).Justify(ui.End).Children(func() {
 		a.fileOpenFeedback(c, p, b.dir)
+		if b.moveFeedback != "" {
+			ui.Text(c, b.moveFeedback).SingleLine().MinWidth(0).Shrink(1).FontSize(11).
+				TextColor(c.Theme().TextMuted).Tooltip(b.moveFeedback)
+		}
 		ui.Spacer(c).Grow(1).MinWidth(0)
 		ui.Text(c, text).SingleLine().MinWidth(0).FontSize(11).TextColor(c.Theme().TextMuted).Tooltip(text)
 		if b.loadError[b.dir] != "" && components.Button(c, tr(c, "重试")).Clicked() {
@@ -211,9 +211,13 @@ func (a *app) fileLocationHeader(c *ui.Context, p *filePane) {
 		followLabel = tr(c, "容器宿主机文件来源")
 		tip = tr(c, "浏览容器所在 SSH 服务器的文件（宿主机） · ") + reviewText(a.endpointName(p.endpoint))
 	}
-	ui.Row(c).FillWidth().Height(components.FileHeaderHeight).Shrink(0).MinWidth(0).Children(func() {
+	if route := a.sessionRouteLabel(c, p.route); route != "" {
+		tip += " · " + route
+	}
+	height := min(float32(components.FileHeaderHeight), a.fileToolbarHeight())
+	ui.Row(c).FillWidth().Height(height).Shrink(0).MinWidth(0).Children(func() {
 		selectPane := ui.SelectBase(c, &choice)
-		selectPane.Trigger.FillWidth().MinWidth(0).Height(components.FileHeaderHeight).
+		selectPane.Trigger.FillWidth().MinWidth(0).Height(height).
 			Padding(0, 8).Gap(4).Justify(ui.Start).Label(a.paneSide(p) + tr(c, "文件位置")).Tooltip(tip).Children(func() {
 			ui.Text(c, label).Grow(1).MinWidth(0).FontSize(components.BodyFont).SingleLine()
 			if p.follow {
@@ -243,11 +247,32 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 	a.validateFileContextPopup(p)
 	endpoint, dir := p.endpoint, b.dir
 	if _, loaded := b.cache[dir]; !loaded && b.loading[dir] != nil {
-		ui.Column(c).Fill().MinHeight(0).Center().Gap(10).Padding(16).Label(tr(c, "文件夹加载状态")).Children(func() {
+		// The placeholder takes the list's slot, so MyGo keeps the list's
+		// focus on it and hands it back with the rows. Being focusable with
+		// the parent-folder key, it lets the keyboard leave a slow folder.
+		status := ui.Column(c).Fill().MinHeight(0).Center().Gap(10).Padding(16).Label(tr(c, "文件夹加载状态")).Focusable().FocusRing(false)
+		status.Children(func() {
 			ui.Spinner(c).Size(24, 24)
 			ui.Text(c, tr(c, "正在读取文件夹…")).FontSize(12)
 			ui.Text(c, reviewText(dir)).FillWidth().SingleLine().TextAlign(ui.Center).FontSize(12).TextColor(c.Theme().TextMuted)
+			// A slow or stuck folder must not trap the pane: cancelling lands
+			// on the usual retry / parent view, and the parent is one click.
+			ui.Row(c).Gap(8).Children(func() {
+				if components.Button(c, tr(c, "取消读取")).Clicked() {
+					if pending := b.loading[dir]; pending != nil {
+						pending.cancel()
+						delete(b.loading, dir)
+						b.loadError[dir] = tr(nil, "已取消读取")
+					}
+				}
+				if components.Button(c, tr(c, "上一级")).Clicked() {
+					a.navigateDirectory(p, parentDir(endpoint == localEndpoint, dir))
+				}
+			})
 		})
+		if status.Shortcut(ui.Alt, ui.KeyUp) {
+			a.navigateDirectory(p, parentDir(endpoint == localEndpoint, dir))
+		}
 		return
 	}
 	if message := b.loadError[dir]; message != "" {
@@ -264,25 +289,31 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 		})
 		return
 	}
-	fs := b.cache[dir]
+	fs := b.displayedFiles()
 	b.table.Selected, b.table.Selection = &b.selected, &b.chosen
+	b.table.Sort = &b.fileSort
 	b.table.MenuKeepsSelection = true
+	// The modified column follows the room the list actually has: a wide
+	// bottom dock shows it, a narrow card or right dock leaves it to the
+	// name. Before the first layout, the container's usual size decides.
+	showModified := a.fileExpanded || a.renderingToolsWindow || a.filesTabSelected || a.renderingWorkspaceTool != nil && a.renderingWorkspaceTool.kind == toolFiles
+	if b.tableWidth > 0 {
+		showModified = b.tableWidth >= components.FileListModifiedMinWidth
+	}
 	table := components.FileList(c, &b.table, len(fs), func(i int) components.FileEntry {
 		f := fs[i]
 		loading := a.editorRead != nil && a.editorRead.loading && a.editorRead.endpoint == endpoint && a.editorRead.name == joinPath(endpoint == localEndpoint, dir, f.Name)
 		return components.FileEntry{ID: f.Name, Name: reviewText(f.Name), Directory: f.Directory, Bytes: uint64(max(f.Size, 0)), Modified: f.Modified, Loading: loading}
-	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: a.fileExpanded || a.renderingToolsWindow || a.filesTabSelected || a.renderingWorkspaceTool != nil && a.renderingWorkspaceTool.kind == toolFiles, Decorate: func(cell ui.Element, i, col int) {
+	}, components.FileListOptions{Label: a.paneSide(p) + tr(c, "文件列表"), ShowModified: showModified, Width: &b.tableWidth, Decorate: func(cell ui.Element, i, col int) {
 		f := fs[i]
-		a.fileCellContextMenu(c, cell, p, b, dir, i, col)
+		a.fileCellContextMenu(c, cell, p, b, dir, f.Name, i, col)
 		if cell.Clicked() {
 			b.chooseFile(fs, i, cell.ClickModifiers())
 		}
 		if cell.DoubleClicked() {
-			a.openEntries(p, dir, []sshconn.File{f})
+			a.openEntries(p, dir, []sshdata.File{f})
 		}
-		if !f.Directory || endpoint != localEndpoint {
-			cell.Drag(fileDrag{endpoint: endpoint, dir: dir, file: f, browser: b})
-		}
+		cell.Drag(fileDrag{endpoint: endpoint, dir: dir, file: f, browser: b})
 		target := dir
 		if f.Directory {
 			target = joinPath(endpoint == localEndpoint, dir, f.Name)
@@ -313,7 +344,7 @@ func (a *app) fileList(c *ui.Context, p *filePane, b *directoryBrowser) {
 
 // A cell owns its pointer when it is a drag source. Forward ordinary clicks
 // to the same keyed selection used by the native table's keyboard handling.
-func (b *directoryBrowser) chooseFile(files []sshconn.File, index int, mods ui.Modifiers) {
+func (b *directoryBrowser) chooseFile(files []sshdata.File, index int, mods ui.Modifiers) {
 	if mods&ui.Shift != 0 {
 		anchor := b.anchor
 		if anchor < 0 || anchor >= len(files) {
@@ -357,15 +388,15 @@ func (a *app) otherPane(p *filePane) *filePane {
 	return nil
 }
 
-func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshconn.File) {
+func (a *app) fileContextMenu(m *ui.Menu, p *filePane, dir string, files []sshdata.File) {
 	a.fileContextActions(&fileMenu{native: m}, p, dir, files)
 }
 
-func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []sshconn.File) {
+func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []sshdata.File) {
 	// Capture a pane containing the original browser: a later terminal switch
 	// cannot redirect a menu action or an outstanding confirmation.
-	endpoint, b := p.endpoint, p.browser()
-	source := &filePane{endpoint: endpoint, states: map[string]*directoryBrowser{endpoint: b}}
+	endpoint := p.endpoint
+	source := p.snapshot()
 	if m.Item(tr(nil, "打开 / 编辑")).Disabled(len(files) != 1).Chosen() {
 		a.openEntries(source, dir, files)
 	}
@@ -377,7 +408,7 @@ func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []s
 		}
 	}
 	if endpoint != "" && endpoint != localEndpoint && m.Item(tr(nil, "下载到本机…")).Disabled(len(files) == 0).Chosen() {
-		a.promptDownload(endpoint, dir, files)
+		a.promptDownload(endpoint, dir, files, p.route)
 	}
 	label := tr(nil, "上传到另一栏")
 	if endpoint != localEndpoint {
@@ -385,7 +416,7 @@ func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []s
 	}
 	if len(a.fileLayout.panes()) <= 2 {
 		if m.Item(label).Disabled(!can || len(files) == 0).Chosen() {
-			a.transferEntries(endpoint, dir, files, other.endpoint, other.browser().dir)
+			a.transferEntries(endpoint, dir, files, other.endpoint, other.browser().dir, transferRoute(endpoint, p.route, other.route))
 		}
 	} else {
 		m.Submenu(tr(nil, "传输到窗口"), func(m *fileMenu) {
@@ -399,7 +430,7 @@ func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []s
 				}
 				label := a.filePaneLabel(destination) + " · " + a.endpointName(destination.endpoint) + " · " + destination.browser().dir
 				if m.Item(reviewText(label)).Disabled(!valid).Chosen() {
-					a.transferEntries(endpoint, dir, files, destination.endpoint, destination.browser().dir)
+					a.transferEntries(endpoint, dir, files, destination.endpoint, destination.browser().dir, transferRoute(endpoint, p.route, destination.route))
 				}
 			}
 		})
@@ -412,11 +443,11 @@ func (a *app) fileContextActions(m *fileMenu, p *filePane, dir string, files []s
 	a.fileFollowActions(m, p)
 }
 
-func (a *app) fileMutationMenu(m *ui.Menu, source *filePane, dir string, files []sshconn.File, root bool) {
+func (a *app) fileMutationMenu(m *ui.Menu, source *filePane, dir string, files []sshdata.File, root bool) {
 	a.fileMutationActions(&fileMenu{native: m}, source, dir, files, root)
 }
 
-func (a *app) fileMutationActions(m *fileMenu, source *filePane, dir string, files []sshconn.File, root bool) {
+func (a *app) fileMutationActions(m *fileMenu, source *filePane, dir string, files []sshdata.File, root bool) {
 	if m.Item(tr(nil, "重命名 / 移动")).Disabled(root || len(files) != 1).Chosen() {
 		a.fileOperationAt(source, dir, files, "rename")
 	}
@@ -430,14 +461,14 @@ func (a *app) fileMutationActions(m *fileMenu, source *filePane, dir string, fil
 
 func (a *app) treeContextMenu(m *ui.Menu, p *filePane, b *directoryBrowser, dir string) {
 	endpoint := p.endpoint
-	source := &filePane{endpoint: endpoint, states: map[string]*directoryBrowser{endpoint: b}}
+	source := p.snapshot()
 	local := endpoint == localEndpoint
 	parent := parentDir(local, dir)
 	if m.Item(tr(nil, "打开文件夹")).Chosen() {
 		a.navigateDirectory(source, dir)
 	}
 	if !local && parent != dir && m.Item(tr(nil, "下载到本机…")).Chosen() {
-		a.promptDownload(endpoint, parent, []sshconn.File{{Name: path.Base(dir), Directory: true}})
+		a.promptDownload(endpoint, parent, []sshdata.File{{Name: path.Base(dir), Directory: true}}, p.route)
 	}
 	m.Separator()
 	if parent == dir {
@@ -447,7 +478,7 @@ func (a *app) treeContextMenu(m *ui.Menu, p *filePane, b *directoryBrowser, dir 
 		m.Item(tr(nil, "重命名 / 移动")).Disabled(true)
 		m.Item(tr(nil, "删除")).Disabled(true)
 	} else {
-		a.fileMutationMenu(m, source, parent, []sshconn.File{{Name: baseName(local, dir), Directory: true}}, false)
+		a.fileMutationMenu(m, source, parent, []sshdata.File{{Name: baseName(local, dir), Directory: true}}, false)
 	}
 	m.Separator()
 	a.directoryActions(m, source, dir)
@@ -455,7 +486,7 @@ func (a *app) treeContextMenu(m *ui.Menu, p *filePane, b *directoryBrowser, dir 
 	a.fileFollowMenu(m, p)
 }
 
-func (a *app) openEntries(p *filePane, dir string, files []sshconn.File) {
+func (a *app) openEntries(p *filePane, dir string, files []sshdata.File) {
 	if len(files) != 1 {
 		return
 	}
@@ -464,7 +495,8 @@ func (a *app) openEntries(p *filePane, dir string, files []sshconn.File) {
 		return
 	}
 	name, endpoint := joinPath(p.endpoint == localEndpoint, dir, files[0].Name), p.endpoint
-	open := func(string) { a.readEditor(endpoint, name) }
+	route := p.route
+	open := func(string) { a.readEditor(endpoint, name, route) }
 	if a.editPath != "" && a.edit.Buffer.Modified() {
 		a.ask(tr(nil, "打开另一个文件？"), a.editPath, tr(nil, "当前修改尚未保存。继续会放弃这些修改。"), "", "", tr(nil, "放弃并打开"), open)
 	} else {
@@ -517,23 +549,36 @@ func (a *app) directoryMenuActions(m *fileMenu, p *filePane, dir string) {
 
 type fileDrag struct {
 	endpoint, dir string
-	file          sshconn.File
+	file          sshdata.File
 	browser       *directoryBrowser
 }
 
-func (d fileDrag) entries() []sshconn.File {
+func (d fileDrag) entries() []sshdata.File {
 	if d.browser != nil && d.browser.dir == d.dir && d.browser.chosen.Has(d.file.Name) {
 		return chosenFiles(d.browser)
 	}
-	return []sshconn.File{d.file}
+	return []sshdata.File{d.file}
 }
 
 func (a *app) fileDropTarget(c *ui.Context, e ui.Element, p *filePane, dir string) {
-	if d, ok := ui.DragOver[fileDrag](e); ok && validDrop(d.endpoint, p.endpoint) {
-		e.Background(c.Theme().Accent.Alpha(0.14))
+	a.nativeFileDropTarget(c, e, p, dir)
+	a.internalFileDropTarget(c, e, p, dir, true)
+}
+
+func (a *app) internalFileDropTarget(c *ui.Context, e ui.Element, p *filePane, dir string, allowTransfer bool) {
+	if d, ok := ui.DragOver[fileDrag](e); ok {
+		if a.canMoveDroppedFiles(d, p, dir) {
+			e.Border(1, c.Theme().Focus).Background(c.Theme().Focus.Alpha(0.12))
+		} else if allowTransfer && validDrop(d.endpoint, p.endpoint) {
+			e.Background(c.Theme().Accent.Alpha(0.14))
+		}
 	}
-	if d, ok := ui.Drop[fileDrag](e); ok && validDrop(d.endpoint, p.endpoint) {
-		a.transferEntries(d.endpoint, d.dir, d.entries(), p.endpoint, dir)
+	if d, ok := ui.Drop[fileDrag](e); ok {
+		if a.canMoveDroppedFiles(d, p, dir) {
+			a.moveDroppedFiles(d, dir)
+		} else if allowTransfer && validDrop(d.endpoint, p.endpoint) {
+			a.transferEntries(d.endpoint, d.dir, d.entries(), p.endpoint, dir, transferRoute(d.endpoint, d.browser.route, p.route))
+		}
 	}
 }
 

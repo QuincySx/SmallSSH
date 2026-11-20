@@ -3,11 +3,11 @@ package client
 import (
 	"context"
 	"errors"
+	"sshclient/internal/sshkey"
 	"time"
 
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/protocol"
 	"sshclient/internal/vault"
 )
 
@@ -18,33 +18,33 @@ func (c Client) SaveConnection(ctx context.Context, change vault.ProfileChange, 
 	if !HasOwnerProof(owner) {
 		return errors.New("保险库已锁定")
 	}
-	if err := sshconn.ValidateTarget(change.Profile.Host, change.Profile.Port); err != nil {
+	if err := sshkey.ValidateTarget(change.Profile.Host, change.Profile.Port); err != nil {
 		return err
 	}
 	if change.Profile.Auth == "key" && !change.KeepCredential {
-		if _, err := sshconn.InspectPrivateKey(change.Profile.PrivateKey, change.Profile.KeyPassphrase); err != nil {
+		if _, err := sshkey.InspectPrivateKey(change.Profile.PrivateKey, change.Profile.KeyPassphrase); err != nil {
 			return err
 		}
 	}
-	challenge, err := c.Call(ctx, broker.Message{Action: "profileChallenge"})
+	challenge, err := c.Call(ctx, protocol.Message{Action: "profileChallenge"})
 	if err != nil {
 		return err
 	}
-	proof, err := broker.ProfileChangeProof(challenge.ID, change, owner.Proof)
+	proof, err := protocol.ProfileChangeProof(challenge.ID, change, owner.Proof)
 	if err != nil {
 		return err
 	}
-	_, err = c.Call(ctx, broker.Message{Action: "profileChange", ID: challenge.ID, ProfileChange: &change, Proof: proof})
+	_, err = c.Call(ctx, protocol.Message{Action: "profileChange", ID: challenge.ID, ProfileChange: &change, Proof: proof})
 	return err
 }
 
-// An explicit desktop action uses its already-unlocked in-process owner session
+// An explicit desktop action uses its authenticated owner capability
 // to approve only this exact request. CLI/AI requests retain their normal queue.
 func (c Client) ConnectWithOwner(ctx context.Context, host string, owner OwnerProof) (*Stream, error) {
 	return c.StartWithOwner(ctx, approval.Operation{Host: host, Kind: "shell", ServerStatus: true}, owner)
 }
 
-// StartWithOwner is an in-process owner frontend helper, never a wire action.
+// StartWithOwner is an authenticated owner frontend helper, never a wire action.
 // It signs only the newly returned immutable request, irrespective of its label.
 func (c Client) StartWithOwner(ctx context.Context, op approval.Operation, owner OwnerProof) (*Stream, error) {
 	if !HasOwnerProof(owner) {
@@ -61,7 +61,7 @@ func (c Client) StartWithOwner(ctx context.Context, op approval.Operation, owner
 		if !success {
 			cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			_, _ = c.Call(cleanup, broker.Message{Action: "withdraw", ID: r.ID, Ticket: ticket})
+			_, _ = c.Call(cleanup, protocol.Message{Action: "withdraw", ID: r.ID, Ticket: ticket})
 		}
 	}()
 	if err = c.DecideWithOwner(ctx, r.ID, true, false, owner); err != nil {
@@ -86,15 +86,18 @@ func (c Client) RequestWithOwner(ctx context.Context, op approval.Operation, own
 	if !HasOwnerProof(owner) {
 		return approval.Request{}, "", errors.New("保险库已锁定")
 	}
-	challenge, err := c.Call(ctx, broker.Message{Action: "profileChallenge"})
+	if route, ok := RouteFromContext(ctx, op.Host); ok {
+		op.Route = route
+	}
+	challenge, err := c.Call(ctx, protocol.Message{Action: "profileChallenge"})
 	if err != nil {
 		return approval.Request{}, "", err
 	}
-	proof, err := broker.OwnerRequestProof(challenge.ID, op, owner.Proof)
+	proof, err := protocol.OwnerRequestProof(challenge.ID, op, owner.Proof)
 	if err != nil {
 		return approval.Request{}, "", err
 	}
-	result, err := c.request(ctx, broker.Message{Action: "ownerRequest", ID: challenge.ID, Operation: op, Proof: proof})
+	result, err := c.request(ctx, protocol.Message{Action: "ownerRequest", ID: challenge.ID, Operation: op, Proof: proof})
 	if err != nil {
 		return approval.Request{}, "", err
 	}

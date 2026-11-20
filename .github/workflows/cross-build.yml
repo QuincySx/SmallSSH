@@ -39,7 +39,5 @@ jobs:
           cache: true
       - name: go build (desktop and CLI)
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-        run: go build -mod=vendor ./...
+        run: go run ./tools compile -platform ${{ matrix.goos }}/${{ matrix.goarch }}

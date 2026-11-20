@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -101,11 +100,8 @@ func TestEmbeddedLegacyAndUnknownErrorsStayFailures(t *testing.T) {
 
 func TestSystemOpenPreservesContextFailure(t *testing.T) {
 	dir := t.TempDir()
-	raw, err := json.Marshal(record{Version: 1, Data: json.RawMessage(`{}`)})
+	raw, err := json.Marshal(record{Version: 1, VaultHash: strings.Repeat("0", 64), Data: json.RawMessage(`{}`)})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path(dir), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, deadline := range []bool{false, true} {
@@ -123,7 +119,7 @@ func TestSystemOpenPreservesContextFailure(t *testing.T) {
 				defer cancel()
 				calls := 0
 				s := &Service{}
-				session, err := s.open(ctx, dir, "test", func(context.Context, json.RawMessage, string) ([]byte, error) {
+				session, err := s.open(ctx, dir, raw, "test", func(context.Context, json.RawMessage, string) ([]byte, error) {
 					calls++
 					cancel()
 					if lateKey {
@@ -147,7 +143,7 @@ func TestEmbeddedServiceCancellationPrecedesReadiness(t *testing.T) {
 	cancel()
 	b := &fakeEmbeddedBackend{}
 	s := &Service{backend: b}
-	session, err := s.OpenEmbedded(ctx, t.TempDir(), "test", nil)
+	session, err := s.OpenRecordEmbedded(ctx, t.TempDir(), nil, "test", nil)
 	if session != nil || !errors.Is(err, context.Canceled) || IsAuthenticationNotReady(err) || b.calls != 0 {
 		t.Fatal("cancelled operation was classified as a startup failure", err)
 	}

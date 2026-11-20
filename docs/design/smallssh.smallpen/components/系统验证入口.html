@@ -1,0 +1,16 @@
+<sp-component name="系统验证入口" props="方式: Touch ID | Windows Hello | Linux 指纹; 样式: 普通 | 确认 | 等待">
+  <div class="flex flex-row items-center justify-center w-authentication-action h-authentication-action rounded-control">
+    <p data-name="指纹" class="w-authentication-action text-center type-native-icon-large text-accent"></p>
+    <p data-name="文字" class="type-native-hint text-text hidden">Windows Hello</p>
+  </div>
+  <sp-variant when="方式: Windows Hello" class="w-fit px-space-xs">
+    <p data-name="指纹" class="hidden"></p>
+    <p data-name="文字" class="shown">Windows Hello</p>
+  </sp-variant>
+  <sp-variant when="方式: Linux 指纹" class="w-fit px-space-xs">
+    <p data-name="指纹" class="hidden"></p>
+    <p data-name="文字" class="shown">指纹验证</p>
+  </sp-variant>
+  <sp-variant when="样式: 确认" class="bg-accentsoft"></sp-variant>
+  <sp-variant when="样式: 等待" class="bg-accentsoft border border-accent"></sp-variant>
+</sp-component>

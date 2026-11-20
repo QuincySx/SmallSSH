@@ -11,13 +11,17 @@ import (
 	"crypto/x509/pkix"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
+	"sync"
 	"time"
 )
 
 var ErrBrokerIdentity = errors.New("代理身份校验失败；请在可信的 SmallSSH 桌面检查或修复本机 CLI 配对，也可显式指定 --broker-key")
+
+var ErrBrokerUnavailable = errors.New("本地代理未运行")
 
 // Close aborts the local transport without waiting for a TLS close-notify write.
 func (w *Wire) Close() error {
@@ -28,6 +32,13 @@ func (w *Wire) Close() error {
 }
 
 func ServerTLS(identity ...ed25519.PrivateKey) (*tls.Config, string, error) {
+	return serverTLS(time.Now, identity...)
+}
+
+// serverTLS owns one signing key for its lifetime; only its short-lived
+// certificates are renewed. Existing SPKI trust anchors and live connections
+// therefore survive renewal.
+func serverTLS(now func() time.Time, identity ...ed25519.PrivateKey) (*tls.Config, string, error) {
 	var private ed25519.PrivateKey
 	if len(identity) > 1 || len(identity) == 1 && len(identity[0]) != ed25519.PrivateKeySize {
 		return nil, "", ErrBrokerIdentity
@@ -41,22 +52,49 @@ func ServerTLS(identity ...ed25519.PrivateKey) (*tls.Config, string, error) {
 		}
 		private = key
 	}
-	public := private.Public().(ed25519.PublicKey)
+	certificate, err := issueServerCertificate(private, now())
+	if err != nil {
+		clear(private)
+		return nil, "", err
+	}
+	configuration := &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}}
+	var mu sync.Mutex
+	// GetCertificate is skipped for local clients without SNI when Certificates
+	// is populated. GetConfigForClient runs for every new handshake instead.
+	configuration.GetConfigForClient = func(*tls.ClientHelloInfo) (*tls.Config, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		current := now()
+		if current.Before(certificate.Leaf.NotBefore) || !current.Before(certificate.Leaf.NotAfter.Add(-24*time.Hour)) {
+			renewed, err := issueServerCertificate(private, current)
+			if err != nil {
+				return nil, err
+			}
+			certificate = renewed
+		}
+		connection := configuration.Clone()
+		connection.GetConfigForClient = nil
+		connection.Certificates = []tls.Certificate{certificate}
+		return connection, nil
+	}
+	return configuration, publicKeyPin(certificate.Leaf), nil
+}
+
+func issueServerCertificate(private ed25519.PrivateKey, now time.Time) (tls.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
-		return nil, "", err
+		return tls.Certificate{}, err
 	}
-	now := time.Now()
 	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "SmallSSH local broker"}, NotBefore: now.Add(-time.Minute), NotAfter: now.Add(30 * 24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, public, private)
+	der, err := x509.CreateCertificate(rand.Reader, template, template, private.Public(), private)
 	if err != nil {
-		return nil, "", err
+		return tls.Certificate{}, err
 	}
-	certificate, err := x509.ParseCertificate(der)
+	leaf, err := x509.ParseCertificate(der)
 	if err != nil {
-		return nil, "", err
+		return tls.Certificate{}, err
 	}
-	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: private}}}, publicKeyPin(certificate), nil
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: private, Leaf: leaf}, nil
 }
 
 func publicKeyPin(certificate *x509.Certificate) string {
@@ -84,6 +122,9 @@ func DestroyServerTLS(configuration *tls.Config) {
 func ConnectVerified(ctx context.Context, dir, pin string) (*Wire, error) {
 	raw, err := Dial(ctx, dir)
 	if err != nil {
+		if executableEndpointUnavailable(err) {
+			return nil, fmt.Errorf("%w: %w", ErrBrokerUnavailable, err)
+		}
 		return nil, err
 	}
 	self := false

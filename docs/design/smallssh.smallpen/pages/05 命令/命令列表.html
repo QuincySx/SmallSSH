@@ -1,121 +1,132 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>命令列表</title>
-  <link rel="stylesheet" href="../../tokens.css">
-</head>
-<body class="flex flex-col w-[1280px] h-[860px] bg-canvas">
-  <div data-name="工作台根" class="flex flex-col w-full h-full">
-    <div data-name="标题栏" class="flex flex-row items-center gap-[8px] pr-[8px] w-full h-titlebar">
-      <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
-      <sp-use component="图标按钮" data-name="侧栏开关">
-        <p data-name="图标"></p>
-      </sp-use>
-      <div data-name="对齐留白" class="flex flex-col gap-[8px] w-[88px] h-[1px]"></div>
-      <sp-use component="工作区标签" props="状态: 选中" data-name="Web 生产环境标签">
-        <p data-name="名称">Web 生产环境</p>
-      </sp-use>
-      <sp-use component="工作区标签" data-name="Staging标签">
-        <p data-name="名称">Staging</p>
-      </sp-use>
-      <div data-name="拖动空白" class="flex flex-col gap-[8px] w-full h-full"></div>
-      <sp-use component="图标按钮" data-name="工作区分栏">
-        <p data-name="图标"></p>
-      </sp-use>
-      <sp-use component="图标按钮" data-name="新建终端">
-        <p data-name="图标"></p>
-      </sp-use>
-      <sp-use component="图标按钮" data-name="任务入口">
-        <p data-name="图标"></p>
-      </sp-use>
-      <sp-use component="图标按钮" data-name="工具面板开关">
-        <p data-name="图标"></p>
-      </sp-use>
-      <sp-use component="图标按钮" data-name="设置入口">
-        <p data-name="图标"></p>
-      </sp-use>
-    </div>
-    <div data-name="工作区" class="flex flex-row items-center gap-[8px] pr-[8px] pb-[8px] pl-[8px] w-full h-full">
-      <div data-name="服务器侧栏" class="flex flex-col gap-[8px] w-sidebar h-full">
-        <sp-use component="按钮" props="样式: 轻量" data-name="新建连接">
-          <p data-name="文字">＋  新建连接</p>
-        </sp-use>
-        <sp-use component="输入框" data-name="搜索服务器" class="w-full">
-          <p data-name="值">搜索服务器</p>
-        </sp-use>
-        <p data-name="分组" class="w-full text-muted type-detail">我的服务器</p>
-        <sp-use component="导航项" props="状态: 选中" data-name="Web 生产环境" class="w-full">
-          <p data-name="标签">Web 生产环境</p>
-          <div data-name="图标">
-            <p data-name="字标">W</p>
-          </div>
-        </sp-use>
-        <sp-use component="导航项" data-name="Staging" class="w-full">
-          <p data-name="标签">Staging</p>
-          <div data-name="图标">
-            <p data-name="字标">S</p>
-          </div>
-        </sp-use>
-        <sp-use component="导航项" data-name="备份服务器" class="w-full">
-          <p data-name="标签">备份服务器</p>
-          <div data-name="图标">
-            <p data-name="字标">备</p>
-          </div>
-        </sp-use>
-      </div>
-      <div data-name="命令面板" class="flex flex-col gap-[8px] p-[12px] w-full h-full bg-surface rounded-panel">
-        <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
-          <sp-use component="按钮" props="样式: 普通" data-name="命令">
-            <p data-name="文字">命令</p>
+  <head>
+    <meta charset="utf-8">
+    <title>
+命令列表
+    </title>
+    <link rel="stylesheet" href="../../tokens.css">
+  </head>
+  <body class="flex flex-col w-[1280px] h-[860px] bg-canvas">
+    <div data-name="工作台根" class="flex flex-row gap-space-sm p-space-sm w-full h-full">
+      <div data-name="服务器侧栏外框" class="flex flex-col gap-space-sm w-sidebar h-full bg-surface rounded-panel">
+        <div data-name="侧栏标题栏" class="flex flex-row items-center gap-space-xs w-full h-control">
+          <sp-use component="窗口控制" props="位置: 侧栏" data-name="原生窗口按钮" class="w-sidebar-window-reserve h-control"></sp-use>
+          <sp-use component="图标按钮" data-name="侧栏开关" class="w-control h-control">
+            <p data-name="图标"></p>
           </sp-use>
-          <sp-use component="按钮" props="样式: 轻量" data-name="文件">
-            <p data-name="文字">文件</p>
+          <sp-use component="图标按钮" data-name="新建连接" data-click="03 连接/常规与密码" class="w-control h-control">
+            <p data-name="图标"></p>
           </sp-use>
-          <sp-use component="按钮" props="样式: 轻量" data-name="服务器状态">
-            <p data-name="文字">服务器状态</p>
+          <div data-name="侧栏标题留白" class="w-full h-control"></div>
+        </div>
+        <div data-name="服务器侧栏" class="flex flex-col gap-space-sm w-full h-full p-connection-sidebar bg-surface rounded-panel">
+          <sp-use component="输入框" data-name="搜索服务器" class="w-full h-connection-search">
+            <p data-name="值">搜索服务器</p>
           </sp-use>
-          <div data-name="工具栏弹性留白" class="w-full h-[32px]"></div>
-          <sp-use component="图标按钮" data-name="工具面板布局">
-            <p data-name="图标"></p>
+          <p data-name="分组" class="w-full text-muted type-detail">我的服务器</p>
+          <sp-use component="导航项" props="状态: 选中" data-name="Web 生产环境" class="w-full">
+            <p data-name="标签">Web 生产环境</p>
+            <div data-name="图标">
+              <p data-name="字标">W</p>
+            </div>
           </sp-use>
-          <sp-use component="图标按钮" data-name="收起工具面板">
-            <p data-name="图标"></p>
+          <sp-use component="导航项" data-name="Staging" class="w-full">
+            <p data-name="标签">Staging</p>
+            <div data-name="图标">
+              <p data-name="字标">S</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="备份服务器" class="w-full">
+            <p data-name="标签">备份服务器</p>
+            <div data-name="图标">
+              <p data-name="字标">备</p>
+            </div>
           </sp-use>
         </div>
-        <div data-name="常用命令" class="flex flex-col gap-[8px] w-full h-full">
-          <div data-name="搜索与新建" class="flex flex-row items-center gap-[8px] w-full">
-            <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
-              <sp-use component="按钮" props="样式: 普通" data-name="全部">
-                <p data-name="文字">全部</p>
-              </sp-use>
-              <sp-use component="按钮" props="样式: 轻量" data-name="运维">
-                <p data-name="文字">运维</p>
-              </sp-use>
-              <sp-use component="按钮" props="样式: 轻量" data-name="发布">
-                <p data-name="文字">发布</p>
-              </sp-use>
+      </div>
+      <div data-name="主内容列" class="flex flex-col gap-space-sm w-full h-full">
+        <div data-name="标题栏" class="flex flex-row items-center w-full h-control gap-space-xs pl-space-sm">
+          <sp-use component="工作区标签" props="状态: 选中" data-name="Web 生产环境标签">
+            <p data-name="名称">Web 生产环境</p>
+          </sp-use>
+          <sp-use component="工作区标签" data-name="Staging标签">
+            <p data-name="名称">Staging</p>
+          </sp-use>
+          <div data-name="拖动空白" class="flex flex-col gap-space-sm w-full h-full"></div>
+          <sp-use component="服务入口" data-name="端口转发" data-click="09 工具/服务列表" class="w-control h-control"></sp-use>
+<sp-use component="图标按钮" data-name="任务入口" class="w-control h-control" data-click="09 工具/传输与任务中心">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="工具面板开关" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="设置入口" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+        </div>
+        <div data-name="工作区" class="flex flex-row items-center gap-space-sm w-full h-full">
+          <div data-name="命令面板" class="flex flex-col p-space-md w-full h-full bg-surface rounded-panel">
+            <div data-name="工具栏" class="flex flex-row items-center gap-toolbar px-tool-inset w-full h-panel-bar">
+              <div data-name="工具选项卡" class="flex flex-row items-center w-full h-full">
+                <sp-use component="工具标签" data-name="命令" props="状态: 选中" class="h-panel-tab" data-click="05 命令/命令列表">
+                  <p data-name="文字">命令</p>
+                </sp-use>
+                <sp-use component="工具标签" data-name="文件" props="状态: 普通" class="h-panel-tab" data-click="04 文件/文件大标签">
+                  <p data-name="文字">文件</p>
+                </sp-use>
+                <sp-use component="工具标签" data-name="服务器状态" props="状态: 普通" class="h-panel-tab" data-click="06 状态/资源概览">
+                  <p data-name="文字">服务器状态</p>
+                </sp-use>
+              </div>
+              <div data-name="工具操作" class="flex flex-row items-center gap-toolbar w-fit h-full">
+                <sp-use component="图标按钮" data-name="在标签页打开功能区" class="w-control h-control">
+                  <p data-name="图标"></p>
+                </sp-use>
+                <sp-use component="图标按钮" data-name="工具面板布局" class="w-control h-control" data-click="02 工作台/小窗布局菜单">
+                  <p data-name="图标"></p>
+                </sp-use>
+                <sp-use component="图标按钮" data-name="收起工具面板" class="w-control h-control">
+                  <p data-name="图标"></p>
+                </sp-use>
+              </div>
             </div>
-            <sp-use component="输入框" data-name="输入" class="w-full">
-              <p data-name="值">搜索命令</p>
-            </sp-use>
-            <sp-use component="按钮" data-name="新建命令" data-click="05 命令/编辑命令模板">
-              <p data-name="文字">新建命令</p>
-            </sp-use>
-          </div>
-          <div data-name="命令卡片" class="flex flex-row items-center gap-[8px] w-full">
-            <div data-name="更新系统" class="flex flex-col gap-[8px] p-[12px] w-full h-[100px] bg-surface rounded-panel">
-              <p data-name="名称" class="w-full text-text type-section">更新系统</p>
-              <p data-name="系统" class="w-full text-muted type-detail">Debian / Ubuntu</p>
-            </div>
-            <div data-name="查看容器" class="flex flex-col gap-[8px] p-[12px] w-full h-[100px] bg-surface rounded-panel">
-              <p data-name="名称" class="w-full text-text type-section">查看容器</p>
-              <p data-name="模板" class="w-full text-muted type-detail">pct config $1</p>
+            <div data-name="工具内容" class="flex flex-col gap-space-sm p-space-sm w-full h-full">
+              <div data-name="常用命令" class="flex flex-col gap-space-sm w-full h-full">
+                <div data-name="搜索与新建" class="flex flex-row items-center gap-space-sm w-full">
+                  <div data-name="分类标签" class="flex flex-row items-center gap-space-xs w-full">
+                    <sp-use component="按钮" props="样式: 普通" data-name="全部">
+                      <p data-name="文字">全部</p>
+                    </sp-use>
+                    <sp-use component="按钮" props="样式: 轻量" data-name="运维">
+                      <p data-name="文字">运维</p>
+                    </sp-use>
+                    <sp-use component="按钮" props="样式: 轻量" data-name="发布">
+                      <p data-name="文字">发布</p>
+                    </sp-use>
+                  </div>
+                  <sp-use component="输入框" data-name="输入" class="w-full">
+                    <p data-name="值">搜索命令</p>
+                  </sp-use>
+                  <sp-use component="图标按钮" data-name="新建常用命令" data-click="05 命令/编辑命令模板" class="w-control h-control">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                </div>
+                <div data-name="命令卡片" class="flex flex-row items-center gap-space-sm w-full">
+                  <div data-name="更新系统" class="flex flex-col gap-space-sm p-space-md w-full h-[100px] bg-surface rounded-panel">
+                    <p data-name="名称" class="w-full text-text type-section">更新系统</p>
+                    <p data-name="系统" class="w-full text-muted type-detail">Debian / Ubuntu</p>
+                  </div>
+                  <div data-name="查看容器" class="flex flex-col gap-space-sm p-space-md w-full h-[100px] bg-surface rounded-panel">
+                    <p data-name="名称" class="w-full text-text type-section">查看容器</p>
+                    <p data-name="模板" class="w-full text-muted type-detail">pct config $1</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-</body>
+  </body>
 </html>

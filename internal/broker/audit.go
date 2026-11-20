@@ -57,23 +57,51 @@ func (a *audit) write(event string, r *approval.Request) error {
 	return a.writeHost(event, r, "")
 }
 
-func (a *audit) writeHost(event string, r *approval.Request, hostName string) error {
-	return a.writeOutcome(event, r, hostName, "", nil)
+func (a *audit) writeHost(event string, r *approval.Request, hostName string, actors ...approval.Peer) error {
+	return a.writeOutcome(event, r, hostName, "", nil, actors...)
 }
 
-func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcome string, code *int) error {
+func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcome string, code *int, actors ...approval.Peer) error {
 	v := auditEvent{Time: time.Now().UTC(), Event: event}
 	v.Outcome, v.ExitCode = outcome, code
+	if len(actors) > 0 {
+		p := actors[0]
+		v.ActorPID = p.PID
+		v.ActorExecutable = auditText(p.Path, 1024)
+		v.ActorInstance = auditText(p.Instance, 128)
+		v.ActorCodeID = auditText(p.CodeID, 128)
+	}
 	if r != nil {
 		v.PeerPID = r.Peer.PID
 		v.ProcessInstance = auditText(r.Peer.Instance, 128)
 		v.ExecutableID = auditText(r.Peer.CodeID, 128)
+		v.Executable = auditText(r.Peer.Path, 1024)
+		v.Bundle = auditText(r.Peer.Bundle, 256)
+		v.Endpoint = auditText(r.Operation.Endpoint, 512)
+		v.HostFingerprint = auditText(r.Operation.HostFingerprint, 128)
+		v.ParentGeneration = r.ParentGeneration
+		if r.ParentGeneration != "" {
+			review := r.MediumReview
+			v.MediumReview = &review
+		}
+		if r.Operation.Kind == "grant" {
+			v.Permission = r.Operation.Grant.Permission
+			v.ReadRoot = auditText(r.Operation.Grant.ReadRoot, 4096)
+			v.WriteRoot = auditText(r.Operation.Grant.WriteRoot, 4096)
+			v.SkipMediumReview = r.Operation.Grant.SkipMediumReview
+			v.Expires = r.Expires
+			v.IdleSeconds = r.Operation.Grant.IdleSeconds
+			if r.Activity != nil {
+				v.IdleSeconds = r.Activity.IdleSeconds
+				v.MediumReview = r.Activity.MediumReview
+			}
+		}
+		if v.MediumReview != nil {
+			v.SkipMediumReview = !*v.MediumReview
+		}
 		v.ParentID = auditText(r.ParentID, 128)
 		v.RequestID = auditText(r.ID, 128)
-		if r.Nonce != "" {
-			generation := sha256.Sum256([]byte(r.Nonce))
-			v.Generation = hex.EncodeToString(generation[:])
-		}
+		v.Generation = r.Generation()
 		v.OwnerIssued = r.OwnerIssued
 		v.Renewals = r.Renewals
 		v.OwnerSession = r.OwnerSession
@@ -91,9 +119,9 @@ func (a *audit) writeOutcome(event string, r *approval.Request, hostName, outcom
 
 // reject records a policy rejection without creating runnable authority or
 // persisting the operation body. Reasons are codes, never raw error messages.
-func (a *audit) reject(op approval.Operation, parentID, reason, hostName string) error {
+func (a *audit) reject(op approval.Operation, parentID, reason, hostName string, peers ...approval.Peer) error {
 	switch reason {
-	case "automation_disabled", "server_disabled", "protected_path", "uncontrolled_operation", "destructive_command", "invalid_policy", "scope_denied", "invalid_authority", "invalid_operation", "owner_required", "path_resolution_failed":
+	case "high_risk_operation", "automation_disabled", "server_disabled", "protected_path", "uncontrolled_operation", "destructive_command", "invalid_policy", "scope_denied", "invalid_authority", "invalid_operation", "owner_required", "path_resolution_failed":
 	default:
 		return errors.New("无效历史拒绝原因")
 	}
@@ -109,6 +137,16 @@ func (a *audit) reject(op approval.Operation, parentID, reason, hostName string)
 		Client: auditText(op.Client, 128), HostName: auditText(hostName, 256), Reason: reason,
 		OperationHash: hex.EncodeToString(h[:]),
 	}
+	if len(peers) > 0 {
+		p := peers[0]
+		rejected.PeerPID = p.PID
+		rejected.Executable = auditText(p.Path, 1024)
+		rejected.Bundle = auditText(p.Bundle, 256)
+		rejected.ProcessInstance = auditText(p.Instance, 128)
+		rejected.ExecutableID = auditText(p.CodeID, 128)
+	}
+	rejected.Endpoint = auditText(op.Endpoint, 512)
+	rejected.HostFingerprint = auditText(op.HostFingerprint, 128)
 	addExcerpt(&rejected, op)
 	return a.store.Append(rejected)
 }
@@ -116,14 +154,15 @@ func (a *audit) reject(op approval.Operation, parentID, reason, hostName string)
 // Operation excerpts are bounded on write as well, so a long command cannot fill
 // the history it is meant to explain.
 const (
-	auditCommandLimit = 512
-	auditPathLimit    = 512
+	auditCommandLimit = 32768
+	auditPathLimit    = 4096
 )
 
 // addExcerpt records what the owner needs to recognise an operation after the
 // fact: the command that ran, the path it touched, and the container or Compose
 // project it addressed. Credentials, output and tickets still stay out.
 func addExcerpt(v *auditEvent, op approval.Operation) {
+	v.ExcerptTruncated = len(op.Command) > auditCommandLimit || len(op.Path) > auditPathLimit || len(op.Destination) > auditPathLimit
 	v.Command = auditText(op.Command, auditCommandLimit)
 	v.Path = auditText(op.Path, auditPathLimit)
 	v.Destination = auditText(op.Destination, auditPathLimit)

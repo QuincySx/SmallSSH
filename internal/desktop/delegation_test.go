@@ -33,7 +33,7 @@ func TestGrantApprovalShowsScopePairingAndRevokesWithoutAnotherPassword(t *testi
 			if permission == "full" && !h.ui.HasText("可使用此 SSH 账户的全部权限") {
 				t.Fatal("full session looked read-only")
 			}
-			h.click("允许")
+			h.click("允许操作")
 			h.click("保险库主密码")
 			h.ui.Type(string(h.pass))
 			prompt := h.a.inlineApproval
@@ -57,7 +57,7 @@ func TestGrantApprovalShowsScopePairingAndRevokesWithoutAnotherPassword(t *testi
 			h.a.requests = []approval.Request{*status.Request}
 			h.a.approvalTab = 1
 			h.ui.Frame()
-			h.click("撤销并断开")
+			h.click("撤销授权：" + r.ID)
 			h.wait(func() bool { return !h.a.busy })
 			if _, _, err = delegated.Request(h.ctx, approval.Operation{Host: "fixture", Kind: "list", Path: "/", Client: "fixture"}, time.Minute); err == nil {
 				t.Fatal("revoked session minted child")

@@ -1,0 +1,13 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>编辑线路</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col gap-space-md p-space-lg w-[560px] h-fit bg-surface rounded-window-panel">
+<div data-name="标题栏" class="flex flex-row items-center gap-space-sm w-full"><p data-name="标题" class="w-full text-text type-section">编辑线路</p><sp-use component="图标按钮" data-name="关闭" data-click="close-overlay"><p data-name="图标"></p></sp-use></div>
+<div data-name="线路表单" class="flex flex-col gap-space-md w-full">
+<div data-name="名称字段" class="flex flex-col gap-space-xs w-full"><p data-name="标签" class="w-full text-text type-control">线路名称</p><sp-use component="输入框" data-name="输入" class="w-full h-field"><p data-name="值">日常工作代理</p></sp-use></div>
+<div data-name="类型字段" class="flex flex-col gap-space-xs w-full"><p data-name="标签" class="w-full text-text type-control">线路类型</p><div data-name="选择" class="flex flex-row items-center gap-space-sm px-field-inline w-full h-field bg-surface border border-border rounded-control"><p data-name="当前值" class="w-full text-text type-control">SOCKS5</p><p data-name="箭头" class="w-selector-icon text-muted font-icons text-icon-compact leading-[1]"></p></div></div>
+<div data-name="地址字段" class="flex flex-col gap-space-xs w-full"><p data-name="标签" class="w-full text-text type-control">代理主机:端口</p><sp-use component="输入框" data-name="输入" class="w-full h-field"><p data-name="值">127.0.0.1:1080</p></sp-use></div>
+<div data-name="用户字段" class="flex flex-col gap-space-xs w-full"><p data-name="标签" class="w-full text-text type-control">代理用户名</p><sp-use component="输入框" data-name="输入" class="w-full h-field"><p data-name="值">example</p></sp-use></div>
+<div data-name="密码处理" class="flex flex-col gap-space-xs w-full"><p data-name="标签" class="w-full text-text type-control">已存代理密码</p><div data-name="选择" class="flex flex-row items-center gap-space-sm px-field-inline w-full h-field bg-surface border border-border rounded-control"><p data-name="当前值" class="w-full text-text type-control">保留已存密码</p><p data-name="箭头" class="w-selector-icon text-muted font-icons text-icon-compact leading-[1]"></p></div></div>
+</div>
+<div data-name="底部操作" class="flex flex-row justify-end gap-space-sm w-full"><sp-use component="按钮" props="样式: 普通" data-name="取消" data-click="close-overlay"><p data-name="文字">取消</p></sp-use><sp-use component="按钮" data-name="保存线路" data-click="close-overlay"><p data-name="文字">保存线路</p></sp-use></div>
+</body></html>

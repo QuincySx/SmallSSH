@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -22,11 +23,11 @@ func TestCommandSessionRunsSeveralLinesWithOneApprovalAndRevokesOnExit(t *testin
 			done := make(chan error, 1)
 			go func() {
 				var err error
-				code, err = execSession(ctx, c, "command fixture", []string{"fixture", "2m", "1m"}, strings.NewReader("first\n\nsecond\n"+ending), &out, &notices)
+				code, err = execSession(ctx, c, "command fixture", []string{"fixture", "2m", "1m"}, strings.NewReader("uname -n\n\nid -un\n"+ending), &out, &notices)
 				done <- err
 			}()
 			parent := approveCLISession(t, ctx, c, done)
-			if parent.Operation.Grant.Permission != "full" || parent.Operation.Grant.LifetimeSeconds != 120 || parent.Operation.Grant.IdleSeconds != 60 {
+			if parent.Operation.Grant.Permission != "guarded" || parent.Operation.Grant.LifetimeSeconds != 120 || parent.Operation.Grant.IdleSeconds != 60 {
 				t.Fatal("command session did not request the reviewed command scope", parent)
 			}
 			select {
@@ -37,7 +38,7 @@ func TestCommandSessionRunsSeveralLinesWithOneApprovalAndRevokesOnExit(t *testin
 			case <-ctx.Done():
 				t.Fatal("another line requested another approval", ctx.Err())
 			}
-			if !strings.Contains(out.String(), "first") || !strings.Contains(out.String(), "second") || strings.Contains(out.String(), "must-not-run") {
+			if !strings.Contains(out.String(), "uname -n") || !strings.Contains(out.String(), "id -un") || strings.Contains(out.String(), "must-not-run") {
 				t.Fatal("commands were lost, replayed after quit or encoded as JSON", out.String())
 			}
 			if strings.Count(notices.String(), "再批准会话") != 1 || strings.Count(notices.String(), "[退出码 0]") != 2 {
@@ -112,13 +113,13 @@ func TestCommandSessionPolicyRefusalKeepsOriginalGrantForNextLine(t *testing.T) 
 	var out, notices bytes.Buffer
 	done := make(chan error, 1)
 	go func() {
-		_, err := execSession(ctx, c, "policy fixture", []string{"fixture"}, strings.NewReader("rm -rf /etc\nsecond\n"), &out, &notices)
+		_, err := execSession(ctx, c, "policy fixture", []string{"fixture"}, strings.NewReader("rm -rf /etc\nid -un\n"), &out, &notices)
 		done <- err
 	}()
 	parent := approveCLISession(t, ctx, c, done)
 	select {
 	case err := <-done:
-		if err != nil || strings.Contains(out.String(), "rm -rf") || !strings.Contains(out.String(), "second") || !strings.Contains(notices.String(), "命令未执行") {
+		if err != nil || strings.Contains(out.String(), "rm -rf") || !strings.Contains(out.String(), "id -un") || !strings.Contains(notices.String(), "命令未执行") {
 			t.Fatal("refusal widened, ended or retried the session", err, out.String(), notices.String())
 		}
 	case <-ctx.Done():
@@ -142,6 +143,9 @@ func TestCommandSessionChecksCommandLengthBeforeExecution(t *testing.T) {
 				done <- err
 			}()
 			parent := approveCLISession(t, ctx, c, done)
+			if size == 32768 {
+				decideCLIOperation(t, ctx, c, parent.ID, true)
+			}
 			select {
 			case err := <-done:
 				if size == 32768 && (err != nil || out.Len() < size) {
@@ -173,4 +177,83 @@ func waitCommandSessionRevoked(t *testing.T, ctx context.Context, c client.Clien
 		case <-tick.C:
 		}
 	}
+}
+
+func decideCLIOperation(t *testing.T, ctx context.Context, c client.Client, parent string, allow bool) {
+	t.Helper()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		page, err := c.Call(ctx, broker.Message{Action: "pending"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range page.Requests {
+			if r.ParentID == parent && r.Status == "pending" {
+				if err = c.DecideReviewedWithOwner(ctx, r, allow, false, c.Owner); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("operation did not request review", ctx.Err())
+		case <-tick.C:
+		}
+	}
+}
+
+func TestCommandSessionContinuesAfterOperationDenial(t *testing.T) {
+	c, ctx := sessionFixture(t)
+	var out, notices bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := execSession(ctx, c, "guarded fixture", []string{"fixture"}, strings.NewReader("systemctl restart nginx\nuname -n\n"), &out, &notices)
+		done <- err
+	}()
+	parent := approveCLISession(t, ctx, c, done)
+	decideCLIOperation(t, ctx, c, parent.ID, false)
+	select {
+	case err := <-done:
+		if err != nil || strings.Contains(out.String(), "restart") || !strings.Contains(out.String(), "uname -n") || !strings.Contains(notices.String(), "本次操作未执行") {
+			t.Fatal(err, out.String(), notices.String())
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	waitCommandSessionRevoked(t, ctx, c, parent.ID)
+}
+
+func TestCLIStdioDefaultsToGuardedAndWaitsForOperationApproval(t *testing.T) {
+	c, ctx := sessionFixture(t)
+	var out, notices bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		_, err := serveSession(ctx, c, "default JSON fixture", []string{"fixture"}, strings.NewReader(`{"id":"review","operation":{"kind":"exec","command":"systemctl restart nginx"}}
+{"id":"read","operation":{"kind":"exec","command":"uname -n"}}
+`), &out, &notices)
+		done <- err
+	}()
+	parent := approveCLISession(t, ctx, c, done)
+	if parent.Operation.Grant.Permission != "guarded" {
+		t.Fatal("JSON default granted full control", parent)
+	}
+	decideCLIOperation(t, ctx, c, parent.ID, true)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	decoder := json.NewDecoder(&out)
+	for _, command := range []string{"systemctl restart nginx", "uname -n"} {
+		var result sessionOutput
+		if err := decoder.Decode(&result); err != nil || result.Error != "" || !bytes.Contains(result.Stdout, []byte(command)) {
+			t.Fatal(result, err)
+		}
+	}
+	waitCommandSessionRevoked(t, ctx, c, parent.ID)
 }

@@ -62,6 +62,13 @@ func (a *app) retryPendingTerminal(s *session) {
 	if !a.hasSession(s) {
 		return
 	}
+	// Both open paths return before installing a cancel while the vault is
+	// locked or offline. Refuse here, so the card keeps a reason and its retry
+	// button instead of a spinner that nothing will finish.
+	if _, err := a.unlockedOwner(); err != nil {
+		s.connectionError, s.connectionMismatch, a.status = err.Error(), false, err.Error()
+		return
+	}
 	s.closed, s.connectionError, s.connectionMismatch = false, "", false
 	s.connectionState = "connecting"
 	if s.target.Kind == "docker-terminal" {
@@ -82,10 +89,13 @@ func (a *app) pendingTerminalView(c *ui.Context, s *session) {
 			ui.Text(c, text).FontSize(16).Bold()
 		} else {
 			ui.Text(c, tr(c, "连接未完成")).FontSize(16).Bold()
-			ui.Text(c, reviewText(s.connectionError)).FillWidth().TextColor(c.Theme().Danger)
+			ui.Text(c, reviewText(s.connectionError)).FillWidth().TextAlign(ui.Center).TextColor(c.Theme().Danger)
 		}
-		ui.Text(c, a.hostName(s.host)).FontSize(12).FillWidth().TextColor(c.Theme().TextMuted)
-		ui.Row(c).Gap(8).Children(func() {
+		ui.Text(c, a.hostName(s.host)).FontSize(12).FillWidth().TextAlign(ui.Center).TextColor(c.Theme().TextMuted)
+		if route := a.sessionRouteLabel(c, s.target.Route); route != "" {
+			ui.Text(c, route).FontSize(12).FillWidth().TextAlign(ui.Center).TextColor(c.Theme().TextMuted)
+		}
+		ui.Row(c).FillWidth().Gap(8).Wrap().Justify(ui.Center).Children(func() {
 			if s.connectionState == "error" {
 				label := tr(c, "重试连接")
 				if s.connectionMismatch {
@@ -93,13 +103,18 @@ func (a *app) pendingTerminalView(c *ui.Context, s *session) {
 				}
 				if components.Button(c, label).Clicked() {
 					if s.connectionMismatch {
-						a.offerHostKeyUpdate(s.host, func() { a.retryPendingTerminal(s) })
+						a.offerHostKeyUpdate(s.host, s.target.Route, func() { a.retryPendingTerminal(s) })
 					} else {
 						a.retryPendingTerminal(s)
 					}
 				}
 			}
-			if components.Button(c, tr(c, "关闭此标签")).Clicked() {
+			// While connecting, closing is cancelling; say so on the button.
+			closeLabel := tr(c, "取消连接")
+			if s.connectionState == "error" {
+				closeLabel = tr(c, "关闭此标签")
+			}
+			if components.Button(c, closeLabel).Clicked() {
 				a.closeSessionAt(a.sessionIndex(s))
 			}
 		})

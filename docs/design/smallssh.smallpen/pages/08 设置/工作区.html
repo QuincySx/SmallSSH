@@ -1,76 +1,100 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>工作区</title>
-  <link rel="stylesheet" href="../../tokens.css">
-</head>
-<body class="flex flex-col w-[1080px] h-[760px] bg-canvas">
-  <div data-name="设置窗口" class="w-[1080px] h-[760px] bg-canvas">
-    <div data-name="设置导航" class="flex flex-col gap-[4px] pr-[12px] pb-[12px] pl-[12px] left-[8px] top-[8px] w-[200px] h-[744px] bg-surface rounded-[12px]">
-      <div data-name="设置标题" class="flex flex-row items-center gap-[8px] pl-[58px] w-full h-[32px]">
-        <p data-name="标题" class="w-full text-text type-section">设置</p>
+  <head>
+    <meta charset="utf-8">
+    <title>工作区</title>
+    <link rel="stylesheet" href="../../tokens.css">
+  </head>
+  <body class="flex flex-col w-[1080px] h-[760px] bg-canvas">
+    <div data-name="设置窗口" class="w-[1080px] h-[760px] bg-canvas">
+      <div data-name="设置导航" class="flex flex-col gap-space-xs pr-space-md pb-space-md pl-space-md left-[8px] top-[8px] w-[200px] h-[744px] bg-surface rounded-window-panel">
+        <div data-name="设置标题" class="flex flex-row items-center gap-space-sm pl-window-title-inset w-full h-[32px]">
+          <p data-name="标题" class="w-full text-text type-section">设置</p>
+        </div>
+        <sp-use component="导航项" props="状态: 选中; 图标: 隐藏" data-name="工作区" class="w-full h-control" data-click="08 设置/工作区">
+          <p data-name="标签">工作区</p>
+          <div data-name="图标">
+            <p data-name="字标">工</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="安全与解锁" data-click="08 设置/安全与解锁" class="w-full h-control" props="图标: 隐藏">
+          <p data-name="标签">安全与解锁</p>
+          <div data-name="图标">
+            <p data-name="字标">安</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="SSH 密钥" class="w-full h-control" data-click="08 设置/SSH 密钥" props="图标: 隐藏"><p data-name="标签">SSH 密钥</p></sp-use>
+        <sp-use component="导航项" data-name="加速与代理" class="w-full h-control" data-click="08 设置/加速与代理" props="图标: 隐藏">
+          <p data-name="标签">加速与代理</p>
+        </sp-use>
+        <sp-use component="导航项" data-name="运行与后台" data-click="08 设置/运行与后台" class="w-full h-control" props="图标: 隐藏">
+          <p data-name="标签">运行与后台</p>
+          <div data-name="图标">
+            <p data-name="字标">运</p>
+          </div>
+        </sp-use>
+        <sp-use component="导航项" data-name="授权中心" data-click="08 设置/授权中心 · 待处理" class="w-full h-control" props="图标: 隐藏">
+          <p data-name="标签">授权中心</p>
+          <div data-name="图标">
+            <p data-name="字标">授</p>
+          </div>
+        </sp-use>
       </div>
-      <sp-use component="导航项" props="状态: 选中" data-name="工作区" class="w-full">
-        <p data-name="标签">工作区</p>
-        <div data-name="图标">
-          <p data-name="字标">工</p>
+      <div data-name="设置内容" class="flex flex-col gap-space-sm pr-space-md pb-space-md pl-space-md left-[216px] top-[8px] w-[856px] h-[744px] bg-surface rounded-window-panel">
+        <div data-name="分类标题" class="flex flex-row items-center gap-space-sm w-full h-[32px]">
+          <p data-name="标题" class="w-full text-text type-section">工作区</p>
+          <sp-use component="图标按钮" data-name="关闭设置" data-click="02 工作台/终端与底部文件">
+            <p data-name="图标"></p>
+          </sp-use>
         </div>
-      </sp-use>
-      <sp-use component="导航项" data-name="安全与解锁" data-click="08 设置/安全与解锁" class="w-full">
-        <p data-name="标签">安全与解锁</p>
-        <div data-name="图标">
-          <p data-name="字标">安</p>
+        <div data-name="设置滚动内容" class="flex flex-col items-start w-full h-full">
+          <div data-name="设置内容容器" class="flex flex-col gap-space-md w-full max-w-settings-content">
+            <div data-name="语言设置" class="flex flex-col pt-space-lg px-space-lg pb-space-xs w-full">
+              <sp-use component="设置行" data-name="界面语言" class="w-full" props="控件: 选择">
+                <p data-name="标签">界面语言</p>
+                <div data-name="值控件">
+                  <p data-name="当前值">跟随系统</p>
+                </div>
+              </sp-use>
+            </div>
+            <div data-name="工作区布局设置" class="flex flex-col pt-space-lg px-space-lg pb-space-xs w-full">
+              <sp-use component="设置行" data-name="连接侧栏" class="w-full" props="控件: 开关; 状态: 开启">
+                <p data-name="标签">连接侧栏</p>
+                <div data-name="值控件">
+                  <p data-name="当前值">开启</p>
+                </div>
+              </sp-use>
+              <sp-use component="设置行" data-name="工具面板" class="w-full" props="控件: 开关; 状态: 关闭">
+                <p data-name="标签">工具面板</p>
+                <div data-name="值控件">
+                  <p data-name="当前值">按需显示</p>
+                </div>
+              </sp-use>
+              <sp-use component="设置行" data-name="停靠位置" class="w-full" props="控件: 分段; 选中: 前项">
+                <p data-name="标签">停靠位置</p>
+                <div data-name="分段">
+                  <div data-name="前项"><p data-name="前项文字">底部</p></div>
+                  <div data-name="后项"><p data-name="后项文字">右侧</p></div>
+                </div>
+              </sp-use>
+              <sp-use component="设置行" data-name="主工作区" class="w-full" props="控件: 分段; 选中: 前项">
+                <p data-name="标签">主工作区</p>
+                <div data-name="分段">
+                  <div data-name="前项"><p data-name="前项文字">画布</p></div>
+                  <div data-name="后项"><p data-name="后项文字">标签聚合</p></div>
+                </div>
+              </sp-use>
+              <sp-use component="设置行" data-name="默认布局" class="w-full" props="控件: 操作">
+                <p data-name="标签">默认布局</p>
+                <div data-name="值控件">
+                  <p data-name="当前值">恢复默认布局</p>
+                </div>
+              </sp-use>
+            </div>
+          </div>
         </div>
-      </sp-use>
-      <sp-use component="导航项" data-name="运行与后台" data-click="08 设置/运行与后台" class="w-full">
-        <p data-name="标签">运行与后台</p>
-        <div data-name="图标">
-          <p data-name="字标">运</p>
-        </div>
-      </sp-use>
-      <sp-use component="导航项" data-name="授权中心" data-click="08 设置/授权中心 · 待处理" class="w-full">
-        <p data-name="标签">授权中心</p>
-        <div data-name="图标">
-          <p data-name="字标">授</p>
-        </div>
-      </sp-use>
+      </div>
+      <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
     </div>
-    <div data-name="设置内容" class="flex flex-col gap-[8px] pr-[12px] pb-[12px] pl-[12px] left-[216px] top-[8px] w-[856px] h-[744px] bg-surface rounded-[12px]">
-      <div data-name="分类标题" class="flex flex-row items-center gap-[8px] w-full h-[32px]">
-        <p data-name="标题" class="w-full text-text type-section">工作区</p>
-        <sp-use component="图标按钮" data-name="关闭设置" data-click="02 工作台/终端与底部文件">
-          <p data-name="图标"></p>
-        </sp-use>
-      </div>
-      <div data-name="偏好设置" class="flex flex-col p-[16px] w-full">
-        <sp-use component="设置行" data-name="界面语言" class="w-full">
-          <p data-name="标签">界面语言</p>
-          <p data-name="当前值">跟随系统</p>
-        </sp-use>
-        <sp-use component="设置行" data-name="连接侧栏" class="w-full">
-          <p data-name="标签">连接侧栏</p>
-          <p data-name="当前值">开启</p>
-        </sp-use>
-        <sp-use component="设置行" data-name="工具面板" class="w-full">
-          <p data-name="标签">工具面板</p>
-          <p data-name="当前值">按需显示</p>
-        </sp-use>
-        <sp-use component="设置行" data-name="停靠位置" class="w-full">
-          <p data-name="标签">停靠位置</p>
-          <p data-name="当前值">底部 / 右侧</p>
-        </sp-use>
-        <sp-use component="设置行" data-name="主工作区" class="w-full">
-          <p data-name="标签">主工作区</p>
-          <p data-name="当前值">画布 / 标签聚合</p>
-        </sp-use>
-        <sp-use component="设置行" data-name="默认布局" class="w-full">
-          <p data-name="标签">默认布局</p>
-          <p data-name="当前值">恢复默认布局</p>
-        </sp-use>
-      </div>
-    </div>
-    <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
-  </div>
-</body>
+  </body>
 </html>

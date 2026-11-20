@@ -1,39 +1,19 @@
 package broker
 
 import (
-	"encoding/json"
 	"sort"
 
 	"sshclient/internal/approval"
-	"sshclient/internal/connectcfg"
 	"sshclient/internal/protocol"
 	"sshclient/internal/vault"
 )
 
 // Owner queries are bound to a one-use challenge and the complete query,
 // including pagination. A caller's label never selects this authority.
-func OwnerQueryAction(action string) bool {
-	switch action {
-	case "hosts", "pending", "status", "sessionStatus", "probeHost", "agentIdentities", "measureRoutes", "workspaceRead", "workspaceWrite":
-		return true
-	}
-	return false
-}
+func OwnerQueryAction(action string) bool { return protocol.OwnerQueryAction(action) }
 
 func OwnerQueryProof(challenge string, q Message, prove func([]byte) ([]byte, error)) ([]byte, error) {
-	b, err := json.Marshal(struct {
-		Action, ID, Target, After string
-		Port, Limit               int
-		Network                   *connectcfg.Network
-		KeepProxyCredential       bool
-		ExpectedFingerprint       string
-		Workspace                 *protocol.WorkspaceQuery  `json:",omitempty"`
-		WorkspaceChange           *protocol.WorkspaceChange `json:",omitempty"`
-	}{q.Action, q.ID, q.Target, q.After, q.Port, q.Limit, q.Network, q.KeepProxyCredential, q.ExpectedFingerprint, q.Workspace, q.WorkspaceChange})
-	if err != nil {
-		return nil, err
-	}
-	return prove(append([]byte("ssh-client/owner-query/v1\x00"+challenge+"\x00"), b...))
+	return protocol.OwnerQueryProof(challenge, q, prove)
 }
 
 func (s *Server) ownerQuery(q Message, channel *callerChannel) bool {

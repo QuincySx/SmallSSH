@@ -346,3 +346,38 @@ func TestWorkspaceRejectsInvalidQueries(t *testing.T) {
 		})
 	}
 }
+
+func TestHostTrustWriteRequiresExactOwnerIntent(t *testing.T) {
+	cli, server, p := newWorkspaceHarness(t)
+	fingerprint := p.Fingerprint
+	p.Fingerprint = ""
+	if err := cli.SaveConnection(context.Background(), vault.ProfileChange{Profile: p}, cli.Owner); err != nil {
+		t.Fatal(err)
+	}
+	trust := vault.HostTrustChange{ID: p.ID, Host: p.Host, Port: p.Port, Fingerprint: fingerprint}
+	base := broker.Message{Action: "workspaceWrite", WorkspaceChange: &protocol.WorkspaceChange{Kind: "host-trust", HostTrust: &trust}}
+	untrusted := client.Client{Dir: cli.Dir}
+	if _, err := untrusted.Call(context.Background(), base); err == nil {
+		t.Fatal("unsigned trust write accepted")
+	}
+	signed := signedWorkspaceQuery(t, cli, cli.Owner, base)
+	changed := trust
+	changed.Host = "private-target.invalid"
+	mutation := *signed.WorkspaceChange
+	mutation.HostTrust = &changed
+	tampered := signed
+	tampered.WorkspaceChange = &mutation
+	if _, err := cli.Call(context.Background(), tampered); err == nil {
+		t.Fatal("trust proof did not bind target")
+	}
+	if got, _ := server.Vault.Profile(p.ID); got.Fingerprint != "" {
+		t.Fatal("rejected intent changed trust")
+	}
+	if err := cli.SaveHostTrust(context.Background(), trust, cli.Owner); err != nil {
+		t.Fatal(err)
+	}
+	got, err := server.Vault.Profile(p.ID)
+	if err != nil || got.Fingerprint != fingerprint || got.Password != p.Password || got.Network != p.Network {
+		t.Fatal("pin did not preserve saved configuration", err)
+	}
+}

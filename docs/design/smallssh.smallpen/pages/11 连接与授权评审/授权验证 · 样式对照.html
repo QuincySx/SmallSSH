@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>授权验证 · 样式对照</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" data-flow="授权验证样式" class="flex flex-col w-[880px] h-fit gap-space-lg p-space-lg bg-canvas">
+  <div data-name="标题和样例入口" class="flex flex-row items-center gap-space-md w-full">
+    <p data-name="标题" class="type-native-review-title text-text flex-1 min-w-0">授权验证样式</p>
+    <sp-use data-name="打开 SSH 密钥审批" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/SSH 密钥 · 仅当前指纹确认">
+      <p data-name="文字">打开 SSH 密钥审批</p>
+    </sp-use>
+    <sp-use data-name="打开服务器操作审批" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/独立授权 · 服务器操作">
+      <p data-name="文字">打开服务器操作审批</p>
+    </sp-use>
+  </div>
+  <div data-name="App 确认与指纹" class="flex flex-row items-start w-full gap-space-md">
+    <div data-name="等待决定" class="flex flex-col gap-space-sm flex-1 min-w-0">
+      <p data-name="状态" class="type-native-label text-text">等待决定</p>
+      <div data-name="审批窗口" class="flex flex-col gap-space-md w-full p-space-lg rounded-window-panel border border-border bg-surface">
+        <div data-name="申请内容" class="flex flex-col w-full gap-native-field">
+          <p data-name="标题" class="type-native-dialog text-text">服务器操作授权</p>
+          <p data-name="目标" class="type-native-copy text-muted">Web 生产环境 · 限时受控 · 2 小时</p>
+        </div>
+        <div data-name="操作分隔" class="w-full h-review-divider shrink-0 bg-border"></div>
+        <sp-use data-name="验证与决定" component="授权验证底栏" props="切换验证: 有" class="w-full">
+          <div data-name="操作">
+            <div data-name="使用主密码" data-click="11 连接与授权评审/独立授权 · 输入主密码"></div>
+            <div data-name="拒绝" data-click="11 连接与授权评审/暂无授权请求"></div>
+            <div data-name="系统验证" data-click="11 连接与授权评审/独立授权 · 正在验证"></div>
+          </div>
+        </sp-use>
+      </div>
+    </div>
+    <div data-name="等待指纹" class="flex flex-col gap-space-sm flex-1 min-w-0">
+      <p data-name="状态" class="type-native-label text-text">等待指纹</p>
+      <div data-name="审批窗口" class="flex flex-col gap-space-md w-full p-space-lg rounded-window-panel border border-border bg-surface">
+        <div data-name="申请内容" class="flex flex-col w-full gap-native-field">
+          <p data-name="标题" class="type-native-dialog text-text">允许终端使用 SSH 密钥？</p>
+          <p data-name="目标" class="type-native-copy text-muted">工作 Mac · SSH 登录 · deploy</p>
+        </div>
+        <div data-name="操作分隔" class="w-full h-review-divider shrink-0 bg-border"></div>
+        <sp-use data-name="验证与决定" component="授权验证底栏" props="状态: 等待验证" class="w-full">
+          <div data-name="操作">
+            <div data-name="拒绝" data-click="11 连接与授权评审/SSH 密钥 · 请求被拒绝"></div>
+            <div data-name="正在验证" data-click="11 连接与授权评审/SSH 密钥 · 使用通知"></div>
+          </div>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+  <div data-name="主密码与系统密码" class="flex flex-row items-start w-full gap-space-md">
+    <div data-name="App 主密码" class="flex flex-col gap-space-sm flex-1 min-w-0">
+      <p data-name="状态" class="type-native-label text-text">在 SmallSSH 输入主密码</p>
+      <div data-name="审批窗口" class="flex flex-col gap-space-md w-full p-space-lg rounded-window-panel border border-border bg-surface">
+        <div data-name="申请内容" class="flex flex-col w-full gap-native-field">
+          <p data-name="标题" class="type-native-dialog text-text">服务器操作授权</p>
+          <p data-name="目标" class="type-native-copy text-muted">Web 生产环境 · 限时受控 · 2 小时</p>
+        </div>
+        <div data-name="操作分隔" class="w-full h-review-divider shrink-0 bg-border"></div>
+        <sp-use data-name="验证与决定" component="授权验证底栏" props="状态: 主密码已填; 切换验证: 有" class="w-full">
+          <div data-name="主密码字段">
+            <div data-name="输入主密码">
+              <div data-name="密码框系统入口">
+                <div data-name="密码框系统验证" data-click="11 连接与授权评审/独立授权 · 主密码框验证中"></div>
+              </div>
+            </div>
+          </div>
+          <div data-name="操作">
+            <div data-name="拒绝" data-click="11 连接与授权评审/暂无授权请求"></div>
+            <div data-name="允许" data-click="11 连接与授权评审/当前授权"></div>
+          </div>
+        </sp-use>
+      </div>
+    </div>
+    <div data-name="系统密码" class="flex flex-col gap-space-sm flex-1 min-w-0">
+      <p data-name="状态" class="type-native-label text-text">macOS 登录密码 · 系统弹窗示意</p>
+      <div data-name="系统弹窗示意" class="flex flex-col gap-space-sm w-full p-space-lg rounded-window-panel border border-border bg-subtle">
+        <p data-name="窗口标题" class="type-native-dialog text-text">macOS 验证</p>
+        <div data-name="系统密码字段" class="flex flex-col gap-native-field w-full">
+          <p data-name="标签" class="type-native-hint text-muted">Mac 登录密码</p>
+          <div data-name="输入示例" class="flex flex-row items-center w-full px-field-inline h-field rounded-control border border-border bg-surface">
+            <p data-name="掩码" class="type-native-copy text-text">••••••••</p>
+          </div>
+        </div>
+        <div data-name="系统操作示意" class="flex flex-row items-center justify-end gap-space-sm w-full h-authentication-action">
+          <sp-use data-name="拒绝" component="按钮" props="样式: 轻量"><p data-name="文字">拒绝</p></sp-use>
+          <sp-use data-name="验证" component="按钮" props="样式: 普通"><p data-name="文字">验证</p></sp-use>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

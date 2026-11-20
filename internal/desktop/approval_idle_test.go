@@ -70,7 +70,7 @@ func TestApprovalIdleOffPreferenceAndReview(t *testing.T) {
 	if !state.noIdle || state.chosenIdle(r) != state.chosenLifetime(r) {
 		t.Fatal("disabled default not reflected in terms")
 	}
-	tt := ui.NewTester(func(c *ui.Context) { requestReviewWithTerms(c, r, state.chosenLifetime(r), state.chosenIdle(r)) }, 650, 800)
+	tt := ui.NewTester(func(c *ui.Context) { requestReviewWithTerms(c, r, state.chosenLifetime(r), state.chosenIdle(r), true) }, 650, 800)
 	if !tt.HasText("最长 2 小时 · 闲置不断开") {
 		t.Fatal("review did not show disabled idle", tt.Texts())
 	}

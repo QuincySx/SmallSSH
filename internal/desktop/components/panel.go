@@ -29,7 +29,7 @@ func HeaderLabel(c *ui.Context, text string) ui.Element {
 // PanelBar keeps the familiar DevTools text-tab layout while retaining native
 // tab semantics, arrow keys and focus. Persistent IDs need not be contiguous.
 func PanelBar(c *ui.Context, selected *int, items []PanelTab, actions func(), options ...PanelBarOptions) ui.Element {
-	return HeaderBar(c).Gap(2).Label(tr(c, "工具栏标题")).Children(func() {
+	return HeaderBar(c).Height(ToolHeaderHeight).Padding(0, ToolInset).Gap(2).Label(tr(c, "工具栏标题")).Children(func() {
 		if len(options) > 0 && options[0].Leading != nil {
 			options[0].Leading()
 		}
@@ -40,7 +40,7 @@ func PanelBar(c *ui.Context, selected *int, items []PanelTab, actions func(), op
 			}
 		}
 		tabs := ui.TabsBase(c, &index, len(items))
-		tabs.List.Grow(1).Height(HeaderHeight).Gap(0).AlignItems(ui.Center).Label(tr(c, "工具选项卡")).Children(func() {
+		tabs.List.Grow(1).Height(ToolHeaderHeight).Gap(0).AlignItems(ui.Center).Label(tr(c, "工具选项卡")).Children(func() {
 			for i, item := range items {
 				tab := tabs.Tab(i).Height(28).Padding(0, 12).Radius(8).Label(item.Title).
 					TextColor(c.Theme().TextMuted)

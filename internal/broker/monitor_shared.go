@@ -16,6 +16,7 @@ import (
 // credentials that may have different forced commands for the same SSH user.
 type monitorTarget struct {
 	profileID, user, peer, fingerprint string
+	route                              poolLease
 }
 
 type monitorUpdate struct {
@@ -35,29 +36,34 @@ type monitorSubscription struct {
 }
 
 type monitorCollector struct {
-	server       *Server
-	target       monitorTarget
-	sourceID     string
-	ctx          context.Context
-	cancel       context.CancelFunc
-	probes       context.Context
-	stopProbes   context.CancelFunc
-	mu           sync.Mutex
-	subscribers  []*monitorSubscription
-	wake         chan struct{}
-	nextProvider int
-	latest       *monitorUpdate
-	inventory    *monitor.Inventory
-	docker       *monitor.DockerSnapshot
+	platform         *monitorPlatform
+	server           *Server
+	target           monitorTarget
+	sourceID         string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	probes           context.Context
+	stopProbes       context.CancelFunc
+	mu               sync.Mutex
+	subscribers      []*monitorSubscription
+	wake             chan struct{}
+	nextProvider     int
+	latest           *monitorUpdate
+	inventory        *monitor.Inventory
+	inventoryWindows bool
+	docker           *monitor.DockerSnapshot
 }
 
 // Called only after Approvals.Start and SSH host verification, for an approved
 // monitor operation or a terminal whose immutable grant includes ServerStatus.
-func (s *Server) subscribeMonitor(ctx context.Context, client *sshconn.Client, profileID, fingerprint string) (*monitorCollector, *monitorSubscription, error) {
+func (s *Server) subscribeMonitor(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, route ...poolLease) (*monitorCollector, *monitorSubscription, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	target := monitorTarget{profileID, client.SSH.User(), client.SSH.RemoteAddr().String(), fingerprint}
+	target := monitorTarget{profileID: profileID, user: client.SSH.User(), peer: client.SSH.RemoteAddr().String(), fingerprint: fingerprint}
+	if len(route) != 0 {
+		target.route = route[0]
+	}
 	s.monitorMu.Lock()
 	defer s.monitorMu.Unlock()
 	if s.monitorClosed {
@@ -102,7 +108,7 @@ func (s *Server) subscribeMonitor(ctx context.Context, client *sshconn.Client, p
 		}
 		lifetime, cancel := context.WithCancel(parent)
 		probes, stopProbes := context.WithCancel(lifetime)
-		collector = &monitorCollector{server: s, target: target, sourceID: vault.ShortID(), ctx: lifetime, cancel: cancel, probes: probes, stopProbes: stopProbes, wake: make(chan struct{})}
+		collector = &monitorCollector{platform: newMonitorPlatform(), server: s, target: target, sourceID: vault.ShortID(), ctx: lifetime, cancel: cancel, probes: probes, stopProbes: stopProbes, wake: make(chan struct{})}
 		s.monitors[target] = collector
 	}
 	lifetime, cancel := context.WithCancel(ctx)
@@ -235,14 +241,14 @@ func (s *Server) stopMonitorCollectors() {
 	}
 }
 
-func (s *Server) streamSharedMonitor(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, w *localipc.Wire) error {
-	return s.streamSharedMonitorWith(ctx, client, profileID, fingerprint, w, nil)
+func (s *Server) streamSharedMonitor(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, w *localipc.Wire, route ...poolLease) error {
+	return s.streamSharedMonitorWith(ctx, client, profileID, fingerprint, w, nil, route...)
 }
 
 // streamSharedMonitorWith hands the subscription to register, so a session that
 // owns the transport can later report whether the samples are still on screen.
-func (s *Server) streamSharedMonitorWith(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, w *localipc.Wire, register func(*monitorCollector, *monitorSubscription)) error {
-	collector, sub, err := s.subscribeMonitor(ctx, client, profileID, fingerprint)
+func (s *Server) streamSharedMonitorWith(ctx context.Context, client *sshconn.Client, profileID, fingerprint string, w *localipc.Wire, register func(*monitorCollector, *monitorSubscription), route ...poolLease) error {
+	collector, sub, err := s.subscribeMonitor(ctx, client, profileID, fingerprint, route...)
 	if err != nil {
 		return err
 	}
@@ -304,7 +310,7 @@ func (c *monitorCollector) execute(command string, timeout time.Duration) (sshco
 		}
 		ctx, cancel := context.WithCancel(provider.ctx)
 		stop := context.AfterFunc(c.probes, cancel)
-		result, err := c.server.monitorExecutor(provider.client, c.target.fingerprint)(ctx, command, timeout)
+		result, err := c.server.monitorExecutor(provider.client, c.target.fingerprint, monitorAuditSource{Host: c.target.profileID})(ctx, command, timeout)
 		stop()
 		cancel()
 		if provider.ctx.Err() != nil && c.probes.Err() == nil {
@@ -356,21 +362,38 @@ func (c *monitorCollector) runCounters() {
 		if !c.awaitActive(c.probes) {
 			return
 		}
-		result, err := c.execute(monitor.Command, 6*time.Second)
+		windows := c.platform.windows.Load()
+		command, interval := monitor.Command, monitorCounterInterval
+		if windows {
+			command, interval = monitor.WindowsStatsCommand, monitorWindowsCounterInterval
+		}
+		result, err := c.execute(command, 6*time.Second)
 		if c.probes.Err() != nil {
 			return
 		}
-		if err == nil && result.ExitCode == 69 {
-			c.publish(monitorUpdate{err: errMonitorUnsupported})
-			c.stopProbes()
-			return
-		}
-		if err == nil && result.ExitCode != 0 {
-			err = errMonitorRead
-		}
 		var stats monitor.Stats
 		if err == nil {
-			stats, err = monitor.Parse(result.Stdout, previous)
+			if result.ExitCode != 0 {
+				err = errMonitorRead
+			} else if windows {
+				stats, err = monitor.ParseWindows(result.Stdout, previous)
+			} else {
+				stats, err = monitor.Parse(result.Stdout, previous)
+			}
+			if err != nil && !windows && c.platform.detectWindows(c.probes, func(_ context.Context, command string, timeout time.Duration) (sshconn.Result, error) {
+				return c.execute(command, timeout)
+			}) {
+				previous = nil
+				c.mu.Lock()
+				c.docker = nil
+				c.mu.Unlock()
+				continue
+			}
+			if err != nil && !windows && result.ExitCode == 69 && c.platform.knownPOSIX() {
+				c.publish(monitorUpdate{err: errMonitorUnsupported})
+				c.stopProbes()
+				return
+			}
 		}
 		if err != nil {
 			c.publish(monitorUpdate{err: err})
@@ -382,12 +405,17 @@ func (c *monitorCollector) runCounters() {
 		}
 		stats.SourceID = c.sourceID
 		c.mu.Lock()
-		stats.Inventory, stats.DockerStats = c.inventory, c.docker
+		if c.inventoryWindows == windows {
+			stats.Inventory = c.inventory
+		}
+		if !windows {
+			stats.DockerStats = c.docker
+		}
 		c.mu.Unlock()
 		c.publish(monitorUpdate{stats: &stats})
 		previous = &stats
 		retryDelay = 10 * time.Second
-		if !monitorDelay(c.probes, monitorCounterInterval) {
+		if !c.platform.delay(c.probes, interval, windows) {
 			return
 		}
 	}
@@ -398,12 +426,20 @@ func (c *monitorCollector) runInventory() {
 		if !c.awaitActive(c.probes) {
 			return
 		}
+		windows := c.platform.windows.Load()
+		command, interval := monitor.InventoryCommand, monitorInventoryInterval
+		if windows {
+			command, interval = monitor.WindowsInventoryCommand, monitorWindowsInventoryInterval
+		}
 		started := time.Now().UTC()
-		result, err := c.execute(monitor.InventoryCommand, 6*time.Second)
+		result, err := c.execute(command, 6*time.Second)
 		if c.probes.Err() != nil {
 			return
 		}
 		info := monitor.ParseInventory(result.Stdout)
+		if windows {
+			info = monitor.ParseWindowsInventory(result.Stdout, started)
+		}
 		info.Time = started
 		if err != nil || result.ExitCode != 0 {
 			info.ServiceNote = "系统资料读取不完整；实时资源更新继续"
@@ -413,11 +449,12 @@ func (c *monitorCollector) runInventory() {
 			}
 		}
 		c.mu.Lock()
-		if c.ctx.Err() == nil {
+		if c.ctx.Err() == nil && windows == c.platform.windows.Load() {
 			c.inventory = &info
+			c.inventoryWindows = windows
 		}
 		c.mu.Unlock()
-		if !monitorDelay(c.probes, monitorInventoryInterval) {
+		if !c.platform.delay(c.probes, interval, windows) {
 			return
 		}
 	}
@@ -425,11 +462,14 @@ func (c *monitorCollector) runInventory() {
 
 func (c *monitorCollector) runDocker() {
 	for c.probes.Err() == nil {
-		if !c.awaitActive(c.probes) {
+		if c.platform.windows.Load() || !c.awaitActive(c.probes) {
 			return
 		}
 		result, err := c.execute(monitor.DockerStatsCommand, 4*time.Second)
 		if c.probes.Err() != nil {
+			return
+		}
+		if c.platform.windows.Load() {
 			return
 		}
 		snapshot := monitor.ParseDockerSnapshot(result.Stdout)
@@ -439,7 +479,7 @@ func (c *monitorCollector) runDocker() {
 			snapshot.Rows = nil
 		}
 		c.mu.Lock()
-		if c.ctx.Err() == nil {
+		if c.ctx.Err() == nil && !c.platform.windows.Load() {
 			c.docker = &snapshot
 		}
 		c.mu.Unlock()
@@ -447,7 +487,7 @@ func (c *monitorCollector) runDocker() {
 		if snapshot.Status != "ready" {
 			delay = time.Minute
 		}
-		if !monitorDelay(c.probes, delay) {
+		if !c.platform.delay(c.probes, delay, false) {
 			return
 		}
 	}

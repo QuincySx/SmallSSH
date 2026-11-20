@@ -386,7 +386,8 @@ func handleCall(w *Window, ctx context.Context, raw string, trusted bool) {
 		ID int64      `json:"id"`
 		K  string     `json:"k"`
 		M  string     `json:"m"`
-		A  []rawValue `json:"a"` // shares raw
+		A  []rawValue `json:"a"`      // shares raw
+		C  bool       `json:"cancel"` // the page may cancel the call
 	}
 	if err := json.Unmarshal(stringBytes(raw), &m); err != nil {
 		log.Printf("mygo: malformed call from window %d: %v", w.id, err)
@@ -394,7 +395,28 @@ func handleCall(w *Window, ctx context.Context, raw string, trusted bool) {
 	}
 	var result any
 	var err error
-	if !trusted {
+	if m.C {
+		// The page may cancel the call with a signal: the method gets a
+		// context of its own, which the page cancels. The call is
+		// remembered before it is made, so that it is remembered as run
+		// when it ends, unless the page goes away while it runs: a cancel
+		// that comes after the reply left for the page finds the id of a
+		// call that ran, and is dropped.
+		var cancel context.CancelFunc
+		if ctx != nil {
+			ctx, cancel = context.WithCancel(ctx)
+			w.addCancel(m.ID, m.K, cancel)
+		}
+		defer func() {
+			w.removeCancel(m.ID, m.K)
+			if cancel != nil {
+				cancel()
+			}
+		}()
+	}
+	if w.untrusted {
+		err = errors.New("this page is untrusted (PageOptions.Untrusted) and may not call Go methods")
+	} else if !trusted {
 		err = fmt.Errorf("this page is not allowed to call Go methods (see PageOptions.TrustedOrigins)")
 	} else if mi := lookupMethod(m.M); mi == nil {
 		err = notBound(m.M)
@@ -427,8 +449,10 @@ func encodeReply(id int64, token string, result any, err error) message {
 type callerKey struct{}
 
 // CallerWindow returns the window whose page called a bound method, given
-// the context.Context passed to that method: for the page of a web view
-// (WebView), the window it is in. It returns nil for other contexts.
+// the context.Context passed to that method, or whose page made a request
+// to a custom scheme (Protocol), given the request's Context: for the page
+// of a web view (WebView), the window it is in. It returns nil for other
+// contexts.
 func CallerWindow(ctx context.Context) *Window {
 	w, _ := ctx.Value(callerKey{}).(*Window)
 	return w
@@ -438,9 +462,10 @@ func CallerWindow(ctx context.Context) *Window {
 type pageKey struct{}
 
 // CallerPage returns the page that called a bound method, given the
-// context.Context passed to that method: the page of the calling window,
-// or of a web view in it (WebView), whose window CallerWindow returns. It
-// returns nil for other contexts.
+// context.Context passed to that method, or that made a request to a
+// custom scheme (Protocol), given the request's Context: the page of the
+// calling window, or of a web view in it (WebView), whose window
+// CallerWindow returns. It returns nil for other contexts.
 func CallerPage(ctx context.Context) *Page {
 	p, _ := ctx.Value(pageKey{}).(*Page)
 	return p
@@ -485,8 +510,9 @@ func NewEvent[T any](name string) *Event[T] {
 func (e *Event[T]) Name() string { return e.name }
 
 // Emit sends the event to the page shown in w, or to the pages of the web
-// views of a window showing native UI (WebView). Events sent before the
-// page's DOM is ready are delivered once it is.
+// views of a window showing native UI (WebView) but untrusted ones
+// (PageOptions.Untrusted). Events sent before the page's DOM is ready are
+// delivered once it is.
 func (e *Event[T]) Emit(w *Window, payload T) error {
 	msg, err := encodeEvent(e.name, payload)
 	if err != nil {
@@ -495,12 +521,14 @@ func (e *Event[T]) Emit(w *Window, payload T) error {
 	if w.IsDestroyed() {
 		return errDestroyed
 	}
-	if w.content != nil {
+	if w.content {
 		windows.Lock()
 		views := append([]*Window(nil), w.webViews...)
 		windows.Unlock()
 		for _, v := range views {
-			v.enqueue(msg, true)
+			if !v.untrusted {
+				v.enqueue(msg, true)
+			}
 		}
 		return nil
 	}
@@ -522,14 +550,17 @@ func (e *Event[T]) EmitPage(p *Page, payload T) error {
 	return nil
 }
 
-// Broadcast sends the event to every window, and the web views in them.
+// Broadcast sends the event to every window, and the web views in them,
+// but to untrusted pages (PageOptions.Untrusted).
 func (e *Event[T]) Broadcast(payload T) error {
 	msg, err := encodeEvent(e.name, payload)
 	if err != nil {
 		return err
 	}
 	for _, w := range pageWindows() {
-		w.enqueue(msg, true)
+		if !w.untrusted {
+			w.enqueue(msg, true)
+		}
 	}
 	return nil
 }

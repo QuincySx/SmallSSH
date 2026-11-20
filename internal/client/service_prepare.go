@@ -180,7 +180,7 @@ func (p *PreparedOwner) Commit(ctx context.Context) (*OwnerSession, error) {
 		return nil, serviceCallError(ctx, err)
 	}
 	now := time.Now()
-	hasSecrets := len(response.UnlockKey) != 0 || len(response.Proof) != 0
+	hasSecrets := len(response.UnlockKey) != 0 || len(response.Proof) != 0 || len(response.QuickUnlock) != 0
 	clearServiceMessageSecrets(&response)
 
 	ownerInfo := response.OwnerInfo
@@ -398,7 +398,7 @@ func (c ServiceClient) PrepareOwner(ctx context.Context, source UnlockSource, li
 	if err := serviceReceive(ctx, wire, &response); err != nil {
 		return nil, serviceCallError(ctx, err)
 	}
-	hasSecrets := len(response.UnlockKey) != 0 || len(response.Proof) != 0
+	hasSecrets := len(response.UnlockKey) != 0 || len(response.Proof) != 0 || len(response.QuickUnlock) != 0
 	clearServiceMessageSecrets(&response)
 	if response.ErrorCode != "" || response.Error != "" {
 		return nil, errors.New("本地服务拒绝了所有者准备请求")
@@ -468,7 +468,7 @@ func exchangeServiceHello(ctx context.Context, wire *localipc.Wire) (protocol.Se
 	if err := serviceReceive(ctx, wire, &hello); err != nil {
 		return protocol.ServiceMessage{}, serviceCallError(ctx, err)
 	}
-	hasSecrets := len(hello.UnlockKey) != 0 || len(hello.Proof) != 0
+	hasSecrets := len(hello.UnlockKey) != 0 || len(hello.Proof) != 0 || len(hello.QuickUnlock) != 0
 	clearServiceMessageSecrets(&hello)
 	if err := serviceResponseError(hello); err != nil {
 		return protocol.ServiceMessage{}, err
@@ -516,6 +516,8 @@ func clearServiceMessageSecrets(message *protocol.ServiceMessage) {
 	message.UnlockKey = nil
 	clear(message.Proof)
 	message.Proof = nil
+	clear(message.QuickUnlock)
+	message.QuickUnlock = nil
 }
 
 func isLowerHex32(value string) bool {

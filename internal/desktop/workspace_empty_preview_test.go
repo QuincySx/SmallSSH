@@ -26,19 +26,21 @@ func TestWorkspaceEmptySnapshotsWithoutWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, variant := range []struct {
-		name, locale, selected   string
-		width                    int
-		dark, compact, hasServer bool
+		name, locale, selected           string
+		width                            int
+		dark, compact, hasServer, canvas bool
 	}{
-		{"empty-wide", "zh-Hans", "", 1100, false, false, false},
-		{"choose-narrow", "zh-Hans", "", 560, false, false, true},
-		{"selected-wide", "zh-Hans", "example", 1100, false, false, true},
-		{"choose-english", "en", "", 560, false, false, true},
-		{"selected-dark", "zh-Hans", "example", 1100, true, false, true},
-		{"choose-compact", "zh-Hans", "", 1100, false, true, true},
+		{"empty-wide", "zh-Hans", "", 1100, false, false, false, false},
+		{"choose-narrow", "zh-Hans", "", 560, false, false, true, false},
+		{"selected-wide", "zh-Hans", "example", 1100, false, false, true, false},
+		{"choose-english", "en", "", 560, false, false, true, false},
+		{"selected-dark", "zh-Hans", "example", 1100, true, false, true, false},
+		{"choose-compact", "zh-Hans", "", 1100, false, true, true, false},
+		{"choose-canvas-light", "zh-Hans", "", 1280, false, false, true, true},
+		{"choose-canvas-dark", "zh-Hans", "", 1280, true, false, true, true},
 	} {
 		t.Run(variant.name, func(t *testing.T) {
-			a := &app{ctx: context.Background(), online: true, page: 1, selected: variant.selected, sidebarWidth: 190, sidebarHidden: variant.compact}
+			a := &app{ctx: context.Background(), online: true, page: 1, workspaceCanvas: variant.canvas, toolsHidden: variant.canvas, selected: variant.selected, sidebarWidth: 190, sidebarHidden: variant.compact}
 			fixtureDir := filepath.Join(string(filepath.Separator), "SmallSSH-QA")
 			a.localFilePane = newFilePane(localEndpoint, false)
 			a.primaryFilePane = newFilePane(localEndpoint, true)

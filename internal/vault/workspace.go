@@ -65,7 +65,7 @@ func (s *Session) SaveSnippet(file string, value snippet.Command, remove bool) e
 		}
 		values = append(values, value)
 	}
-	copy := &Session{header: s.header, key: s.key, profiles: s.profiles, snippets: values, notes: s.notes, auditHead: s.auditHead}
+	copy := &Session{header: s.header, key: s.key, routes: s.routes, profiles: s.profiles, snippets: values, notes: s.notes, auditHead: s.auditHead}
 	if e := Save(file, copy, false); e != nil {
 		return e
 	}
@@ -78,6 +78,16 @@ func (s *Session) DeleteProfile(file, id string) error {
 	defer s.mu.Unlock()
 	if s.closed {
 		return ErrUnlock
+	}
+	for _, r := range s.routes {
+		if r.Relay == id {
+			return errors.New("服务器仍被已保存线路用作 SSH 中转，请先修改或删除线路")
+		}
+	}
+	for _, p := range s.profiles {
+		if p.ID != id && p.Network.Relay == id {
+			return errors.New("服务器仍被其他连接用作 SSH 中转，请先修改或删除这些连接")
+		}
 	}
 	profiles := make([]Profile, 0, len(s.profiles))
 	found := false
@@ -93,7 +103,7 @@ func (s *Session) DeleteProfile(file, id string) error {
 	}
 	notes := cloneNotes(s.notes)
 	delete(notes, id)
-	copy := &Session{header: s.header, key: s.key, profiles: profiles, snippets: s.snippets, notes: notes, auditHead: s.auditHead}
+	copy := &Session{header: s.header, key: s.key, routes: s.routes, profiles: profiles, snippets: s.snippets, notes: notes, auditHead: s.auditHead}
 	if e := Save(file, copy, false); e != nil {
 		return e
 	}

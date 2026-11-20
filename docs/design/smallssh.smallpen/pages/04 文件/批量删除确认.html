@@ -6,20 +6,20 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[900px] h-[620px] bg-canvas">
-  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
-    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
-      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+  <div data-name="模态承载" class="flex flex-col items-center justify-center gap-space-sm p-dialog-backdrop w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-space-lg p-space-lg w-[480px] h-fit bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-space-sm w-full">
         <p data-name="标题文字" class="w-full text-text type-section">删除所选 3 项？</p>
         <sp-use component="图标按钮" data-name="关闭弹窗">
           <p data-name="图标"></p>
         </sp-use>
       </div>
-      <div data-name="待删项目" class="flex flex-col gap-[8px] w-full">
+      <div data-name="待删项目" class="flex flex-col gap-space-sm w-full">
         <p data-name="目标" class="w-full text-text type-section">Web 生产环境 · /srv/site</p>
         <p data-name="项目" class="w-full text-text type-body">index.html<br>nginx.conf<br>logs（目录）</p>
         <p data-name="提示" class="w-full text-muted type-body">目录仅允许删除空目录；失败项保留并逐项反馈。</p>
       </div>
-      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
         <sp-use component="按钮" props="样式: 普通" data-name="取消">
           <p data-name="文字">取消</p>
         </sp-use>

@@ -20,17 +20,26 @@ func TestWorkspaceChromeOwnsRealTerminalTabs(t *testing.T) {
 	if !ok || header.H != 48 {
 		t.Fatal("missing compact title bar", header)
 	}
-	// A nested split leaves only the group menu in the title bar; each leaf owns
-	// its own tab strip, so pane tabs are no longer asserted inside the chrome.
-	for _, label := range []string{"终端分栏", "显示工具面板", "设置", a.pageSidebarLabel(1)} {
+	// Split workspaces retain global navigation tabs and plain pane headers.
+	// Selecting a top tab focuses the original pane without merging the split.
+	for _, label := range []string{"显示工具面板", "设置", a.pageSidebarLabel(1)} {
 		r, found := tt.Find(label)
 		if !found || r.X < 78 || r.X+r.W > 1220 || r.Y < header.Y || r.Y+r.H > header.Y+header.H {
 			t.Fatalf("%s outside title-bar controls: %v", label, r)
 		}
 	}
+	if _, found := tt.Find("终端分栏"); found {
+		t.Fatal("layout button still occupies the title bar")
+	}
 	for _, label := range []string{"工具面板放到右侧", "工具面板放到底部"} {
 		if _, found := tt.Find(label); found {
 			t.Fatal("dock placement remains duplicated in the title bar", label)
+		}
+	}
+	for _, label := range []string{"顶部标签：First", "顶部标签：Second"} {
+		r, found := tt.Find(label)
+		if !found || r.X < header.X || r.X+r.W > header.X+header.W || r.Y < header.Y || r.Y+r.H > header.Y+header.H {
+			t.Fatal("split workspace lost a global title-bar tab", label, r)
 		}
 	}
 	for _, pane := range []struct {
@@ -38,18 +47,18 @@ func TestWorkspaceChromeOwnsRealTerminalTabs(t *testing.T) {
 		group *terminalGroup
 	}{{"First", left}, {"Second", right}} {
 		box, found := tt.Find(fmt.Sprintf("终端组%d", pane.group.id))
-		r, ok := tt.Find(pane.label)
+		r, ok := tt.Find("关闭标签：" + pane.label)
 		if !found || !ok || r.X < box.X || r.X+r.W > box.X+box.W || r.Y < box.Y || r.Y+r.H > box.Y+box.H {
 			t.Fatalf("%s stayed outside its own group header: tab=%v group=%v", pane.label, r, box)
 		}
 	}
-	if err := tt.Click("First"); err != nil || a.currentTerminal() != first || left.active != first {
+	if err := tt.Click("顶部标签：First"); err != nil || a.currentTerminal() != first || left.active != first {
 		t.Fatal("left group tab did not activate", err, a.currentTerminal(), left.active)
 	}
-	if err := tt.Click("Second"); err != nil || a.currentTerminal() != second || right.active != second {
+	if err := tt.Click("顶部标签：Second"); err != nil || a.currentTerminal() != second || right.active != second {
 		t.Fatal("right group tab did not activate", err, a.currentTerminal(), right.active)
 	}
-	if err := tt.RightClick("Second"); err != nil || len(tt.Menu()) == 0 {
+	if err := tt.RightClick("顶部标签：Second"); err != nil || len(tt.Menu()) == 0 {
 		t.Fatal("terminal context menu missing", err)
 	}
 	if len(a.sessions) != 2 || a.terminalLayout == nil || a.sessions[0] != first || a.sessions[1] != second ||
@@ -100,5 +109,29 @@ func TestWorkspaceChromeFileTabKeepsTerminalTabs(t *testing.T) {
 	}
 	if _, ok := tt.Find("First"); !ok {
 		t.Fatal("terminal tab did not return after the file tab closed")
+	}
+}
+
+func TestWorkspacePresentationRemainsInTabContextMenu(t *testing.T) {
+	a := workspaceModelFixture(2)
+	a.toolsHidden = true
+	second := a.sessions[1]
+	tt := ui.NewTester(a.view, 1280, 900)
+	for _, mode := range []struct {
+		label  string
+		canvas bool
+	}{{"平铺为画布", true}, {"聚合为标签", false}} {
+		if err := rightClickWorkspaceTab(tt, a, workspaceTab{session: second}); err != nil {
+			t.Fatal(err)
+		}
+		if err := tt.ChooseMenuItem(mode.label); err != nil {
+			t.Fatal(err)
+		}
+		if a.workspaceCanvas != mode.canvas || a.currentTerminal() != second || len(a.sessions) != 2 {
+			t.Fatal("context menu changed sessions or selected the wrong view")
+		}
+		if _, ok := tt.Find("终端分栏"); ok {
+			t.Fatal("presentation restored the removed icon")
+		}
 	}
 }

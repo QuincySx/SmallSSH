@@ -14,36 +14,39 @@ import (
 	"errors"
 	"sshclient/internal/connectcfg"
 	"sshclient/internal/fileattrs"
+	"sshclient/internal/operationrisk"
 	"sshclient/internal/serverops"
 	"sync"
 	"time"
 )
 
 var ErrDenied = errors.New("请求未获批准、已到期或已撤销")
+var ErrReviewPending = errors.New("相同操作正在等待确认，请等待原请求；不会重复执行")
 
 type Operation struct {
-	Tunnel          connectcfg.Tunnel        `json:"tunnel,omitzero"`
-	Docker          serverops.DockerRequest  `json:"docker,omitzero"`
-	Compose         serverops.ComposeRequest `json:"compose,omitzero"`
-	Attributes      fileattrs.Change         `json:"attributes,omitzero"`
-	Grant           GrantScope               `json:"grant,omitzero"`
-	ServerStatus    bool                     `json:"serverStatus,omitempty"`
-	TransferID      string                   `json:"transferId,omitempty"`
-	Size            int64                    `json:"size,omitempty"`
-	Offset          int64                    `json:"offset,omitempty"`
-	PrefixHash      string                   `json:"prefixHash,omitempty"`
-	Host            string                   `json:"host"`
-	Kind            string                   `json:"kind"`
-	Command         string                   `json:"command,omitempty"`
-	Path            string                   `json:"path,omitempty"`
-	Destination     string                   `json:"destination,omitempty"`
-	Mode            uint32                   `json:"mode,omitempty"`
-	ContentHash     string                   `json:"contentHash,omitempty"`
-	OriginalHash    string                   `json:"originalHash,omitempty"`
-	Endpoint        string                   `json:"endpoint,omitempty"`
-	HostFingerprint string                   `json:"hostFingerprint,omitempty"`
-	PathProtection  bool                     `json:"pathProtection,omitempty"`
-	Client          string                   `json:"client"`
+	Route           connectcfg.RouteSelection `json:"route,omitzero"`
+	Tunnel          connectcfg.Tunnel         `json:"tunnel,omitzero"`
+	Docker          serverops.DockerRequest   `json:"docker,omitzero"`
+	Compose         serverops.ComposeRequest  `json:"compose,omitzero"`
+	Attributes      fileattrs.Change          `json:"attributes,omitzero"`
+	Grant           GrantScope                `json:"grant,omitzero"`
+	ServerStatus    bool                      `json:"serverStatus,omitempty"`
+	TransferID      string                    `json:"transferId,omitempty"`
+	Size            int64                     `json:"size,omitempty"`
+	Offset          int64                     `json:"offset,omitempty"`
+	PrefixHash      string                    `json:"prefixHash,omitempty"`
+	Host            string                    `json:"host"`
+	Kind            string                    `json:"kind"`
+	Command         string                    `json:"command,omitempty"`
+	Path            string                    `json:"path,omitempty"`
+	Destination     string                    `json:"destination,omitempty"`
+	Mode            uint32                    `json:"mode,omitempty"`
+	ContentHash     string                    `json:"contentHash,omitempty"`
+	OriginalHash    string                    `json:"originalHash,omitempty"`
+	Endpoint        string                    `json:"endpoint,omitempty"`
+	HostFingerprint string                    `json:"hostFingerprint,omitempty"`
+	PathProtection  bool                      `json:"pathProtection,omitempty"`
+	Client          string                    `json:"client"`
 }
 
 // Peer is the process the local socket reported, not a caller-written label.
@@ -57,30 +60,36 @@ type Peer struct {
 }
 
 type Request struct {
-	Renewal bool `json:"renewal,omitempty"`
+	Activity *GrantActivity `json:"activity,omitempty"`
+	Renewal  bool           `json:"renewal,omitempty"`
 	// Renewals counts how many times this grant has been extended. An authority
 	// that keeps being extended is worth seeing in the review and in the log.
-	Renewals     int       `json:"renewals,omitempty"`
-	ParentID     string    `json:"parentId,omitempty"`
-	OwnerIssued  bool      `json:"ownerIssued,omitempty"`
-	OwnerSession bool      `json:"ownerSession,omitempty"`
-	ID           string    `json:"id"`
-	Nonce        string    `json:"nonce"`
-	Peer         Peer      `json:"peer,omitzero"`
-	Operation    Operation `json:"operation"`
-	Expires      time.Time `json:"expires"`
-	Status       string    `json:"status"`
+	Renewals         int       `json:"renewals,omitempty"`
+	ParentID         string    `json:"parentId,omitempty"`
+	ParentGeneration string    `json:"parentGeneration,omitempty"`
+	MediumReview     bool      `json:"mediumReview,omitempty"`
+	OwnerIssued      bool      `json:"ownerIssued,omitempty"`
+	OwnerSession     bool      `json:"ownerSession,omitempty"`
+	ID               string    `json:"id"`
+	Nonce            string    `json:"nonce"`
+	Peer             Peer      `json:"peer,omitzero"`
+	Operation        Operation `json:"operation"`
+	Expires          time.Time `json:"expires"`
+	Status           string    `json:"status"`
 }
 type entry struct {
 	// bucket is the caller identity the broker established for this request.
-	bucket      string
-	renewedFrom string
-	dormantAt   time.Time
-	lastUsed    time.Time
-	request     Request
-	ticketHash  [32]byte
-	used        bool
-	cancel      context.CancelFunc
+	bucket               string
+	renewedFrom          string
+	dormantAt            time.Time
+	lastUsed             time.Time
+	approvedAt           time.Time
+	idleOverride         *int
+	mediumReviewOverride *bool
+	request              Request
+	ticketHash           [32]byte
+	used                 bool
+	cancel               context.CancelFunc
 }
 type Manager struct {
 	expired     []Request
@@ -115,24 +124,25 @@ const maxPendingPerClient = 16
 
 func canonical(r Request) []byte {
 	r.Status = ""
+	r.Activity = nil
 	b, _ := json.Marshal(r)
 	return append([]byte("ssh-client/request/v1\x00"), b...)
 }
 func (m *Manager) Create(op Operation, ttl time.Duration) (Request, string, error) {
-	return m.create(op, ttl, false, "")
+	return m.create(op, ttl, false, "", "")
 }
 
 // CreateFrom is Create for a caller the broker could identify itself, such as the
 // process on the other end of the local socket. Its share of the queue is counted
 // by that identity, so renaming the caller does not buy another sixteen slots.
 func (m *Manager) CreateFrom(op Operation, ttl time.Duration, bucket string) (Request, string, error) {
-	return m.create(op, ttl, false, bucket)
+	return m.create(op, ttl, false, bucket, "")
 }
 
 // CreateFromPeer is CreateFrom for a caller the broker identified on the local
 // socket: the owner sees the process, not only the label it typed.
 func (m *Manager) CreateFromPeer(op Operation, ttl time.Duration, bucket string, peer Peer) (Request, string, error) {
-	r, t, err := m.create(op, ttl, false, bucket)
+	r, t, err := m.create(op, ttl, false, bucket, "")
 	if err != nil {
 		return r, t, err
 	}
@@ -148,14 +158,14 @@ func (m *Manager) CreateFromPeer(op Operation, ttl time.Duration, bucket string,
 // CreateOwner is reached only after the broker verifies a signed one-use
 // owner challenge. Caller labels cannot select this scope.
 func (m *Manager) CreateOwner(op Operation) (Request, string, error) {
-	return m.create(op, 15*time.Minute, true, "")
+	return m.create(op, 15*time.Minute, true, "", "")
 }
 
 // CreateOwnerFromPeer is CreateOwner for a caller the broker identified on the
 // local socket. The peer is supplied from the accepted connection, never from
 // an operation or request field written by the client.
 func (m *Manager) CreateOwnerFromPeer(op Operation, peer Peer) (Request, string, error) {
-	r, t, err := m.create(op, 15*time.Minute, true, "")
+	r, t, err := m.create(op, 15*time.Minute, true, "", "")
 	if err != nil {
 		return r, t, err
 	}
@@ -168,7 +178,10 @@ func (m *Manager) CreateOwnerFromPeer(op Operation, peer Peer) (Request, string,
 	return r, t, nil
 }
 
-func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket string) (Request, string, error) {
+func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket, parentID string) (Request, string, error) {
+	if !owner && op.Route.Temporary() {
+		return Request{}, "", errors.New("本次线路仅允许已验证的所有者操作")
+	}
 	if err := validateFields(op); err != nil {
 		return Request{}, "", err
 	}
@@ -214,6 +227,9 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket str
 			return Request{}, "", err
 		}
 	case "grant":
+		if op.Grant.SkipMediumReview {
+			return Request{}, "", ErrDenied
+		}
 		if owner || op.Command != "" || op.Path != "" || op.Destination != "" || op.ServerStatus || op.ContentHash != "" || op.OriginalHash != "" || op.TransferID != "" || op.Size != 0 || op.Offset != 0 || op.Mode != 0 {
 			return Request{}, "", errors.New("会话授权只能指定服务器和授权范围")
 		}
@@ -245,7 +261,7 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket str
 		if op.Kind == "replace" && op.OriginalHash == "" {
 			return Request{}, "", errors.New("覆盖保存需绑定原文件SHA256")
 		}
-	case "shell", "monitor":
+	case "shell", "monitor", "upgrade-preview":
 		if op.Kind == "monitor" && op.Command != "" {
 			return Request{}, "", errors.New("监控仅运行固定采样命令")
 		}
@@ -258,6 +274,26 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket str
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune()
+	var parent *entry
+	if parentID != "" {
+		parent = m.pending[parentID]
+		if parent == nil || !grantAllows(parent.request, op) {
+			return Request{}, "", ErrDenied
+		}
+		bucket = parent.bucket
+		if parent.request.Operation.Grant.Permission == "guarded" {
+			candidate := op
+			candidate.Client = ""
+			for _, existing := range m.pending {
+				previous := existing.request.Operation
+				previous.Client = ""
+				if existing.request.ParentID == parentID && existing.request.Status == "pending" && previous == candidate {
+					return Request{}, "", ErrReviewPending
+				}
+			}
+		}
+		ttl = min(ttl, parent.request.Expires.Sub(m.now()))
+	}
 	if len(m.pending) >= 128 {
 		// Finished history must not block normal directory browsing or transfers.
 		// Pending, approved and running authority is never evicted.
@@ -296,15 +332,31 @@ func (m *Manager) create(op Operation, ttl time.Duration, owner bool, bucket str
 		}
 	}
 	r := Request{OwnerIssued: owner, OwnerSession: owner && (op.Kind == "shell" || op.Kind == "tunnel" || op.Kind == "docker-terminal" || op.Kind == "docker-logs" && op.Docker.Follow), ID: token(), Nonce: token(), Operation: op, Expires: m.now().Add(ttl).UTC(), Status: "pending"}
+	if parent != nil {
+		r.ParentID, r.Peer = parentID, parent.request.Peer
+		r.Expires = minTime(r.Expires, parent.request.Expires)
+		scope := parent.request.Operation.Grant
+		if scope.Permission == "guarded" {
+			r.MediumReview = parent.confirmsMediumReview()
+			r.ParentGeneration = parent.request.Generation()
+		}
+		if scope.Permission != "guarded" || operationrisk.Assess(op.Kind, op.Command, op.Path, op.Destination).Level == operationrisk.Low ||
+			!r.MediumReview && operationrisk.ReviewOptionalMutation(op.Kind, op.Path, op.Destination) {
+			r.Status = "approved"
+		}
+		if r.Status == "approved" {
+			parent.lastUsed = m.now()
+		}
+	}
 	t := token()
 	m.pending[r.ID] = &entry{request: r, ticketHash: sha256.Sum256([]byte(t)), bucket: bucket}
 	return r, t, nil
 }
 func (m *Manager) prune() {
 	for id, e := range m.pending {
-		if e.request.Operation.Kind == "grant" && (!m.now().Before(e.request.Expires) || e.request.Status == "approved" && !m.now().Before(e.lastUsed.Add(time.Duration(e.request.Operation.Grant.IdleSeconds)*time.Second))) {
+		if e.request.Operation.Kind == "grant" && (!m.now().Before(e.request.Expires) || e.request.Status == "approved" && e.idleSeconds() > 0 && !m.now().Before(e.lastUsed.Add(time.Duration(e.idleSeconds())*time.Second))) {
 			if e.request.Status == "pending" || e.request.Status == "approved" {
-				r := e.request
+				r := e.snapshot()
 				r.Status = "expired"
 				m.expired = append(m.expired, r)
 			}
@@ -312,7 +364,7 @@ func (m *Manager) prune() {
 			delete(m.pending, id)
 			// Preserve the old approved scope after natural expiry or an
 			// unanswered renewal. Denial and revocation never enable renewal.
-			if e.request.Status == "approved" || e.request.Status == "pending" && e.request.Renewal {
+			if e.request.Operation.Grant.Permission != MaintenancePermission && (e.request.Status == "approved" || e.request.Status == "pending" && e.request.Renewal) {
 				e.request.Status = "expired"
 				e.dormantAt = m.now()
 				m.dormant[id] = e
@@ -321,7 +373,7 @@ func (m *Manager) prune() {
 		}
 		if !(e.request.OwnerSession && e.request.Status == "running") && !m.now().Before(e.request.Expires) {
 			if e.request.Status == "pending" || e.request.Status == "approved" || e.request.Status == "running" {
-				r := e.request
+				r := e.snapshot()
 				r.Status = "expired"
 				m.expired = append(m.expired, r)
 			}
@@ -388,7 +440,7 @@ func (m *Manager) List() []Request {
 	m.prune()
 	out := make([]Request, 0, len(m.pending))
 	for _, e := range m.pending {
-		out = append(out, e.request)
+		out = append(out, e.snapshot())
 	}
 	return out
 }
@@ -400,7 +452,7 @@ func (m *Manager) Get(id string) (Request, error) {
 	if !ok {
 		return Request{}, ErrDenied
 	}
-	return e.request, nil
+	return e.snapshot(), nil
 }
 
 // A ticket grants visibility only into its own operation, including after it
@@ -417,7 +469,7 @@ func (m *Manager) GetForTicket(id, ticket string) (Request, error) {
 	if e == nil || ticket == "" || !hmac.Equal(h[:], e.ticketHash[:]) {
 		return Request{}, ErrDenied
 	}
-	return e.request, nil
+	return e.snapshot(), nil
 }
 func Proof(r Request, prove func([]byte) ([]byte, error)) ([]byte, error) { return prove(canonical(r)) }
 func (m *Manager) Decide(id string, allow bool, proof []byte) error {
@@ -431,6 +483,10 @@ const MaxGrantLifetime = 24 * 60 * 60
 // DecideWithLifetime verifies the owner's chosen duration on a copy before
 // committing the decision. A zero lifetime keeps the requested one.
 func (m *Manager) DecideWithLifetime(id string, allow bool, lifetimeSeconds, idleSeconds int, proof []byte) error {
+	return m.DecideWithTerms(id, allow, lifetimeSeconds, idleSeconds, false, proof)
+}
+
+func (m *Manager) DecideWithTerms(id string, allow bool, lifetimeSeconds, idleSeconds int, skipMediumReview bool, proof []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune()
@@ -439,6 +495,20 @@ func (m *Manager) DecideWithLifetime(id string, allow bool, lifetimeSeconds, idl
 		return ErrDenied
 	}
 	reviewed := e.request
+	if skipMediumReview {
+		if !allow || reviewed.Operation.Kind != "grant" || reviewed.Operation.Grant.Permission != "guarded" {
+			return ErrDenied
+		}
+	}
+	if allow && reviewed.Operation.Kind == "grant" {
+		reviewed.Operation.Grant.SkipMediumReview = skipMediumReview
+	}
+	if reviewed.ParentID != "" {
+		parent := m.pending[reviewed.ParentID]
+		if parent == nil || !grantAllows(parent.request, reviewed.Operation) {
+			return ErrDenied
+		}
+	}
 	if allow && lifetimeSeconds > 0 {
 		if reviewed.Operation.Kind != "grant" || lifetimeSeconds < 60 || lifetimeSeconds > MaxGrantLifetime {
 			return ErrDenied
@@ -470,6 +540,13 @@ func (m *Manager) DecideWithLifetime(id string, allow bool, lifetimeSeconds, idl
 		if e.request.Operation.Kind == "grant" {
 			e.request.Expires = m.now().Add(time.Duration(e.request.Operation.Grant.LifetimeSeconds) * time.Second).UTC()
 			e.lastUsed = m.now()
+			e.approvedAt = m.now()
+			e.idleOverride = nil
+			e.mediumReviewOverride = nil
+		} else if parent := m.pending[e.request.ParentID]; parent != nil {
+			// A fresh owner decision is activity; merely queueing an
+			// unapproved request must not keep an idle session alive.
+			parent.lastUsed = m.now()
 		}
 	} else {
 		e.request.Status = "denied"

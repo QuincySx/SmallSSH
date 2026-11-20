@@ -6,28 +6,28 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[960px] h-[660px] bg-canvas">
-  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
-    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
-      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+  <div data-name="模态承载" class="flex flex-col gap-space-sm p-dialog-backdrop w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-space-lg p-space-lg w-full h-full bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-space-sm w-full">
         <p data-name="标题文字" class="w-full text-text type-section">更新 Compose 项目</p>
         <sp-use component="图标按钮" data-name="关闭弹窗">
           <p data-name="图标"></p>
         </sp-use>
       </div>
-      <div data-name="更新内容" class="flex flex-col gap-[8px] w-full">
+      <div data-name="更新内容" class="flex flex-col gap-space-sm w-full">
         <p data-name="目标" class="w-full text-text type-section">Web 生产环境 · site</p>
-        <div data-name="数据表" class="flex flex-col gap-[2px] w-full">
-          <div data-name="表头" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+        <div data-name="数据表" class="flex flex-col gap-data-row w-full">
+          <div data-name="表头" class="flex flex-row items-center gap-space-sm px-space-sm w-full h-[32px]">
             <p data-name="列0" class="w-full text-muted type-detail">服务</p>
             <p data-name="列1" class="w-[110px] text-muted type-detail">当前镜像</p>
             <p data-name="列2" class="w-[110px] text-muted type-detail">计划镜像</p>
           </div>
-          <div data-name="行0" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+          <div data-name="行0" class="flex flex-row items-center gap-space-sm px-space-sm w-full h-[32px]">
             <p data-name="列0" class="w-full text-text type-body">web</p>
             <p data-name="列1" class="w-[110px] text-text type-body">nginx:stable</p>
             <p data-name="列2" class="w-[110px] text-text type-body">nginx:stable</p>
           </div>
-          <div data-name="行1" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
+          <div data-name="行1" class="flex flex-row items-center gap-space-sm px-space-sm w-full h-[32px]">
             <p data-name="列0" class="w-full text-text type-body">cache</p>
             <p data-name="列1" class="w-[110px] text-text type-body">redis:7</p>
             <p data-name="列2" class="w-[110px] text-text type-body">redis:7</p>
@@ -35,7 +35,7 @@
         </div>
         <p data-name="确认" class="w-full text-muted type-body">下载 → 再次核对计划 → 重建所选服务</p>
       </div>
-      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
         <sp-use component="按钮" props="样式: 普通" data-name="取消">
           <p data-name="文字">取消</p>
         </sp-use>

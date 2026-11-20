@@ -81,13 +81,13 @@ func TestRenewalApprovalMakesExpiredStateAndOriginalScopeClear(t *testing.T) {
 		if permission == "full" {
 			button = "续期完整控制"
 		}
-		for _, label := range []string{"会话已过期，允许续期？", "个人服务器 · deploy@192.0.2.10:22", "2 小时", r.Operation.Grant.PairingCode(), "授权方式：触控 ID"} {
+		for _, label := range []string{"会话已过期，允许续期？", "个人服务器 · deploy@192.0.2.10:22", "2 小时", r.Operation.Grant.PairingCode(), "改用保险库主密码"} {
 			bounds, ok := tt.Find(label)
 			if !ok || bounds.X < 0 || bounds.X+bounds.W > 380 || bounds.Y+bounds.H > 620 {
 				t.Fatal("renewal control missing or clipped", permission, label, bounds)
 			}
 		}
-		if reason := approvalAuthReason(r); reason != button+" · deploy@192.0.2.10:22" {
+		if reason := approvalAuthReason(r); reason != "服务器操作授权 · "+button+" · deploy@192.0.2.10:22" {
 			t.Fatal("OS prompt did not say renewal", reason)
 		}
 	}

@@ -2,6 +2,7 @@
 package transfer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,33 +17,37 @@ import (
 	"sort"
 	"sshclient/internal/approval"
 	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/localipc"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/vault"
 	"sync"
 	"time"
 )
 
 type Job struct {
-	ID              string    `json:"id"`
-	Host            string    `json:"host"`
-	Direction       string    `json:"direction"`
-	Local           string    `json:"local"`
-	Remote          string    `json:"remote"`
-	Hash            string    `json:"hash"`
-	Size            int64     `json:"size"`
-	Bytes           int64     `json:"bytes"`
-	Speed           float64   `json:"speed"`
-	State           string    `json:"state"`
-	Error           string    `json:"error,omitempty"`
-	RequestID       string    `json:"requestId,omitempty"`
-	Created         time.Time `json:"created"`
-	Directory       bool      `json:"directory,omitempty"`
-	ParentID        string    `json:"parentId,omitempty"`
-	Endpoint        string    `json:"endpoint,omitempty"`
-	HostFingerprint string    `json:"hostFingerprint,omitempty"`
-	Phase           string    `json:"phase,omitempty"`
-	FilesDone       int       `json:"filesDone,omitempty"`
-	FilesTotal      int       `json:"filesTotal,omitempty"`
+	Route           connectcfg.RouteSelection `json:"route,omitzero"`
+	ID              string                    `json:"id"`
+	Host            string                    `json:"host"`
+	Direction       string                    `json:"direction"`
+	Local           string                    `json:"local"`
+	Remote          string                    `json:"remote"`
+	Hash            string                    `json:"hash"`
+	Size            int64                     `json:"size"`
+	Bytes           int64                     `json:"bytes"`
+	Speed           float64                   `json:"speed"`
+	State           string                    `json:"state"`
+	Error           string                    `json:"error,omitempty"`
+	RequestID       string                    `json:"requestId,omitempty"`
+	Created         time.Time                 `json:"created"`
+	Directory       bool                      `json:"directory,omitempty"`
+	ParentID        string                    `json:"parentId,omitempty"`
+	Endpoint        string                    `json:"endpoint,omitempty"`
+	HostFingerprint string                    `json:"hostFingerprint,omitempty"`
+	Backup          string                    `json:"backup,omitempty"`
+	Phase           string                    `json:"phase,omitempty"`
+	FilesDone       int                       `json:"filesDone,omitempty"`
+	FilesTotal      int                       `json:"filesTotal,omitempty"`
 }
 type Manager struct {
 	dir    string
@@ -53,7 +58,7 @@ type Manager struct {
 }
 
 func (j Job) checkTarget(actual approval.Operation) error {
-	if actual.Host != j.Host || j.Endpoint != "" && actual.Endpoint != j.Endpoint || j.HostFingerprint != "" && actual.HostFingerprint != j.HostFingerprint {
+	if actual.Host != j.Host || actual.Route != j.Route || j.Endpoint != "" && actual.Endpoint != j.Endpoint || j.HostFingerprint != "" && actual.HostFingerprint != j.HostFingerprint {
 		return errors.New("连接目标已变化，请重新创建传输任务")
 	}
 	return nil
@@ -107,16 +112,23 @@ func (m *Manager) read(id string) (Job, error) {
 		return Job{}, e
 	}
 	defer f.Close()
+	return readJob(f, id)
+}
+
+func readJob(r io.Reader, id string) (Job, error) {
 	var j Job
-	if e = json.NewDecoder(io.LimitReader(f, 65537)).Decode(&j); e != nil {
+	if e := json.NewDecoder(io.LimitReader(r, 65537)).Decode(&j); e != nil {
 		return j, e
+	}
+	if err := j.Route.Validate(); err != nil {
+		return j, err
 	}
 	if j.ID != id || (j.Direction != "upload" && j.Direction != "download") || !filepath.IsAbs(j.Local) || j.Size < 0 || j.Directory && (j.Direction != "download" || j.ParentID != "") || j.ParentID != "" && !validID.MatchString(j.ParentID) {
 		return j, errors.New("传输记录无效")
 	}
 	return j, nil
 }
-func (m *Manager) Add(host, direction, local, remote string) (Job, error) {
+func (m *Manager) Add(host, direction, local, remote string, route ...connectcfg.RouteSelection) (Job, error) {
 	if host == "" || (direction != "upload" && direction != "download") {
 		return Job{}, errors.New("请选择服务器和传输方向")
 	}
@@ -125,6 +137,12 @@ func (m *Manager) Add(host, direction, local, remote string) (Job, error) {
 		return Job{}, e
 	}
 	j := Job{ID: vault.ShortID(), Host: host, Direction: direction, Local: abs, Remote: remote, State: "queued", Created: time.Now().UTC()}
+	if len(route) != 0 {
+		j.Route = route[0]
+	}
+	if err := j.Route.Validate(); err != nil {
+		return Job{}, err
+	}
 	if direction == "upload" {
 		f, e := os.Open(abs)
 		if e != nil {
@@ -155,6 +173,11 @@ func (m *Manager) Add(host, direction, local, remote string) (Job, error) {
 	if e = localipc.Prepare(m.dir); e != nil {
 		return j, e
 	}
+	release, e := m.lockMetadata(context.Background())
+	if e != nil {
+		return j, e
+	}
+	defer release()
 	if e = m.save(j); e != nil {
 		return j, e
 	}
@@ -175,12 +198,15 @@ func (m *Manager) List() []Job {
 		}
 		j, err := m.read(e.Name())
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				m.reclaimTombstone(e.Name())
+			}
 			continue
 		}
 		if current, ok := live[j.ID]; ok {
 			j = current
 		} else if j.State == "running" || j.State == "waiting" {
-			if release, e := localipc.Acquire(m.jobDir(j.ID)); e == nil {
+			if release, e := m.lockJob(context.Background(), j.ID); e == nil {
 				release()
 				j.State = "paused"
 				j.Speed = 0
@@ -234,6 +260,21 @@ func (m *Manager) RunWithOwner(parent context.Context, id, label string, owner c
 	return m.run(parent, id, label, owner)
 }
 
+// ReplaceUploadWithOwner applies a one-time confirmation to an exact failed
+// upload. Subsequent retries always go through ordinary no-clobber upload.
+func (m *Manager) ReplaceUploadWithOwner(ctx context.Context, job Job, originalHash, label string, owner client.OwnerProof) error {
+	if !client.HasOwnerProof(owner) || job.Direction != "upload" || job.State != "error" ||
+		job.Error != sshdata.ErrUploadTargetExists.Error() || job.Endpoint == "" || job.HostFingerprint == "" || originalHash == "" {
+		return errors.New("覆盖确认无效，请重新上传")
+	}
+	return m.run(ctx, job.ID, label, owner, runOptions{replacement: &uploadReplacement{job: job, originalHash: originalHash}})
+}
+
+type uploadReplacement struct {
+	job          Job
+	originalHash string
+}
+
 // freshUploadFallback reports whether a refused resumed upload may be retried as
 // a bounded first-time upload: never for the owner, never for a download.
 func freshUploadFallback(kind string, owner client.OwnerProof, direction string, err error) bool {
@@ -241,16 +282,17 @@ func freshUploadFallback(kind string, owner client.OwnerProof, direction string,
 }
 
 type runOptions struct {
-	root     *os.Root
-	base     string
-	progress func(Job)
+	root        *os.Root
+	base        string
+	progress    func(Job)
+	replacement *uploadReplacement
 }
 
 func (m *Manager) run(parent context.Context, id, label string, owner client.OwnerProof, options ...runOptions) (err error) {
 	if !validID.MatchString(id) {
 		return errors.New("无效传输 ID")
 	}
-	release, e := localipc.Acquire(m.jobDir(id))
+	release, e := m.lockJob(parent, id)
 	if e != nil {
 		return errors.New("该任务正在另一处运行")
 	}
@@ -259,12 +301,24 @@ func (m *Manager) run(parent context.Context, id, label string, owner client.Own
 	if e != nil {
 		return e
 	}
-	if j.State == "done" {
-		return nil
+	if d := m.client.Delegation; d != nil && d.Permission == approval.MaintenancePermission {
+		if j.Direction != "download" || j.Host != d.Host || !approval.WithinRoot(d.ReadRoot, j.Remote) || j.Endpoint != d.Endpoint || j.HostFingerprint != d.HostFingerprint {
+			return errors.New("备份任务不在本次维护范围或服务器身份已变化")
+		}
 	}
+	if j.Route.Temporary() && !client.HasOwnerProof(owner) {
+		return errors.New("本次线路传输需由已解锁的桌面继续")
+	}
+	parent = client.WithRoute(parent, j.Host, j.Route)
 	var option runOptions
 	if len(options) != 0 {
 		option = options[0]
+	}
+	if option.replacement != nil && j != option.replacement.job {
+		return errors.New("传输任务已变化，请重新确认")
+	}
+	if j.State == "done" {
+		return nil
 	}
 	if j.ParentID != "" && option.root == nil {
 		return errors.New("目录内文件只能从所属下载任务继续")
@@ -418,6 +472,11 @@ func (m *Manager) run(parent context.Context, id, label string, owner client.Own
 		kind = "get-resume"
 	}
 	op := approval.Operation{Host: j.Host, Endpoint: j.Endpoint, HostFingerprint: j.HostFingerprint, Kind: kind, Path: j.Remote, Client: label, TransferID: j.ID, Size: j.Size, Offset: offset, ContentHash: j.Hash, PrefixHash: prefix}
+	if option.replacement != nil {
+		kind = "replace"
+		op.Kind, op.OriginalHash = kind, option.replacement.originalHash
+		op.TransferID, op.Size = "", 0
+	}
 	var r approval.Request
 	var ticket string
 	if client.HasOwnerProof(owner) {
@@ -445,6 +504,9 @@ func (m *Manager) run(parent context.Context, id, label string, owner client.Own
 	if e = j.checkTarget(r.Operation); e != nil {
 		return e
 	}
+	if j.Direction == "upload" {
+		j.Endpoint, j.HostFingerprint = r.Operation.Endpoint, r.Operation.HostFingerprint
+	}
 	// ctx owns the private request connection. Cancelling it revokes authority
 	// at the broker; a new connection with the old ticket cannot withdraw it.
 	j.State = "waiting"
@@ -466,35 +528,38 @@ func (m *Manager) run(parent context.Context, id, label string, owner client.Own
 		return e
 	}
 	defer stream.Close()
-	if stream.Meta == nil {
-		return errors.New("代理没有返回续传校验信息")
+	j.Bytes = 0
+	if kind != "replace" {
+		if stream.Meta == nil {
+			return errors.New("代理没有返回续传校验信息")
+		}
+		meta := *stream.Meta
+		if meta.Offset < 0 || meta.Size < 0 || meta.Offset > meta.Size {
+			return errors.New("代理返回的续传位置无效")
+		}
+		if j.Direction == "upload" {
+			if meta.Size != j.Size || meta.Hash != j.Hash {
+				return errors.New("上传元数据与批准内容不同")
+			}
+			h := sha256.New()
+			if _, e = io.CopyN(h, local, meta.Offset); e != nil {
+				return e
+			}
+			if hex.EncodeToString(h.Sum(nil)) != meta.PrefixHash {
+				return errors.New("远程部分文件与本地前缀不匹配，请新建任务")
+			}
+		} else {
+			if meta.Offset != offset || (j.Hash != "" && meta.Hash != j.Hash) {
+				return errors.New("远程源文件在两次传输之间发生变化")
+			}
+			if j.ParentID != "" && meta.Size != j.Size {
+				return errors.New("目录内源文件大小已变化，请新建下载任务")
+			}
+			j.Hash = meta.Hash
+			j.Size = meta.Size
+		}
+		j.Bytes = meta.Offset
 	}
-	meta := *stream.Meta
-	if meta.Offset < 0 || meta.Size < 0 || meta.Offset > meta.Size {
-		return errors.New("代理返回的续传位置无效")
-	}
-	if j.Direction == "upload" {
-		if meta.Size != j.Size || meta.Hash != j.Hash {
-			return errors.New("上传元数据与批准内容不同")
-		}
-		h := sha256.New()
-		if _, e = io.CopyN(h, local, meta.Offset); e != nil {
-			return e
-		}
-		if hex.EncodeToString(h.Sum(nil)) != meta.PrefixHash {
-			return errors.New("远程部分文件与本地前缀不匹配，请新建任务")
-		}
-	} else {
-		if meta.Offset != offset || (j.Hash != "" && meta.Hash != j.Hash) {
-			return errors.New("远程源文件在两次传输之间发生变化")
-		}
-		if j.ParentID != "" && meta.Size != j.Size {
-			return errors.New("目录内源文件大小已变化，请新建下载任务")
-		}
-		j.Hash = meta.Hash
-		j.Size = meta.Size
-	}
-	j.Bytes = meta.Offset
 	j.State = "running"
 	if e = update(true); e != nil {
 		return e
@@ -531,9 +596,15 @@ func (m *Manager) run(parent context.Context, id, label string, owner client.Own
 		if e = stream.End(); e != nil {
 			return e
 		}
-		if _, _, e = stream.Copy(io.Discard, io.Discard); e != nil {
+		var backup bytes.Buffer
+		var output io.Writer = io.Discard
+		if kind == "replace" {
+			output = &backup
+		}
+		if _, _, e = stream.Copy(output, io.Discard); e != nil {
 			return e
 		}
+		j.Backup = backup.String()
 	} else {
 		if _, e = local.Seek(offset, io.SeekStart); e != nil {
 			return e

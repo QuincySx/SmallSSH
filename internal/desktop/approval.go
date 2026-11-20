@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
 	"sshclient/internal/approval"
 	"sshclient/internal/desktop/components"
 	"sshclient/internal/systemauth"
@@ -37,7 +38,8 @@ type approvalPromptState struct {
 	grantKey    string
 	// noIdle keeps the grant alive for its whole lifetime: the owner unticks
 	// the idle disconnect.
-	noIdle bool
+	noIdle           bool
+	skipMediumReview bool
 	// showPassword reveals the vault password while the owner types it.
 	showPassword bool
 }
@@ -75,8 +77,8 @@ func (s *approvalPromptState) chosenLifetime(r approval.Request) int {
 }
 
 type approvalTerms struct {
-	lifetime, idleSeconds int
-	noIdle                bool
+	lifetime, idleSeconds    int
+	noIdle, skipMediumReview bool
 }
 
 func (s *approvalPromptState) chosenIdle(r approval.Request) int {
@@ -104,6 +106,7 @@ func (s *approvalPromptState) initializeGrantWithDefault(r approval.Request, idl
 		return
 	}
 	s.grantKey = key
+	s.skipMediumReview = false
 	s.lifetime = defaultGrantLifetime(r)
 	s.noIdle = idle == 0
 	s.idleSeconds = idle
@@ -131,6 +134,7 @@ func (a *app) initializeApprovalGrant(r approval.Request, s *approvalPromptState
 	}
 	if terms, ok := a.approvalTerms[approvalRequestKey(r)]; ok {
 		s.lifetime, s.idleSeconds, s.noIdle = terms.lifetime, terms.idleSeconds, terms.noIdle
+		s.skipMediumReview = terms.skipMediumReview
 	}
 }
 
@@ -149,7 +153,7 @@ func (a *app) changeApprovalTerms(r approval.Request, s *approvalPromptState, ch
 	if a.approvalTerms == nil {
 		a.approvalTerms = make(map[string]approvalTerms)
 	}
-	a.approvalTerms[key] = approvalTerms{s.lifetime, s.idleSeconds, s.noIdle}
+	a.approvalTerms[key] = approvalTerms{s.lifetime, s.idleSeconds, s.noIdle, s.skipMediumReview}
 }
 
 func (a *app) pruneApprovalTerms() {
@@ -171,26 +175,32 @@ func (a *app) pruneApprovalTerms() {
 	}
 }
 
-const approvalWindowHeight = 520
+var approvalWindowHeight = int(design.Length("size-approval-prompt-height"))
 
 // Authentication stays below the scroll area so long commands cannot hide the
 // decision. Rendering this view never starts system authentication.
 func (a *app) approvalPrompt(c *ui.Context, r approval.Request, state *approvalPromptState, decide func(bool, bool), close func()) {
 	components.ApplyTheme(c, false)
 	applicant := peerName(r)
+	if r.Operation.Kind == "grant" && r.Peer.Bundle != "" {
+		applicant = reviewText(r.Peer.Bundle)
+	}
 	a.initializeApprovalGrant(r, state)
-	ui.Column(c).Fill().Padding(20, 22, 18).Gap(12).Children(func() {
+	ui.Column(c).Fill().Padding(16, design.Length("spacing-approval-prompt-inline"), 16).Gap(8).Children(func() {
 		a.approvalHeader(c, r, applicant)
 		if state.status != "" {
 			ui.Text(c, reviewText(state.status)).FillWidth().Shrink(0).MaxLines(2).FontSize(11).TextColor(c.Theme().Danger)
 		}
-		ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+		ui.Scroll(c).FillWidth().Shrink(1).MinHeight(0).Children(func() {
 			ui.Column(c).FillWidth().Gap(10).Children(func() {
-				a.approvalCard(c, r, state)
-				if r.Operation.Kind == "grant" && r.Status == "pending" {
-					a.approvalGrantChoices(c, r, state)
+				review := r
+				if r.Status == "pending" && r.Operation.Kind == "grant" {
+					review.Operation.Grant.SkipMediumReview = state.skipMediumReview
 				}
-				if r.Operation.Command != "" {
+				a.approvalCard(c, review)
+				if operationReview(r) {
+					requestOperationReview(c, r)
+				} else if r.Operation.Command != "" {
 					ui.Scroll(c).FillWidth().MaxHeight(96).Children(func() {
 						ui.Text(c, reviewText(r.Operation.Command)).FillWidth().Padding(8).Radius(8).
 							Background(c.Theme().Surface).Border(1, c.Theme().Border).
@@ -199,6 +209,13 @@ func (a *app) approvalPrompt(c *ui.Context, r approval.Request, state *approvalP
 				}
 			})
 		})
+		if r.Operation.Kind == "grant" && r.Status == "pending" {
+			a.approvalGrantChoices(c, r, state)
+		}
+		ui.Spacer(c).Grow(1)
+		if r.Operation.Kind == "grant" && r.Status == "pending" {
+			operationPairingCode(c, r, true)
+		}
 		a.approvalDecisionControls(c, r, state, decide, close)
 	})
 }
@@ -210,11 +227,32 @@ func (a *app) approvalDecisionControls(c *ui.Context, r approval.Request, state 
 	}
 	systemReady := a.approvalSystemReady()
 	showField := state.passwordMode || !systemReady
-	nativeIcon := state.presentation != nil && state.busy && state.systemAttempt && !state.submitting
+	verifying := state.busy && !state.submitting
+	nativeIcon := state.presentation != nil && verifying && state.systemAttempt
+	a.authenticationHint(c, state.systemAttempt)
 	var anchor ui.Element
 	hasAnchor := false
+	drawSystemAction := func(inPasswordField bool) {
+		if inPasswordField {
+			divider := design.Length("size-review-divider")
+			ui.Box(c).Width(divider).Height(design.Length("size-switch-height")).Shrink(0).Background(c.Theme().Border)
+		}
+		method := a.systemAuthenticationMethod(c)
+		anchor = components.SystemAuthenticationButton(c.Key("approval-system-action"), method,
+			state.submitting, state.systemAttempt && verifying, nativeIcon).
+			Tooltip(fmt.Sprintf(tr(c, "使用 %s 批准"), method.Label))
+		if !inPasswordField {
+			anchor.Background(ui.Hex(design.Color(c.Theme().Dark, "color-accentsoft")))
+		}
+		hasAnchor = true
+	}
 	if showField {
-		_, input := components.SecretInput(c, "approval-password", &state.password, tr(c, "保险库主密码"), tr(c, "输入保险库主密码"), &state.showPassword)
+		var trailing []func()
+		if systemReady {
+			trailing = append(trailing, func() { drawSystemAction(true) })
+		}
+		_, input := components.SecretInput(c, "approval-password", &state.password,
+			tr(c, "保险库主密码"), tr(c, "输入保险库主密码"), &state.showPassword, trailing...)
 		input.AutoFocus()
 		if input.Changed() {
 			state.status = ""
@@ -231,73 +269,59 @@ func (a *app) approvalDecisionControls(c *ui.Context, r approval.Request, state 
 		state.expandPassword()
 		showField = true
 	}
-	ui.Row(c).FillWidth().Shrink(0).Gap(8).AlignItems(ui.Center).Children(func() {
-		if systemReady {
-			method := tr(c, "授权方式：") + a.approvalSystemLabel(c)
-			if components.Button(c, method, components.ButtonOptions{Variant: components.Quiet}).Height(34).FontSize(11).
-				TextColor(c.Theme().TextMuted).Label(tr(c, "改用保险库主密码")).Tooltip(tr(c, "改用保险库主密码")).Clicked() {
-				state.expandPassword()
-				return
-			}
-			button := components.Button(c, "", components.ButtonOptions{Variant: components.Quiet, Disabled: state.submitting}).
-				Size(40, 40).Padding(0).Radius(8).Label(a.approvalSystemLabel(c)).
-				Tooltip(tr(c, "使用") + a.approvalSystemLabel(c) + tr(c, "确认"))
-			button.Children(func() {
-				icon := ui.Box(c).Key("approval-biometric-icon").Size(36, 36).Center()
-				anchor, hasAnchor = button, true
-				icon.Children(func() {
-					if nativeIcon {
-						return
-					} else if state.busy && !state.submitting {
-						ui.Spinner(c).Size(16, 16)
-					} else {
-						ui.Icon(c, components.SystemAuthIcon()).Size(24, 24).TextColor(c.Theme().Accent)
-					}
-				})
-			})
-			if button.Clicked() && !state.submitting {
+	ui.Row(c).FillWidth().Shrink(0).Gap(8).AlignItems(ui.Center).Justify(ui.End).Wrap().Children(func() {
+		if systemReady && !showField && masterPasswordAction(c.Key("approval-password-action"), state.submitting).Clicked() {
+			state.expandPassword()
+		}
+		ui.Spacer(c).Grow(1)
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			if components.Button(c, tr(c, "拒绝")).Height(34).Radius(8).Disabled(state.submitting).Clicked() {
 				if state.busy {
 					state.stopAttempt()
 				}
-				state.password = ""
-				state.passwordMode = false
-				decide(true, true)
+				decide(false, false)
+				return
 			}
-		}
-		ui.Spacer(c).Grow(1)
-		if components.Button(c, tr(c, "拒绝")).Height(34).Radius(8).Disabled(state.submitting).Clicked() {
-			if state.busy {
-				state.stopAttempt()
+			if state.submitting || showField {
+				label := approvalConsentLabel(r)
+				if state.submitting {
+					label = tr(c, "正在提交…")
+				}
+				allow := components.Button(c, label, components.ButtonOptions{Variant: components.Primary, Busy: state.submitting,
+					Disabled: state.password == "" || verifying}).Height(34).Radius(8)
+				if allow.Clicked() {
+					decide(true, false)
+				}
 			}
-			decide(false, false)
-			return
-		}
-		label := approvalConsentLabel(r)
-		if state.submitting {
-			label = tr(c, "正在提交…")
-		}
-		allow := components.Button(c, label, components.ButtonOptions{Variant: components.Primary, Busy: state.submitting,
-			Disabled: showField && (state.busy || state.password == "")}).Height(34).Radius(8)
-		if allow.Clicked() {
-			if showField {
-				decide(true, false)
-			} else {
-				state.expandPassword()
+			if systemReady && !showField {
+				drawSystemAction(false)
 			}
-		}
+		})
 	})
-	if state.presentation != nil && hasAnchor && anchor.Bounds().W > 1 && anchor.Bounds().H > 1 {
-		state.placeAuthentication(anchor.Bounds())
-		if state.anchor.follow(anchor.Bounds(), state.presentation.Ready(), nativeIcon, systemReady) {
+	if state.presentation != nil {
+		var bounds ui.Rect
+		if hasAnchor {
+			bounds = anchor.Bounds()
+		}
+		state.placeAuthentication(bounds)
+		if state.anchor.follow(bounds, state.presentation.Ready(), nativeIcon, systemReady) {
 			c.After(33 * time.Millisecond)
 		}
+	}
+	if hasAnchor && anchor.Clicked() && !state.submitting {
+		if state.busy {
+			state.stopAttempt()
+		}
+		state.password = ""
+		state.showPassword = false
+		decide(true, true)
 	}
 	if c.Shortcut(0, ui.KeyEscape) || c.Shortcut(ui.Cmd, ui.KeyPeriod) {
 		if state.submitting {
 			return
 		}
 		if state.busy {
-			state.stopAttempt()
+			state.cancelVerification()
 		} else {
 			state.password = ""
 			close()
@@ -322,38 +346,29 @@ func peerName(r approval.Request) string {
 	return applicant
 }
 
-// approvalHeader says who asks for what, in one line, without repeating it.
+// approvalHeader identifies the applicant and the permission family.
 func (a *app) approvalHeader(c *ui.Context, r approval.Request, applicant string) {
-	ui.Column(c).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(8).Children(func() {
-		ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Image(c, appIcon).Size(40, 40).Label(tr(c, "应用图标"))
-			ui.Row(c).Width(34).Height(2).Background(c.Theme().Border).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
-				ui.Icon(c, components.CheckCircleIcon).Size(15, 15).TextColor(c.Theme().Success)
-			})
-			ui.Box(c).Size(40, 40).Radius(10).Background(c.Theme().Surface).Border(1, c.Theme().Border).
-				Center().Label(applicant).Children(func() {
-				ui.Icon(c, components.WorkspaceIcon).Size(21, 21).TextColor(c.Theme().TextMuted)
-			})
-		})
+	ui.Column(c).FillWidth().Shrink(0).AlignItems(ui.Center).Gap(6).Children(func() {
 		if r.Renewal {
-			ui.Text(c, compactApprovalTitle(r)).FillWidth().TextAlign(ui.Center).FontSize(16).Bold()
+			ui.Text(c, compactApprovalTitle(r)).FillWidth().TextAlign(ui.Center).MaxLines(2).FontSize(16).Bold()
 		} else {
-			ui.Text(c, applicant).FillWidth().TextAlign(ui.Center).FontSize(16).Bold()
+			ui.Text(c, applicant).FillWidth().TextAlign(ui.Center).MaxLines(2).FontSize(16).Bold()
 		}
-		ui.Text(c, tr(c, "请求访问你的服务器")).FillWidth().TextAlign(ui.Center).FontSize(12).
-			TextColor(c.Theme().TextMuted)
+		serverOperationAuthorizationLabel(c).Justify(ui.Center)
 	})
 }
 
+var approvalCardToggleSize = design.Length("size-approval-card-toggle")
+
 // approvalCard holds the request facts behind one chevron.
-func (a *app) approvalCard(c *ui.Context, r approval.Request, state *approvalPromptState) {
+func (a *app) approvalCard(c *ui.Context, r approval.Request) {
 	expanded := ui.Local(c.Root(), "approval-card", func() bool { return false })
 	op := r.Operation
 	permission, _, caution := approvalPermission(r)
-	ui.Column(c).FillWidth().Gap(8).Padding(10).Radius(10).
+	ui.Column(c).FillWidth().Gap(8).Padding(design.Length("spacing-approval-panel")).Radius(design.Length("radius-native-navigation")).
 		Background(c.Theme().Surface).Border(1, c.Theme().Border).Children(func() {
 		ui.Row(c).FillWidth().Gap(2).AlignItems(ui.Center).Children(func() {
-			chevron := components.SVGButton(c, components.ChevronRightIcon, tr(c, "详情")).Size(22, 22)
+			chevron := components.SVGButton(c, components.ChevronRightIcon, tr(c, "详情")).Size(approvalCardToggleSize, approvalCardToggleSize)
 			if *expanded {
 				chevron.Rotate(90)
 			}
@@ -361,7 +376,7 @@ func (a *app) approvalCard(c *ui.Context, r approval.Request, state *approvalPro
 				*expanded = !*expanded
 				c.Invalidate()
 			}
-			label := components.Button(c, "", components.ButtonOptions{Variant: components.Quiet}).Grow(1).Height(24).
+			label := components.Button(c, "", components.ButtonOptions{Variant: components.Quiet}).Grow(1).Height(design.Length("size-approval-card-heading")).
 				Padding(0).Justify(ui.Start).Label(permission)
 			label.Children(func() {
 				color := c.Theme().Text
@@ -386,14 +401,13 @@ func (a *app) approvalCard(c *ui.Context, r approval.Request, state *approvalPro
 			if name != "" && name != target {
 				line = name + " · " + target
 			}
-			ui.Text(c, reviewText(line)).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted).SingleLine()
+			ui.Text(c, reviewText(line)).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 			if actions := approvalActionsText(r); actions != "" {
 				ui.Text(c, actions).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 			}
-			if op.Kind == "grant" && r.Status == "pending" {
-				ui.Text(c, grantTermsText(c, state.chosenLifetime(r), state.chosenIdle(r))).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
+			if op.Kind == "grant" && op.Grant.Permission == approval.MaintenancePermission {
+				requestGrantRoots(c, op.Grant)
 			}
-			ui.Text(c, tr(c, "批准后可在授权中心随时撤销。")).FillWidth().FontSize(11).TextColor(c.Theme().TextMuted)
 			return
 		}
 		// Open, the card takes the room the window has left instead of hiding
@@ -407,9 +421,6 @@ func (a *app) approvalCard(c *ui.Context, r approval.Request, state *approvalPro
 			}
 			if op.Kind == "grant" {
 				requestGrantRoots(c, op.Grant)
-				if r.Status == "pending" {
-					ui.Text(c, grantTermsText(c, state.chosenLifetime(r), state.chosenIdle(r))).FillWidth().FontSize(11)
-				}
 			}
 			ui.Column(c).FillWidth().Gap(4).Children(func() { requestTechnicalReview(c, r) })
 		})
@@ -422,8 +433,7 @@ func approvalActionsText(r approval.Request) string {
 	return actions
 }
 
-// approvalGrantChoices are the owner's two decisions about a session: how long
-// it runs, and whether idling ends it early.
+// approvalGrantChoices are the owner's limits for the approved session.
 func (a *app) approvalGrantChoices(c *ui.Context, r approval.Request, state *approvalPromptState) {
 	options := grantLifetimeOptions()
 	labels := make([]string, len(options))
@@ -431,7 +441,8 @@ func (a *app) approvalGrantChoices(c *ui.Context, r approval.Request, state *app
 		labels[i] = grantLifetimeChipLabel(option)
 	}
 	chosen := grantLifetimeChipLabel(state.chosenLifetime(r))
-	ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Disabled(state.submitting).Children(func() {
+	ui.Row(c).FillWidth().Shrink(0).Gap(6).AlignItems(ui.Center).Disabled(state.submitting).Children(func() {
+		ui.Text(c, tr(c, "有效期")).FontSize(11).Grow(1)
 		choice := chosen
 		menu := ui.SelectBase(c, &choice)
 		menu.Trigger.Height(26).Radius(6).Padding(0, 9).Gap(5).Background(c.Theme().Surface).
@@ -458,18 +469,11 @@ func (a *app) approvalGrantChoices(c *ui.Context, r approval.Request, state *app
 			}
 		}
 	})
-	ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Disabled(state.submitting).Children(func() {
-		idleOn := !state.noIdle
-		ui.Text(c, tr(c, "会话闲置自动断开")).FontSize(11).Grow(1)
-		if ui.Switch(c, &idleOn).Label(tr(c, "会话闲置自动断开开关")).Shrink(0).Changed() && idleOn == state.noIdle {
-			a.changeApprovalTerms(r, state, func() { state.noIdle = !idleOn })
-		}
-	})
-	ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Disabled(state.submitting).Children(func() {
+	ui.Row(c).FillWidth().Shrink(0).Gap(6).AlignItems(ui.Center).Disabled(state.submitting).Children(func() {
 		if state.noIdle {
 			ui.Text(c, tr(c, "闲置不断开")).FontSize(11).Grow(1)
 		} else {
-			ui.Text(c, tr(c, "闲置等待时间")).FontSize(11).Grow(1)
+			ui.Text(c, tr(c, "闲置断开")).FontSize(11).Grow(1)
 		}
 		options := []int{5, 10, 15, 20, 30}
 		labels := make([]string, len(options))
@@ -480,32 +484,81 @@ func (a *app) approvalGrantChoices(c *ui.Context, r approval.Request, state *app
 				selected = labels[i]
 			}
 		}
-		if ui.Select(c, &selected, labels).Width(110).MinWidth(0).Label(tr(c, "会话闲置时长")).Disabled(state.noIdle).Changed() {
+		if ui.Select(c, &selected, labels).Width(132).Shrink(0).Label(tr(c, "会话闲置时长")).Disabled(state.noIdle).Changed() {
 			for i, label := range labels {
 				if selected == label && options[i]*60 != state.idleSeconds {
 					a.changeApprovalTerms(r, state, func() { state.idleSeconds = options[i] * 60 })
 				}
 			}
 		}
+		idleOn := !state.noIdle
+		if ui.Switch(c, &idleOn).Label(tr(c, "会话闲置自动断开开关")).Shrink(0).Changed() && idleOn == state.noIdle {
+			a.changeApprovalTerms(r, state, func() { state.noIdle = !idleOn })
+		}
 	})
-	ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, tr(c, "配对码")).FontSize(11).TextColor(c.Theme().TextMuted)
-		ui.Text(c, r.Operation.Grant.PairingCode()).FontSize(11).Selectable().Font("monospace").TextColor(c.Theme().TextMuted)
+	if r.Operation.Grant.Permission == "guarded" {
+		mediumReviewControl(c, tr(c, "确认中风险文件操作"), !state.skipMediumReview, state.submitting, func(confirm bool) {
+			a.changeApprovalTerms(r, state, func() { state.skipMediumReview = !confirm })
+		})
+	}
+}
+
+const mediumReviewOffNotice = "授权范围内符合条件的文件操作将跳过逐项确认。未知命令仍需确认，高风险操作仍会被拒绝。"
+
+func mediumReviewControl(c *ui.Context, label string, confirmed, disabled bool, change func(bool)) {
+	ui.Column(c).FillWidth().MinWidth(0).Shrink(0).Gap(design.Length("spacing-native-field")).Children(func() {
+		ui.Row(c).FillWidth().MinWidth(0).Gap(6).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, label).Grow(1).MinWidth(0).FontSize(11)
+			confirm := confirmed
+			if ui.Switch(c, &confirm).Label(tr(c, "中风险文件操作确认开关")).Shrink(0).Disabled(disabled).Changed() && confirm != confirmed {
+				change(confirm)
+			}
+		})
+		if !confirmed {
+			ui.Text(c, tr(c, mediumReviewOffNotice)).FillWidth().FontSize(11).TextColor(c.Theme().Warning)
+		}
+	})
+}
+
+// The operation pairing code must stay visible while technical details scroll.
+func operationPairingCode(c *ui.Context, r approval.Request, compact bool) {
+	t := c.Theme()
+	gap := design.Length("spacing-space-sm")
+	vertical, horizontal := gap, design.Length("spacing-space-md")
+	if compact {
+		vertical, horizontal = design.Length("spacing-space-xs"), gap
+	}
+	ui.Row(c).FillWidth().Shrink(0).Gap(gap).Padding(vertical, horizontal).AlignItems(ui.Center).
+		Radius(design.Length("radius-control")).
+		Background(ui.Hex(design.Color(t.Dark, "color-native-pairing"))).
+		Border(1, ui.Hex(design.Color(t.Dark, "color-native-pairing-border"))).Children(func() {
+		group := ui.Column
+		if compact {
+			group = ui.Row
+		}
+		value := group(c).Grow(1).MinWidth(0).Gap(design.Length("spacing-native-field"))
+		if compact {
+			value.AlignItems(ui.Center)
+		}
+		value.Children(func() {
+			ui.Text(c, tr(c, "配对码")).FontSize(11).TextColor(t.TextMuted).Shrink(0)
+			ui.Text(c, r.Operation.Grant.PairingCode()).FontSize(design.Length("text-approval-pairing-value")).
+				Bold().Selectable().TextColor(t.Text)
+		})
+		if !compact {
+			ui.Text(c, tr(c, "与申请端一致再允许")).FontSize(11).TextColor(t.TextMuted).TextAlign(ui.End)
+		}
 	})
 }
 
 func approvalConsentLabel(r approval.Request) string {
+	if operationReview(r) {
+		return tr(nil, "允许本次操作")
+	}
 	if r.Renewal {
-		return tr(nil, "允许续期")
+		return tr(nil, "续期操作授权")
 	}
-	return tr(nil, "允许")
-}
-
-func (a *app) approvalSystemLabel(c *ui.Context) string {
-	if a.authStatus.Name == "" || a.authStatus.Name == "Touch ID" {
-		return tr(c, "触控 ID")
-	}
-	return a.authStatus.Name
+	return tr(nil, "允许操作")
 }
 
 func (a *app) approvalSystemReady() bool {
@@ -529,6 +582,7 @@ func (a *app) approvalActions(c *ui.Context, r approval.Request, state *approval
 	}
 	if r.Operation.Kind == "grant" && r.Status == "pending" {
 		a.initializeApprovalGrant(r, state)
+		operationPairingCode(c, r, false)
 		a.approvalGrantChoices(c, r, state)
 	}
 	a.approvalDecisionControls(c, r, state, decide, close)
@@ -567,7 +621,7 @@ func (a *app) showApproval(r approval.Request) {
 			return current() && win.IsVisible() && win.IsFocused() && a.isActive() && a.approvalSystemReady()
 		})
 	}
-	win = mygo.NewWindow(mygo.WindowOptions{Title: a.approvalWindowTitle(r), Width: 420, Height: approvalWindowHeight, UseContentSize: true, MinWidth: 380, MinHeight: 540,
+	win = mygo.NewWindow(mygo.WindowOptions{Title: a.approvalWindowTitle(r), Width: int(design.Length("size-authorization-prompt")), Height: approvalWindowHeight, UseContentSize: true, MinWidth: 380, MinHeight: approvalWindowHeight,
 		Parent: a.win, DisableMinimize: true, DisableMaximize: true, DisableFullScreen: true, Content: ui.View(func(c *ui.Context) {
 			a.approvalPrompt(c, r, state, func(allow, system bool) { state.start(r, allow, system, false) }, func() { win.Close() })
 			queue()
@@ -578,7 +632,9 @@ func (a *app) showApproval(r approval.Request) {
 	a.bindApprovalFlow(r, state, win.Update, current, win.Close)
 	win.OnReadyToShow(func() {
 		ready = true
-		win.Show()
+		if !a.showPresenceWindow(win) {
+			return
+		}
 		win.Focus()
 		mygo.App.Focus()
 		queue()

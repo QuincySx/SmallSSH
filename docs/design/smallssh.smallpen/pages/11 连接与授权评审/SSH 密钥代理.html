@@ -1,0 +1,122 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SSH 密钥代理</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" class="relative flex items-center justify-center w-[1100px] h-[760px] bg-canvas">
+  <div data-name="工作台承载" class="absolute inset-0 flex flex-row">
+    <sp-use data-name="工作台背景" class="w-full h-full" component="连接弹窗背景">
+      <div data-name="服务器侧栏">
+        <div data-name="服务器">
+          <p data-name="名称" class="">Web 生产环境</p>
+        </div>
+      </div>
+    </sp-use>
+  </div>
+  <div data-name="模态遮罩" class="absolute inset-0 bg-dialog-shade"></div>
+  <div data-name="连接对话框" class="flex flex-col gap-space-md w-dialog-large h-connection-editor-height p-space-lg bg-surface rounded-window-panel shadow-native-dialog">
+    <div data-name="标题栏" class="flex flex-row items-center gap-space-sm w-full h-control shrink-0">
+      <p data-name="窗口标题" class="flex-1 type-native-dialog text-text">新建连接</p>
+      <sp-use data-name="关闭" class="shrink-0" component="图标按钮">
+        <p data-name="图标" class=""></p>
+      </sp-use>
+    </div>
+    <div data-name="分类与内容" class="flex flex-row flex-1 min-h-0 w-full gap-space-xl">
+      <div data-name="连接分类" class="flex flex-col gap-space-xs w-dialog-sidebar shrink-0 h-full bg-subtle border border-border p-dialog-sidebar rounded-control">
+        <sp-use data-name="常规" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 选中" data-click="11 连接与授权评审/新建连接">
+          <p data-name="标签" class="">常规</p>
+        </sp-use>
+        <sp-use data-name="加速与代理" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/连接线路">
+          <p data-name="标签" class="">加速与代理</p>
+        </sp-use>
+        <sp-use data-name="终端设置" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/终端设置">
+          <p data-name="标签" class="">终端设置</p>
+        </sp-use>
+        <sp-use data-name="访问策略" class="w-full h-dialog-category" component="导航项" props="图标: 隐藏; 状态: 普通" data-click="11 连接与授权评审/访问策略">
+          <p data-name="标签" class="">访问策略</p>
+        </sp-use>
+      </div>
+      <div data-name="分类表单" class="flex flex-col gap-space-lg flex-1 min-w-0 h-full overflow-hidden pr-connection-form-end">
+        <div data-name="连接信息" class="flex flex-col gap-space-sm w-full">
+          <p data-name="标题" class="type-section text-text">连接信息</p>
+          <div data-name="名称和分组" class="flex flex-row items-center gap-space-md w-full">
+            <div data-name="名称" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">名称</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline pr-field-inline rounded-control border border-accent bg-surface">
+                <p data-name="内容" class="flex-1 min-w-0 type-native-copy text-text">Web 生产环境</p>
+              </div>
+            </div>
+            <div data-name="分组" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">分组</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline pr-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="flex-1 min-w-0 type-native-copy text-text">生产环境</p>
+                <p data-name="下拉" class="w-menu-icon shrink-0 text-center type-native-action-icon text-muted"></p>
+              </div>
+            </div>
+          </div>
+          <div data-name="地址和端口" class="flex flex-row items-center gap-space-md w-full">
+            <div data-name="服务器地址" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">服务器地址</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline pr-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="flex-1 min-w-0 type-native-copy text-text">192.0.2.10</p>
+              </div>
+            </div>
+            <div data-name="端口" class="flex flex-col gap-native-field w-connection-port shrink-0">
+              <p data-name="标签" class="type-native-small text-muted">端口</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline pr-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="flex-1 min-w-0 type-native-copy text-text">22</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div data-name="登录身份" class="flex flex-col gap-space-sm w-full">
+          <p data-name="标题" class="type-section text-text">登录身份</p>
+          <div data-name="用户和方式" class="flex flex-row items-center gap-space-md w-full">
+            <div data-name="用户名" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">用户名</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline pr-field-inline rounded-control border border-border bg-surface">
+                <p data-name="内容" class="flex-1 min-w-0 type-native-copy text-text">deploy</p>
+              </div>
+            </div>
+            <div data-name="登录方式" class="flex flex-col gap-native-field flex-1 min-w-0">
+              <p data-name="标签" class="type-native-small text-muted">登录方式</p>
+              <div data-name="输入" class="flex flex-row items-center gap-space-sm w-full h-field pl-field-inline pr-field-inline rounded-control border border-border bg-surface" data-click="overlay:11 连接与授权评审/选择登录方式; position: manual 0px 44px; relative-to: self; close-outside">
+                <p data-name="内容" class="flex-1 min-w-0 type-native-copy text-text">SSH 密钥代理</p>
+                <p data-name="下拉" class="w-menu-icon shrink-0 text-center type-native-action-icon text-muted"></p>
+              </div>
+            </div>
+          </div>
+          <div data-name="代理身份" class="flex flex-col gap-space-sm w-full">
+            <p data-name="来源" class="type-native-hint text-muted">读取本机 SSH 密钥代理提供的公钥。私钥由密钥代理保管。</p>
+            <div data-name="读取操作" class="flex flex-row items-center gap-space-sm w-full">
+              <sp-use data-name="读取代理密钥" class="shrink-0" component="按钮" props="样式: 普通" data-click="11 连接与授权评审/SSH 密钥代理 · 选择身份">
+                <p data-name="文字" class="">读取代理密钥</p>
+              </sp-use>
+            </div>
+          </div>
+        </div>
+        <div data-name="备注" class="flex flex-col gap-native-field w-full">
+          <p data-name="标签" class="type-native-small text-muted">备注</p>
+          <div data-name="输入" class="flex flex-col gap-space-sm w-full h-review-textarea py-space-sm px-field-inline border border-border rounded-control">
+            <p data-name="内容" class="type-native-copy text-muted">用途、维护事项，或提醒以后的自己…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-name="底部" class="flex flex-col gap-space-sm w-full">
+      <div data-name="操作分隔" class="w-full h-review-divider bg-border"></div>
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full h-field">
+        <p data-name="保存说明" class="flex-1 type-native-hint text-muted">保存连接后，从服务器列表打开连接。</p>
+        <sp-use data-name="取消" component="按钮" props="样式: 普通">
+          <p data-name="文字" class="">取消</p>
+        </sp-use>
+        <sp-use data-name="保存连接" component="按钮" props="样式: 主操作">
+          <p data-name="文字" class="">保存连接</p>
+        </sp-use>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

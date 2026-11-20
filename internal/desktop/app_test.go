@@ -24,7 +24,7 @@ func TestNativeViewsRenderAndAuthorizationNeverAutoApproves(t *testing.T) {
 	for page := 0; page < 4; page++ {
 		a.page = page
 		tt.Frame()
-		if page == 3 && !tt.HasText("允许") {
+		if page == 3 && !tt.HasText("允许操作") {
 			t.Fatal("missing human approval action", tt.Texts())
 		}
 	}
@@ -43,7 +43,7 @@ func TestWorkspaceGroupsMonitorAndQueueRender(t *testing.T) {
 	}
 	a.showTool(toolTransfers)
 	tt.Frame()
-	if !tt.HasText("继续 / 重试") {
+	if !tt.HasText("继续") || !tt.HasText("取消传输 test") {
 		t.Fatal(tt.Texts())
 	}
 	a.transfersOpen = false

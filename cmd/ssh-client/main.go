@@ -19,11 +19,10 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/client"
 	"sshclient/internal/hardware"
 	"sshclient/internal/localipc"
-	"sshclient/internal/systemauth"
+	"sshclient/internal/protocol"
 	"sshclient/internal/transfer"
 	"sshclient/internal/vault"
 )
@@ -41,8 +40,6 @@ const help = `SmallSSH · 开发预览版
  probe 主机:端口               查看主机指纹；请通过服务器控制台另行核对
  agent                         启动代理；主密码仅从本地终端读取
  hosts                         列出连接 ID、分组与名称（无需主密码；不含地址与账号）
- biometric status|enable|disable 系统验证设置
- --biometric agent / approve ID  用系统验证解锁或授权
  monitor 连接ID                 连续 Linux 监控（JSON 行）
  docker logs/terminal [选项] 连接ID 完整容器ID
                                容器日志或交互终端，需指定 --engine
@@ -51,8 +48,10 @@ const help = `SmallSSH · 开发预览版
  transfer list                  查看持久化传输队列
  transfer resume 任务ID          校验并断点继续（可复用客户端会话）
  pending                       所有者验证后查看待授权和运行中的操作
- session serve [选项] 连接ID [read|full] [2h] [15m]
+ session serve [选项] 连接ID [read|guarded|maintenance|full] [2h] [15m]
                                常驻 JSON 行客户端；进程退出即撤销会话
+ session maintenance [--read-root /绝对路径] 连接ID
+                               一次批准系统检查、指定来源备份与 APT 升级预览
  session exec 连接ID [2h] [15m] 连续命令，获批后每行一条；:quit 退出
  --broker-key sha256:...        可选：显式固定可信所有者界面的代理公钥
  SSH_CLIENT_BROKER_KEY=sha256:... 覆盖首次可信解锁建立的本机配对
@@ -69,7 +68,7 @@ const help = `SmallSSH · 开发预览版
 
 AI 通过常驻 session serve 或同进程 SDK 申请会话；范围和期限内逐次签发子授权。
 会话仅绑定当前进程实例和活连接；断线、重启后生成新密钥并重新批准。
-自然过期后自动申请原范围续期，批准后继续；撤销、拒绝或越权不自动重试。
+维护准备到期即结束；其他会话自然过期可申请原范围续期。
 单次请求留在授权中心，不逐条弹窗。
 允许 exec/shell 即允许该 SSH 账户权限范围内的操作。主密码不要写进参数。
 `
@@ -94,7 +93,7 @@ func run() (int, error) {
 		fs.PrintDefaults()
 	}
 	dir := fs.String("data-dir", localipc.DefaultDir(), "私有数据目录")
-	biometric := fs.Bool("biometric", false, "通过本机系统验证解锁 / 授权")
+	biometric := fs.Bool("biometric", false, "已停用：系统验证只在桌面端使用")
 	label := fs.String("client", "CLI", "申请方标签（未经身份验证）")
 	sessionFile := fs.String("session", "", "已停用：会话文件不能跨进程复用")
 	brokerKey := fs.String("broker-key", os.Getenv("SSH_CLIENT_BROKER_KEY"), "可选：显式固定可信所有者的代理公钥 sha256:...（默认使用本机配对）")
@@ -102,6 +101,12 @@ func run() (int, error) {
 		return 2, e
 	}
 	args := fs.Args()
+	// System verification can be raised by any process that runs the CLI in a
+	// terminal it controls, with whatever prompt it likes; it now lives only in
+	// the desktop app, which shows what is being authorised.
+	if *biometric {
+		return 2, errors.New("--biometric 已停用：系统验证（Touch ID 等）只在桌面端使用；CLI 请在本机终端输入主密码")
+	}
 	if len(args) == 0 || args[0] == "help" {
 		fmt.Print(help)
 		return 0, nil
@@ -155,25 +160,25 @@ func run() (int, error) {
 			return 1, e
 		}
 		defer v.Close()
-		if e = vault.Save(broker.VaultPath(*dir), v, true); e != nil {
+		if e = vault.Save(vault.Path(*dir), v, true); e != nil {
 			return 1, e
 		}
 		fmt.Println("保险库已创建。接下来运行 host add。")
 		return 0, nil
 	case "host":
 		if len(args) == 3 && args[1] == "options" {
-			return configureHost(ctx, c, *dir, args[2], *biometric)
+			return configureHost(ctx, c, *dir, args[2])
 		}
 		if len(args) >= 3 && args[1] == "hardware" {
-			return inspectHardwareCommand(ctx, c, *dir, *biometric, args[2:])
+			return inspectHardwareCommand(ctx, c, *dir, args[2:])
 		}
 		if len(args) == 4 && args[1] == "group" {
-			owner, e := openOwner(ctx, *dir, *biometric, "修改 SSH 连接分组")
+			owner, e := openOwner(ctx, *dir, "修改 SSH 连接分组")
 			if e != nil {
 				return 1, e
 			}
 			defer owner.Close()
-			h, e := c.CallWithOwner(ctx, broker.Message{Action: "hosts"}, owner)
+			h, e := c.CallWithOwner(ctx, protocol.Message{Action: "hosts"}, owner)
 			if e != nil {
 				return 1, e
 			}
@@ -201,29 +206,7 @@ func run() (int, error) {
 		}
 		return 0, probe(ctx, args[1])
 	case "biometric":
-		svc := systemauth.New(0)
-		if len(args) != 2 {
-			return 2, errors.New("用法: smallssh biometric status / enable / disable")
-		}
-		if args[1] == "status" {
-			b, _ := json.MarshalIndent(svc.Status(ctx, *dir), "", "  ")
-			fmt.Println(string(b))
-			return 0, nil
-		}
-		if args[1] != "enable" && args[1] != "disable" {
-			return 2, errors.New("未知系统验证设置")
-		}
-		p, e := password("主密码确认系统验证设置: ")
-		if e != nil {
-			return 1, e
-		}
-		defer wipe(p)
-		if args[1] == "enable" {
-			e = svc.Enroll(ctx, *dir, p)
-		} else {
-			e = svc.Disable(*dir, p)
-		}
-		return 0, e
+		return 2, errors.New("系统验证改在桌面端「设置 → 安全与解锁」管理；CLI 只使用主密码")
 	case "transfer":
 		m := transfer.NewWithClient(c)
 		if len(args) == 2 && args[1] == "list" {
@@ -255,41 +238,47 @@ func run() (int, error) {
 		fmt.Fprintf(os.Stderr, "传输任务 %s；中断后可用 smallssh transfer resume %s 继续。\n", j.ID, j.ID)
 		return 0, m.Run(ctx, j.ID, *label)
 	case "agent":
-		if *biometric {
-			v, e := systemauth.New(0).Open(ctx, *dir, "解锁 SSH 代理")
-			if e != nil {
-				return 1, e
-			}
-			s, e := broker.OpenSession(*dir, v)
-			if e != nil {
-				return 1, e
-			}
-			defer s.Close()
-			fmt.Fprintln(os.Stderr, "系统验证已解锁代理")
-			fmt.Fprintln(os.Stderr, "本机代理公钥：", s.PublicKeyPin())
-			<-ctx.Done()
-			return 0, nil
+		local, err := client.NewLocalService(*dir)
+		if err != nil {
+			return 1, err
 		}
-		p, e := password("解锁保险库: ")
-		if e != nil {
-			return 1, e
+		if err = local.Ensure(ctx); err != nil {
+			return 1, err
 		}
-		s, e := broker.Open(*dir, p)
-		wipe(p)
-		if e != nil {
-			return 1, e
+		owner, err := openOwner(ctx, *dir, "解锁 SSH 代理")
+		if err != nil {
+			return 1, err
 		}
-		defer s.Close()
+		prepared, err := local.Client().PrepareOwner(ctx, owner, 8*time.Hour)
+		owner.Close()
+		if err != nil {
+			return 1, err
+		}
+		defer prepared.Close()
+		session, err := prepared.Commit(ctx)
+		if err != nil {
+			return 1, err
+		}
+		defer session.Close()
+		pin, _ := session.BrokerPublicKeyPin()
 		fmt.Fprintln(os.Stderr, "代理已启动。保持此窗口打开；退出会锁定并撤销所有会话。")
-		fmt.Fprintln(os.Stderr, "本机代理公钥：", s.PublicKeyPin())
-		<-ctx.Done()
-		return 0, nil
+		fmt.Fprintln(os.Stderr, "本机代理公钥：", pin)
+		select {
+		case <-ctx.Done():
+			cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, err = session.Lock(cleanup)
+			return 0, err
+		case <-session.Done():
+			return 1, errors.New("本地服务所有者会话已结束，请重新解锁")
+		}
+
 	case "hosts":
 		// Discovery needs no master password: without owner proof the broker
 		// returns connection IDs, names and groups, never an address, account or
 		// automation policy. That is what an automated caller needs to ask for
 		// access to a machine it was told about.
-		r, e := c.Call(ctx, broker.Message{Action: "hosts"})
+		r, e := c.Call(ctx, protocol.Message{Action: "hosts"})
 		if e != nil {
 			return 1, e
 		}
@@ -298,12 +287,12 @@ func run() (int, error) {
 		}
 		return 0, nil
 	case "pending":
-		owner, err := openOwner(ctx, *dir, *biometric, "查看 SSH 管理信息")
+		owner, err := openOwner(ctx, *dir, "查看 SSH 管理信息")
 		if err != nil {
 			return 1, err
 		}
 		defer owner.Close()
-		r, e := c.CallWithOwner(ctx, broker.Message{Action: "pending"}, owner)
+		r, e := c.CallWithOwner(ctx, protocol.Message{Action: "pending"}, owner)
 		if e != nil {
 			return 1, e
 		}
@@ -315,12 +304,12 @@ func run() (int, error) {
 		if len(args) != 2 {
 			return 2, errors.New("请提供完整授权 ID")
 		}
-		owner, err := openOwner(ctx, *dir, *biometric, "查看并处理 SSH 授权")
+		owner, err := openOwner(ctx, *dir, "查看并处理 SSH 授权")
 		if err != nil {
 			return 1, err
 		}
 		defer owner.Close()
-		r, e := c.CallWithOwner(ctx, broker.Message{Action: "status", ID: args[1]}, owner)
+		r, e := c.CallWithOwner(ctx, protocol.Message{Action: "status", ID: args[1]}, owner)
 		if e != nil {
 			return 1, e
 		}
@@ -376,21 +365,13 @@ func run() (int, error) {
 		}
 		op.Kind = "list"
 		op.Path = args[2]
-	case "get":
-		if len(args) != 4 {
-			return 2, errors.New("用法: smallssh get 连接ID /远程路径 本地文件")
+	case "replace":
+		if len(args) != 5 {
+			return 2, errors.New("用法: smallssh replace 连接ID 本地文件 /远程路径 原文件SHA256")
 		}
-		op.Kind = "get"
-		op.Path = args[2]
-	case "put", "replace":
-		if (args[0] == "put" && len(args) != 4) || (args[0] == "replace" && len(args) != 5) {
-			return 2, errors.New("用法: smallssh put 连接ID 本地文件 /远程路径；smallssh replace 需再提供原文件 SHA256")
-		}
-		op.Kind = args[0]
+		op.Kind = "replace"
 		op.Path = args[3]
-		if op.Kind == "replace" {
-			op.OriginalHash = args[4]
-		}
+		op.OriginalHash = args[4]
 		var e error
 		source, e = os.Open(args[2])
 		if e != nil {
@@ -465,7 +446,7 @@ func run() (int, error) {
 		returnCode, _, e := stream.Copy(os.Stdout, os.Stderr)
 		return returnCode, e
 	}
-	if op.Kind == "put" || op.Kind == "replace" {
+	if op.Kind == "replace" {
 		go func() {
 			if _, e := io.Copy(stream, source); e != nil {
 				stream.Close()
@@ -476,32 +457,10 @@ func run() (int, error) {
 			}
 		}()
 	}
-	out := io.Writer(os.Stdout)
-	var target *os.File
-	success := false
-	if op.Kind == "get" {
-		target, e = os.OpenFile(args[3], os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-		if e != nil {
-			return 1, e
-		}
-		defer func() {
-			target.Close()
-			if !success {
-				os.Remove(args[3])
-			}
-		}()
-		out = target
-	}
-	code, files, e := stream.Copy(out, os.Stderr)
+	code, files, e := stream.Copy(os.Stdout, os.Stderr)
 	if e != nil {
 		return 1, e
 	}
-	if target != nil {
-		if e = target.Sync(); e != nil {
-			return 1, e
-		}
-	}
-	success = true
 	if op.Kind == "list" {
 		return 0, json.NewEncoder(os.Stdout).Encode(files)
 	}
@@ -519,7 +478,7 @@ func addHost(dir string) error {
 		return e
 	}
 	defer wipe(pass)
-	v, e := vault.Read(broker.VaultPath(dir), pass)
+	v, e := vault.Read(vault.Path(dir), pass)
 	if e != nil {
 		return e
 	}
@@ -575,7 +534,7 @@ func addHost(dir string) error {
 	if e = v.Put(p); e != nil {
 		return e
 	}
-	return vault.Save(broker.VaultPath(dir), v, false)
+	return vault.Save(vault.Path(dir), v, false)
 }
 func probe(ctx context.Context, addr string) error {
 	if _, _, e := net.SplitHostPort(addr); e != nil {
@@ -616,14 +575,11 @@ func wipe(b []byte) {
 	}
 }
 
-func openOwner(ctx context.Context, dir string, biometric bool, reason string) (*vault.Session, error) {
-	if biometric {
-		return systemauth.New(0).Open(ctx, dir, reason)
-	}
+func openOwner(_ context.Context, dir string, reason string) (*vault.Session, error) {
 	pass, err := password(reason + " · 主密码: ")
 	if err != nil {
 		return nil, err
 	}
 	defer wipe(pass)
-	return vault.Read(broker.VaultPath(dir), pass)
+	return vault.Read(vault.Path(dir), pass)
 }

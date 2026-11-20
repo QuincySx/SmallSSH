@@ -8,34 +8,46 @@ import (
 	"path"
 	"strings"
 	"time"
+
 	"unicode"
 	"unicode/utf8"
+
+	"sshclient/internal/operationrisk"
 )
 
 // GrantScope never contains a provider session or an SSH credential. PublicKey
 // identifies possession of a client key, not a verified application brand.
 type GrantScope struct {
-	ReadRoot        string `json:"readRoot,omitempty"`
-	WriteRoot       string `json:"writeRoot,omitempty"`
-	PublicKey       string `json:"publicKey"`
-	Permission      string `json:"permission"`
-	LifetimeSeconds int    `json:"lifetimeSeconds"`
-	IdleSeconds     int    `json:"idleSeconds"`
+	ReadRoot         string `json:"readRoot,omitempty"`
+	WriteRoot        string `json:"writeRoot,omitempty"`
+	PublicKey        string `json:"publicKey"`
+	Permission       string `json:"permission"`
+	LifetimeSeconds  int    `json:"lifetimeSeconds"`
+	IdleSeconds      int    `json:"idleSeconds"`
+	SkipMediumReview bool   `json:"skipMediumReview,omitempty"`
 }
 
+const MaintenancePermission = "maintenance"
+
 func (s GrantScope) Validate() error {
+	if s.SkipMediumReview && s.Permission != "guarded" {
+		return ErrDenied
+	}
 	for _, root := range []string{s.ReadRoot, s.WriteRoot} {
 		if root != "" && (len(root) > 4096 || !utf8.ValidString(root) || !path.IsAbs(root) || path.Clean(root) != root || strings.ContainsFunc(root, unicode.IsControl)) {
 			return errors.New("授权根目录需为规范绝对路径")
 		}
 	}
-	if s.Permission == "read" && s.WriteRoot != "" {
-		return errors.New("只读授权不能包含写入根目录")
+	if (s.Permission == "read" || s.Permission == MaintenancePermission) && s.WriteRoot != "" {
+		return errors.New("只读与维护准备授权不能包含写入根目录")
+	}
+	if s.Permission == MaintenancePermission && s.ReadRoot == "/" {
+		return errors.New("维护准备需指定具体的备份来源，不能选择整个文件系统")
 	}
 	key, err := base64.RawURLEncoding.DecodeString(s.PublicKey)
 	// An idle deadline equal to the absolute lifetime disables early idle expiry.
-	if err != nil || len(key) != ed25519.PublicKeySize || (s.Permission != "read" && s.Permission != "full") || s.LifetimeSeconds < 60 || s.LifetimeSeconds > MaxGrantLifetime || s.IdleSeconds < 60 || s.IdleSeconds > s.LifetimeSeconds || s.IdleSeconds > 30*60 && s.IdleSeconds != s.LifetimeSeconds {
-		return errors.New("会话授权需指定客户端公钥、只读或完整权限、1分钟至24小时期限；闲置期限不超过30分钟，或等于总期限表示闲置不断开")
+	if err != nil || len(key) != ed25519.PublicKeySize || (s.Permission != "read" && s.Permission != "full" && s.Permission != "guarded" && s.Permission != MaintenancePermission) || s.LifetimeSeconds < 60 || s.LifetimeSeconds > MaxGrantLifetime || s.IdleSeconds < 60 || s.IdleSeconds > s.LifetimeSeconds || s.IdleSeconds > 30*60 && s.IdleSeconds != s.LifetimeSeconds {
+		return errors.New("会话授权需指定客户端公钥、只读、受控、维护准备或完整权限、1分钟至24小时期限；闲置期限不超过30分钟，或等于总期限表示闲置不断开")
 	}
 	return nil
 }
@@ -65,13 +77,31 @@ func DelegationProofMessage(c DelegationChallenge) []byte {
 }
 
 func grantAllows(parent Request, op Operation) bool {
+	if op.Route.Temporary() {
+		return false
+	}
 	if parent.Operation.Kind != "grant" || parent.Status != "approved" || op.Grant != (GrantScope{}) || op.Kind == "grant" || op.Host != parent.Operation.Host || op.Endpoint != parent.Operation.Endpoint || op.HostFingerprint != parent.Operation.HostFingerprint {
 		return false
+	}
+	if parent.Operation.Grant.Permission == "guarded" && operationrisk.Assess(op.Kind, op.Command, op.Path, op.Destination).Level == operationrisk.High {
+		return false
+	}
+	if scope := parent.Operation.Grant; scope.Permission == MaintenancePermission {
+		switch op.Kind {
+		case "exec":
+			return operationrisk.MaintenanceQuery(op.Command)
+		case "upgrade-preview":
+			return true
+		case "list", "file-info", "get", "get-resume":
+			return WithinRoot(scope.ReadRoot, op.Path)
+		default:
+			return false
+		}
 	}
 	if scope := parent.Operation.Grant; scope.ReadRoot != "" || scope.WriteRoot != "" {
 		return scope.allowsPath(op)
 	}
-	if parent.Operation.Grant.Permission == "full" {
+	if parent.Operation.Grant.Permission == "full" || parent.Operation.Grant.Permission == "guarded" {
 		return true
 	}
 	switch op.Kind {
@@ -90,7 +120,7 @@ func (s GrantScope) allowsPath(op Operation) bool {
 	case "list", "file-info", "get", "get-resume":
 		return WithinRoot(s.ReadRoot, op.Path)
 	case "put", "replace", "mkdir", "remove", "rename":
-		return s.Permission == "full" && op.Path != s.WriteRoot && WithinRoot(s.WriteRoot, op.Path) && (op.Kind != "rename" || op.Destination != s.WriteRoot && WithinRoot(s.WriteRoot, op.Destination))
+		return (s.Permission == "full" || s.Permission == "guarded") && op.Path != s.WriteRoot && WithinRoot(s.WriteRoot, op.Path) && (op.Kind != "rename" || op.Destination != s.WriteRoot && WithinRoot(s.WriteRoot, op.Destination))
 	}
 	// Arbitrary commands, existing-inode writes and status/log reads cannot be
 	// confined to a file root over SFTP. They require a separate broad grant.
@@ -172,25 +202,9 @@ func (m *Manager) MintDelegated(id string, signature []byte) (Request, string, e
 	}
 	ttl := min(time.Duration(c.TTLSeconds)*time.Second, parent.request.Expires.Sub(m.now()))
 	m.mu.Unlock()
-	r, t, err := m.Create(c.Operation, ttl)
-	if err != nil {
-		return Request{}, "", err
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.prune()
-	parent = m.pending[c.ParentID]
-	child := m.pending[r.ID]
-	if parent == nil || child == nil || !grantAllows(parent.request, c.Operation) {
-		delete(m.pending, r.ID)
-		return Request{}, "", ErrDenied
-	}
-	child.request.ParentID = c.ParentID
-	child.request.Peer = parent.request.Peer
-	child.request.Status = "approved"
-	child.request.Expires = minTime(child.request.Expires, parent.request.Expires)
-	parent.lastUsed = m.now()
-	return child.request, t, nil
+	// Creation rechecks the parent and commits scope, status and expiry under
+	// the same lock. No transient, unbound pending child can reach the queue.
+	return m.create(c.Operation, ttl, false, "", c.ParentID)
 }
 
 func minTime(a, b time.Time) time.Time {

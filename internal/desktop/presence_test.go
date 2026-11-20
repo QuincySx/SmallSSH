@@ -39,7 +39,7 @@ func TestPresenceEntryTransactionAndFailures(t *testing.T) {
 	if err := a.applyPresence(p); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(events, []string{"create", "save", "dock-off"}) {
+	if !reflect.DeepEqual(events, []string{"create", "save", "dock-on"}) {
 		t.Fatal("incorrect entry ordering", events)
 	}
 	events = nil
@@ -80,7 +80,7 @@ func TestPresenceCloseQuitVetoAndRestore(t *testing.T) {
 	var pending []func()
 	fakePresence(a, &events)
 	a.presence.effects.post = func(f func()) { pending = append(pending, f) }
-	if !a.presenceClose(func() { events = append(events, "prevent") }) || !reflect.DeepEqual(events, []string{"prevent", "hide"}) {
+	if !a.presenceClose(func() { events = append(events, "prevent") }) || !reflect.DeepEqual(events, []string{"prevent", "hide", "dock-on"}) {
 		t.Fatal("normal close did not hide", events)
 	}
 	a.beginPresenceQuit()
@@ -127,12 +127,12 @@ func TestPresenceStartupFailureAndExplicitRestore(t *testing.T) {
 	}
 	events = nil
 	a.showFromPresence()
-	if !reflect.DeepEqual(events, []string{"show", "focus"}) {
+	if !reflect.DeepEqual(events, []string{"dock-on", "show", "focus"}) {
 		t.Fatal("explicit restore failed", events)
 	}
 }
 
-func TestPresenceOffCanHideBothIcons(t *testing.T) {
+func TestPresenceOffKeepsDockWhileAWindowIsOpen(t *testing.T) {
 	no := false
 	a := &app{}
 	var events []string
@@ -141,13 +141,13 @@ func TestPresenceOffCanHideBothIcons(t *testing.T) {
 	if err := a.applyPresence(p); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(events, []string{"save", "dock-off"}) {
-		t.Fatal("off mode did not allow hidden icons", events)
+	if !reflect.DeepEqual(events, []string{"save", "dock-on"}) {
+		t.Fatal("off mode hid the visible workbench from Dock", events)
 	}
 	events = nil
 	a.restorePresence()
-	if !reflect.DeepEqual(events, []string{"dock-off"}) || a.presence.dockFallback {
-		t.Fatal("off startup unexpectedly restored Dock", events)
+	if !reflect.DeepEqual(events, []string{"dock-on"}) || a.presence.dockFallback {
+		t.Fatal("off startup did not keep the visible workbench in Dock", events)
 	}
 }
 
@@ -159,7 +159,7 @@ func TestPresenceActivateRestoresMainEvenWhenOtherWindowVisible(t *testing.T) {
 			fakePresence(a, &events)
 			a.presence.effects.mainNeedsRestore = func() bool { return true }
 			a.presenceActivate(true)
-			if !reflect.DeepEqual(events, []string{"show", "focus"}) {
+			if !reflect.DeepEqual(events, []string{"dock-on", "show", "focus"}) {
 				t.Fatal("main window was not restored", events)
 			}
 		})

@@ -43,8 +43,10 @@ func operationTitle(kind string) string {
 		return tr(nil, "检查 Compose 更新")
 	case "compose-update":
 		return tr(nil, "更新 Compose 服务")
+	case "upgrade-preview":
+		return tr(nil, "APT 升级预览")
 	case "grant":
-		return tr(nil, "客户端会话授权")
+		return tr(nil, "服务器操作会话授权")
 	case "shell":
 		return tr(nil, "打开终端")
 	case "exec":
@@ -93,6 +95,15 @@ func requestState(status string) string {
 }
 func approvalActionLabel(r approval.Request) string {
 	if r.Operation.Kind == "grant" {
+		if r.Operation.Grant.Permission == approval.MaintenancePermission {
+			return tr(nil, "允许操作")
+		}
+		if r.Operation.Grant.Permission == "guarded" {
+			if r.Renewal {
+				return tr(nil, "续期限时受控")
+			}
+			return tr(nil, "允许限时受控")
+		}
 		if r.Operation.Grant.ReadRoot != "" || r.Operation.Grant.WriteRoot != "" {
 			if r.Renewal {
 				return tr(nil, "续期限定目录访问")
@@ -129,22 +140,22 @@ func grantDuration(seconds int) string {
 	return (time.Duration(seconds) * time.Second).String()
 }
 
-func transferState(state string) string {
+func transferState(c *ui.Context, state string) string {
 	switch state {
 	case "queued":
-		return tr(nil, "排队中")
+		return tr(c, "排队中")
 	case "waiting":
-		return tr(nil, "准备中")
+		return tr(c, "准备中")
 	case "running":
-		return tr(nil, "传输中")
+		return tr(c, "传输中")
 	case "paused":
-		return tr(nil, "已暂停")
+		return tr(c, "已暂停")
 	case "error":
-		return tr(nil, "失败")
+		return tr(c, "失败")
 	case "done":
-		return tr(nil, "已完成")
+		return tr(c, "已完成")
 	}
-	return tr(nil, "未知状态")
+	return tr(c, "未知状态")
 }
 
 func (a *app) endpointLabel(endpoint string) string {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"sshclient/internal/connectcfg"
+	"sshclient/internal/proxyconfig"
 )
 
 func Dial(ctx context.Context, target string, p connectcfg.Proxy) (net.Conn, error) {
@@ -23,6 +24,9 @@ func Dial(ctx context.Context, target string, p connectcfg.Proxy) (net.Conn, err
 	}
 	if e := p.Validate(); e != nil {
 		return nil, e
+	}
+	if proxyconfig.Supported(p.Mode) {
+		return dialEmbedded(ctx, target, p)
 	}
 	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	if p.Mode == "" || p.Mode == "none" {

@@ -101,8 +101,8 @@ func TestManagementResourceSnapshotsWithoutWindows(t *testing.T) {
 					a.form.Auth, a.connection.authLabel = "key", "已有私钥"
 				}
 				if variant == "connection-identity" {
-					a.connection.identity = &sshconn.HostIdentity{Host: a.form.Host, Port: 22, Algorithm: "ssh-ed25519", Fingerprint: "SHA256:w1H85gE9C7qRE4zP0O4Wp5vM7Tg5J2Gr8RcbX6cVxfk"}
-					a.connection.review = true
+					a.page = 1
+					a.showHostIdentityPrompt(vault.Summary{Host: a.form.Host, Port: 22, User: a.form.User}, sshconn.HostIdentity{Host: a.form.Host, Port: 22, Algorithm: "ssh-ed25519", Fingerprint: "SHA256:w1H85gE9C7qRE4zP0O4Wp5vM7Tg5J2Gr8RcbX6cVxfk"}, func() {})
 				}
 			case "mounts":
 				a.statusMetric = "磁盘"

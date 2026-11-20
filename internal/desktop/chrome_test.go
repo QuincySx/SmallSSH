@@ -147,7 +147,7 @@ func TestWorkspaceHeadersAlignWithEmptyAndConnectedTerminals(t *testing.T) {
 			tt := ui.NewTester(a.view, width, 760)
 			for _, dark := range []bool{false, true} {
 				tt.SetDark(dark)
-				left, l := tt.Find("连接栏标题")
+				left, l := tt.Find("连接侧栏")
 				tab, r := tt.Find("终端栏标题1")
 				terminal, found := tt.Find("终端区域")
 				header, h := tt.Find("全局导航栏")

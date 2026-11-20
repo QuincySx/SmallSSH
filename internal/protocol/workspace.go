@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"sshclient/internal/approval"
+	"sshclient/internal/identitymodel"
 	"sshclient/internal/snippet"
 	"sshclient/internal/vault"
 )
@@ -22,21 +24,31 @@ type WorkspaceQuery struct {
 // no authority by itself; the broker binds every field to a one-use owner
 // challenge before touching the vault.
 type WorkspaceChange struct {
-	Kind      string            `json:"kind,omitempty"`
-	HostID    string            `json:"hostID,omitempty"`
-	CommandID string            `json:"commandID,omitempty"`
-	Command   *snippet.Command  `json:"command,omitempty"`
-	Note      *vault.ServerNote `json:"note,omitempty"`
-	Target    string            `json:"target,omitempty"`
-	System    string            `json:"system,omitempty"`
-	Inputs    []string          `json:"inputs,omitempty"`
-	Parameter int               `json:"parameter,omitempty"`
+	HostTrust         *vault.HostTrustChange      `json:"hostTrust,omitempty"`
+	GrantPolicy       *approval.GrantPolicyChange `json:"grantPolicy,omitempty"`
+	ConnectionOrder   *vault.ConnectionOrder      `json:"connectionOrder,omitempty"`
+	Identity          *identitymodel.Change       `json:"identity,omitempty"`
+	VNC               *vault.VNCSettings          `json:"vnc,omitempty"`
+	Route             *vault.SavedRoute           `json:"route,omitempty"`
+	KeepRoutePassword bool                        `json:"keepRoutePassword,omitempty"`
+	Kind              string                      `json:"kind,omitempty"`
+	HostID            string                      `json:"hostID,omitempty"`
+	CommandID         string                      `json:"commandID,omitempty"`
+	Command           *snippet.Command            `json:"command,omitempty"`
+	Note              *vault.ServerNote           `json:"note,omitempty"`
+	Target            string                      `json:"target,omitempty"`
+	System            string                      `json:"system,omitempty"`
+	Inputs            []string                    `json:"inputs,omitempty"`
+	Parameter         int                         `json:"parameter,omitempty"`
 }
 
 // WorkspaceResult returns only the data selected by a WorkspaceQuery.
 type WorkspaceResult struct {
-	Commands []snippet.Command `json:"commands,omitempty"`
-	Note     *vault.ServerNote `json:"note,omitempty"`
-	History  []string          `json:"history,omitempty"`
-	Next     string            `json:"next,omitempty"`
+	Identities *identitymodel.State `json:"identities,omitempty"`
+	VNC        *vault.VNCSettings   `json:"vnc,omitempty"`
+	Routes     []vault.RouteSummary `json:"routes,omitempty"`
+	Commands   []snippet.Command    `json:"commands,omitempty"`
+	Note       *vault.ServerNote    `json:"note,omitempty"`
+	History    []string             `json:"history,omitempty"`
+	Next       string               `json:"next,omitempty"`
 }

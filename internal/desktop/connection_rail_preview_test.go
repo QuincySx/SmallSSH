@@ -28,7 +28,7 @@ func TestConnectionRailSnapshotsWithoutWindows(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, variant := range []string{"light", "dark", "scrolled"} {
+	for _, variant := range []string{"light", "dark", "scrolled", "loading-light", "loading-dark"} {
 		t.Run(variant, func(t *testing.T) {
 			a := &app{ctx: context.Background(), online: true, page: 1, selected: "prod-web"}
 			a.connections = []vault.Summary{
@@ -43,9 +43,13 @@ func TestConnectionRailSnapshotsWithoutWindows(t *testing.T) {
 					a.connections = append(a.connections, vault.Summary{ID: fmt.Sprintf("example-%03d", i), Name: fmt.Sprintf("示例服务器 %03d", i), Group: "示例组", User: "ops", Host: "192.0.2.40"})
 				}
 			}
+			if variant == "loading-light" || variant == "loading-dark" {
+				a.connections = nil
+				a.connectionRailCache.loading = true
+			}
 			compact := false
 			tt := ui.NewTester(func(c *ui.Context) { a.connectionSidebar(c, compact) }, 248, 560)
-			tt.SetDark(variant == "dark")
+			tt.SetDark(variant == "dark" || variant == "loading-dark")
 			if variant == "scrolled" {
 				a.connectionRailList.ScrollToEnd()
 				tt.Frame()

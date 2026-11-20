@@ -1,0 +1,18 @@
+<sp-component name="隧道节点" props="状态: 普通 | 当前设备; 图标: 设备 | 服务器 | 服务; 内容: 说明 | 端口">
+<div class="flex flex-col items-center gap-tunnel-node w-[200px] h-fit">
+<div data-name="节点标记" class="flex flex-row items-center justify-center w-full h-tunnel-marker"><p data-name="当前标记" class="hidden text-accent type-detail">当前设备</p></div>
+<div data-name="节点图标" class="flex flex-row items-center gap-tunnel-connector-gap w-full h-tunnel-node-icon">
+<div data-name="入线" class="relative flex flex-row items-center w-full h-tunnel-node-icon pr-tunnel-connector-tip-inset"><div data-name="入线主体" class="w-full h-tunnel-connector-line bg-accent"></div><p data-name="箭头" class="absolute right-0 top-[4px] w-tunnel-connector-head text-accent type-tunnel-connector-icon"></p></div>
+<div data-name="图形" class="flex flex-row items-center justify-center w-tunnel-node-icon h-tunnel-node-icon"><img data-name="设备图标" src="../assets/tunnel-device.svg" class="w-tunnel-node-icon h-tunnel-node-icon"><img data-name="服务器图标" src="../assets/tunnel-server.svg" class="hidden w-tunnel-node-icon h-tunnel-node-icon"><img data-name="服务图标" src="../assets/tunnel-service.svg" class="hidden w-tunnel-node-icon h-tunnel-node-icon"></div>
+<div data-name="出线" class="flex flex-row items-center w-full h-tunnel-node-icon"><div data-name="出线主体" class="w-full h-tunnel-connector-line bg-accent"></div></div>
+</div>
+<p data-name="标题" class="w-full text-center text-text type-tunnel-node-label">本机入口</p>
+<div data-name="角色区" class="flex flex-col items-center justify-center w-full h-tunnel-secondary"><p data-name="角色" class="w-full text-center text-muted type-detail">访问入口</p></div>
+<p data-name="地址" class="w-full text-center text-muted type-detail">127.0.0.1</p>
+<div data-name="端口行" class="hidden flex flex-row items-center justify-center gap-space-xs w-full h-control"><p class="text-muted type-detail">端口</p><div data-name="端口输入" class="flex flex-row items-center justify-center w-tunnel-port h-control bg-surface border border-border rounded-control"><p data-name="端口值" class="w-full text-center text-text type-control">8080</p></div></div>
+</div>
+<sp-variant when="状态: 当前设备"><div data-name="节点标记"><p data-name="当前标记" class="shown"></p></div></sp-variant>
+<sp-variant when="图标: 服务器"><div data-name="节点图标"><div data-name="图形"><img data-name="设备图标" class="hidden"><img data-name="服务器图标" class="shown"></div></div></sp-variant>
+<sp-variant when="图标: 服务"><div data-name="节点图标"><div data-name="图形"><img data-name="设备图标" class="hidden"><img data-name="服务图标" class="shown"></div></div></sp-variant>
+<sp-variant when="内容: 端口"><div data-name="端口行" class="shown"></div></sp-variant>
+</sp-component>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>
+连接分组与拖动
+    </title>
+    <link rel="stylesheet" href="../../tokens.css">
+  </head>
+  <body class="flex flex-col w-[1280px] h-[860px] bg-canvas">
+    <div data-name="工作台根" class="flex flex-row gap-space-sm p-space-sm w-full h-full">
+      <div data-name="服务器侧栏外框" class="flex flex-col gap-space-sm w-sidebar h-full bg-surface rounded-panel">
+        <div data-name="侧栏标题栏" class="flex flex-row items-center gap-space-xs w-full h-control">
+          <sp-use component="窗口控制" props="位置: 侧栏" data-name="原生窗口按钮" class="w-sidebar-window-reserve h-control"></sp-use>
+          <sp-use component="图标按钮" data-name="侧栏开关" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="新建连接" data-click="03 连接/常规与密码" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <div data-name="侧栏标题留白" class="w-full h-control"></div>
+        </div>
+        <div data-name="服务器侧栏" class="flex flex-col gap-space-sm w-full h-full p-connection-sidebar bg-surface rounded-panel">
+          <sp-use component="输入框" data-name="搜索服务器" class="w-full h-connection-search">
+            <p data-name="值">搜索服务器</p>
+          </sp-use>
+<div data-name="Bridge分组" class="flex flex-row items-center px-space-sm w-full h-row"><p data-name="Bridge分组文字" class="w-full type-detail text-muted">⌄ Bridge</p></div>
+<sp-use component="导航项" data-name="香港跳板" class="w-full"><p data-name="标签">香港跳板</p><div data-name="图标"><p data-name="字标">B</p></div></sp-use>
+<div data-name="换组目标高亮" class="flex flex-row items-center px-space-sm w-full h-row border border-accent rounded-control"><p data-name="生产分组文字" class="w-full type-detail text-accent">⌄ 生产环境</p></div>
+<sp-use component="导航项" data-name="Web生产环境" class="w-full"><p data-name="标签">Web 生产环境</p><div data-name="图标"><p data-name="字标">W</p></div></sp-use>
+<div data-name="排序插入标记" class="w-full h-[2px] bg-accent"></div>
+<sp-use component="导航项" data-name="数据库" class="w-full"><p data-name="标签">数据库</p><div data-name="图标"><p data-name="字标">D</p></div></sp-use>
+<div data-name="未分组标题" class="flex flex-row items-center px-space-sm w-full h-row"><p data-name="未分组文字" class="w-full type-detail text-muted">⌄ 未分组</p></div>
+<sp-use component="导航项" data-name="临时测试" class="w-full"><p data-name="标签">临时测试</p><div data-name="图标"><p data-name="字标">T</p></div></sp-use>
+        </div>
+      </div>
+      <div data-name="主内容列" class="flex flex-col gap-space-sm w-full h-full">
+        <div data-name="标题栏" class="flex flex-row items-center w-full h-control gap-space-xs pl-space-sm">
+          <div data-name="拖动空白" class="flex flex-col gap-space-sm w-full h-full"></div>
+          <sp-use component="服务入口" data-name="端口转发" data-click="09 工具/服务列表" class="w-control h-control"></sp-use>
+<sp-use component="图标按钮" data-name="任务入口" class="w-control h-control" data-click="09 工具/传输与任务中心">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="工具面板开关" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="设置入口" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+        </div>
+        <div data-name="工作区" class="flex flex-row items-center gap-space-sm w-full h-full">
+          <div data-name="主内容" class="flex flex-col gap-space-sm w-full h-full">
+            <div data-name="终端内容" class="flex flex-col gap-space-sm p-space-lg w-full h-full bg-surface rounded-panel">
+              <p data-name="拖动状态说明" class="w-full text-muted type-body">拖动连接到分组，或在连接之间调整顺序</p><p data-name="空态标题" class="w-full text-text type-title">选择服务器，开始连接</p>
+              <sp-use component="按钮" data-name="选择服务器">
+                <p data-name="文字">选择服务器</p>
+              </sp-use>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

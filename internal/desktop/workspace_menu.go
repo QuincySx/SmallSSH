@@ -18,50 +18,50 @@ func (a *app) workspaceNavigationPage() int {
 
 // The title bar owns the real terminal tabs, leaving the workbench with one navigation row.
 func (a *app) workspaceHeader(c *ui.Context) {
+	a.ensureTerminalGroups()
 	bar, height := windowChromeMetrics(c)
 	height = max(height, 48)
-	windowWidth, _ := c.Size()
-	sidebarWidth := a.sidebarWidth
-	if sidebarWidth <= 0 {
-		sidebarWidth = 190
+	sidebarWidth := components.SidebarWidth(c, a.sidebarWidth, a.sidebarHidden)
+	// Keep the first tab inside the content edge. The single-group strip
+	// already adds its own header inset; canvas strips start at their edge.
+	// Native controls take precedence when the sidebar is collapsed.
+	tabStart := components.WorkspaceInset + sidebarWidth + components.WorkspaceInset + components.WorkspaceInset
+	if !a.workspaceCanvas && len(a.terminalGroups()) == 1 {
+		tabStart -= components.PanelInset
 	}
-	maximum := min(float32(400), max(float32(140), windowWidth-308))
-	sidebarWidth = max(140, min(maximum, sidebarWidth))
-	if a.sidebarHidden {
-		sidebarWidth = components.RailWidth
-	}
-	// Match the workspace's outer and split gaps, accounting for the tab
-	// strip's own inset. On a narrow hidden-title-bar window the native
-	// controls and sidebar toggle take precedence over alignment.
-	tabStart := 8 + sidebarWidth + 8 - components.HeaderInset
-	spacerWidth := max(0, tabStart-bar.Left-8-30)
+	spacerWidth := max(0, tabStart-bar.Left-components.WorkspaceInset-2*32)
+	_, _, _, settingsKey, _ := workspaceKeys()
 	// Native hit testing lets interactive descendants keep clicks and tab
 	// dragging; the header catches all remaining space, including above tabs.
 	components.HeaderBar(c).Height(height).Padding(0, bar.Right, 0, bar.Left).DragWindow().Key("workspace-header").Label(tr(c, "全局导航栏")).Children(func() {
-		ui.Spacer(c).Width(8).Height(height).Grow(0).Shrink(0).DragWindow()
+		ui.Spacer(c).Width(components.WorkspaceInset).Height(height).Grow(0).Shrink(0).DragWindow()
 		c.Key("workspace-sidebar-control")
 		headerControl(c, height, 32, func() { a.sidebarToggle(c) })
+		c.Key("workspace-new-connection")
+		headerControl(c, height, 32, func() {
+			if components.SVGButton(c, components.PlusIcon, tr(c, "新建连接"), shortcutTip(tr(c, "新建连接"), "Cmd/Ctrl+Shift+N")).Disabled(a.page == 0 && a.connection.phase == "save").Clicked() {
+				a.navigate(a.newConnection)
+			}
+		})
 		ui.Spacer(c).Width(spacerWidth).Height(height).Grow(0).Shrink(0).DragWindow()
 		c.Key("workspace-terminal-tabs")
 		ui.Row(c).Height(32).Grow(1).MinWidth(0).AlignItems(ui.Center).Children(func() {
 			a.workspaceTerminalTabs(c)
-			c.Key("workspace-new-terminal")
-			if components.SVGButton(c, components.PlusIcon, tr(c, "新建终端标签")).Disabled(a.selected == "").Clicked() {
-				a.runMenu(func() { a.openShellMode(true) })
-			}
 			ui.Spacer(c).Width(32).Height(32).Grow(0).Shrink(0).DragWindow().Label(tr(c, "窗口拖动区域"))
 		})
+		c.Key("workspace-tunnel-control")
+		headerControl(c, height, 32, func() { a.tunnelActivity(c) })
 		c.Key("workspace-transfer-control")
 		headerControl(c, height, 32, func() { a.transferActivity(c) })
 		c.Key("workspace-tools-control")
 		headerControl(c, height, 32, func() { a.toolsToggle(c) })
 		c.Key("workspace-settings")
 		headerControl(c, height, 32, func() {
-			if components.SVGButton(c, components.SettingsIcon, tr(c, "设置")).Clicked() {
+			if components.SVGButton(c, components.SettingsIcon, tr(c, "设置"), shortcutTip(tr(c, "设置"), settingsKey)).Clicked() {
 				a.runMenu(func() { a.openSettingsWindow(settingsWorkspace) })
 			}
 		})
-		ui.Spacer(c).Width(8).Height(height).Grow(0).Shrink(0).DragWindow()
+		ui.Spacer(c).Width(components.WorkspaceInset).Height(height).Grow(0).Shrink(0).DragWindow()
 	})
 }
 
@@ -81,8 +81,22 @@ func (a *app) workspaceTerminalTabs(c *ui.Context) {
 		g := groups[0]
 		ui.Column(c).Key(g.id).Grow(1).MinWidth(0).Height(32).Children(func() { a.terminalGroupHeader(c, g, true, true, 0) })
 	} else {
-		ui.Spacer(c).Grow(1).MinWidth(0).Height(32).DragWindow()
-		a.terminalLayoutMenu(c)
+		var entries []workspaceTab
+		for _, group := range groups {
+			entries = append(entries, a.workspaceTabs(group)...)
+		}
+		selected := a.selectedWorkspaceTab(a.activeTerminalGroup)
+		header := ui.Row(c).Grow(1).MinWidth(0).Height(32).Label(tr(c, "顶部工作区选项卡"))
+		header.Children(func() {
+			width := header.Bounds().W
+			reveal := selected != a.revealedWorkspaceTab || width != a.workspaceHeaderTabsWidth
+			a.workspaceTabStrip(c, nil, entries, selected, workspaceTabWidth(width-34, len(entries)), 32, reveal)
+			a.workspaceHeaderTabsWidth = width
+		})
+		a.revealedWorkspaceTab = selected
+		if selected != a.selectedWorkspaceTab(a.activeTerminalGroup) {
+			c.AnimationFrame()
+		}
 	}
 }
 

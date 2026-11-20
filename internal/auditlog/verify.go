@@ -19,9 +19,19 @@ var ErrTampered = errors.New("审计历史无法验证：记录已被修改或�
 // the next record will carry. Nothing outside this process can detect a complete
 // rewrite, but a record removed or edited in the middle breaks the chain.
 func (s *Store) Verify() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.verifyLocked()
+}
+
+func (s *Store) verifyLocked() (int, error) {
 	head := ""
 	verified := 0
-	for _, name := range []string{s.path + ".1", s.path} {
+	paths, err := s.paths()
+	if err != nil {
+		return 0, err
+	}
+	for _, name := range paths {
 		f, err := openExisting(name)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -39,6 +49,9 @@ func (s *Store) Verify() (int, error) {
 			head = fileHead
 		}
 	}
+	if len(s.head) > 0 && head != hex.EncodeToString(s.head) {
+		return verified, ErrTampered
+	}
 	if head != "" {
 		digest, err := hex.DecodeString(head)
 		if err != nil || len(digest) != sha256.Size {
@@ -53,26 +66,17 @@ func (s *Store) Verify() (int, error) {
 // digest of its last record. A record removed or changed in the middle no longer
 // names its predecessor, which is what this comparison catches.
 //
-// A line that cannot be parsed, or that is larger than a record can be, ends the
-// verifiable part: the history reader skips such debris, and one corrupt byte in
-// a log must not stop the app from writing. Everything written before it is still
-// checked, and a record edited or removed in the middle of a well-formed log is
-// still caught.
+// Malformed and oversized crash debris is skipped without resetting the chain.
+// A subsequent linked record must still name the last verified record, so damage
+// to an actual predecessor cannot hide an edited or removed record in the middle.
 func verifyFile(f *os.File, carry string) (int, string, error) {
-	reader := bufio.NewReaderSize(f, maxLineBytes)
+	reader := bufio.NewReaderSize(f, maxLineBytes+1)
 	previous, head, count := "", "", 0
 	chained := false
 	for {
-		line, err := reader.ReadSlice('\n')
-		if errors.Is(err, bufio.ErrBufferFull) {
-			return count, head, nil // oversized line: stop, as the reader does
-		}
-		line = bytes.TrimSuffix(line, []byte("\n"))
-		if len(line) > 0 {
-			var record Event
-			if json.Unmarshal(line, &record) != nil {
-				return count, head, nil
-			}
+		line, err := readAuditLine(reader)
+		var record Event
+		if len(line) > 0 && json.Unmarshal(line, &record) == nil {
 			switch {
 			case record.Prev == "" && !chained:
 			case !chained:
@@ -128,7 +132,11 @@ func (s *Store) Contains(want string) (bool, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, name := range []string{s.path + ".1", s.path} {
+	paths, err := s.paths()
+	if err != nil {
+		return false, err
+	}
+	for _, name := range paths {
 		f, err := openExisting(name)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -151,18 +159,11 @@ func (s *Store) Contains(want string) (bool, error) {
 // fileContains walks the same records the verifier accepts and compares their
 // digests with want.
 func fileContains(f *os.File, want string) (bool, error) {
-	reader := bufio.NewReaderSize(f, maxLineBytes)
+	reader := bufio.NewReaderSize(f, maxLineBytes+1)
 	for {
-		line, err := reader.ReadSlice('\n')
-		if errors.Is(err, bufio.ErrBufferFull) {
-			return false, nil // oversized line: the reader stops here too
-		}
-		line = bytes.TrimSuffix(line, []byte("\n"))
-		if len(line) > 0 {
-			var record Event
-			if json.Unmarshal(line, &record) != nil {
-				return false, nil
-			}
+		line, err := readAuditLine(reader)
+		var record Event
+		if len(line) > 0 && json.Unmarshal(line, &record) == nil {
 			digest := sha256.Sum256(append([]byte(nil), line...))
 			if hex.EncodeToString(digest[:]) == want {
 				return true, nil
@@ -175,6 +176,23 @@ func fileContains(f *os.File, want string) (bool, error) {
 			return false, err
 		}
 	}
+}
+
+// readAuditLine bounds allocations while consuming the entirety of an oversized
+// line. Its final fragment must never be mistaken for a standalone JSON record.
+func readAuditLine(reader *bufio.Reader) ([]byte, error) {
+	line, err := reader.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) {
+		for errors.Is(err, bufio.ErrBufferFull) {
+			_, err = reader.ReadSlice('\n')
+		}
+		return nil, err
+	}
+	line = bytes.TrimSuffix(line, []byte("\n"))
+	if len(line) > maxLineBytes {
+		return nil, err
+	}
+	return line, err
 }
 
 // openExisting opens a history file for reading without creating or following

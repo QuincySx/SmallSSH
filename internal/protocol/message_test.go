@@ -11,7 +11,7 @@ import (
 	"sshclient/internal/approval"
 	"sshclient/internal/protocol"
 	"sshclient/internal/snippet"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/vault"
 )
 
@@ -21,9 +21,10 @@ func TestMessageJSONFieldContract(t *testing.T) {
 		typ  string
 		tag  string
 	}{
-		{"RouteMeasurements", "[]sshconn.RouteMeasurement", `json:"routeMeasurements,omitempty"`},
+		{"RouteMeasurements", "[]sshdata.RouteMeasurement", `json:"routeMeasurements,omitempty"`},
 		{"ExpectedFingerprint", "string", `json:"expectedFingerprint,omitempty"`},
 		{"ListenAddress", "string", `json:"listenAddress,omitempty"`},
+		{"ConnectionRoute", "*connectcfg.RouteSelection", `json:"connectionRoute,omitempty"`},
 		{"Network", "*connectcfg.Network", `json:"network,omitempty"`},
 		{"KeepProxyCredential", "bool", `json:"keepProxyCredential,omitempty"`},
 		{"Channel", "string", `json:"channel,omitempty"`},
@@ -41,18 +42,19 @@ func TestMessageJSONFieldContract(t *testing.T) {
 		{"Phase", "string", `json:"phase,omitempty"`},
 		{"FileInfo", "*fileattrs.Info", `json:"fileInfo,omitempty"`},
 		{"Delegation", "*approval.DelegationChallenge", `json:"delegation,omitempty"`},
-		{"HostIdentity", "*sshconn.HostIdentity", `json:"hostIdentity,omitempty"`},
-		{"Identities", "[]sshconn.KeyInfo", `json:"identities,omitempty"`},
+		{"HostIdentity", "*sshdata.HostIdentity", `json:"hostIdentity,omitempty"`},
+		{"Identities", "[]sshdata.KeyInfo", `json:"identities,omitempty"`},
 		{"ProfileChange", "*vault.ProfileChange", `json:"profileChange,omitempty"`},
 		{"Port", "int", `json:"port,omitempty"`},
 		{"MonitorError", "string", `json:"monitorError,omitempty"`},
 		{"MonitorActive", "bool", `json:"monitorActive,omitempty"`},
-		{"Transfer", "*sshconn.TransferMeta", `json:"transfer,omitempty"`},
+		{"Transfer", "*sshdata.TransferMeta", `json:"transfer,omitempty"`},
 		{"Stats", "*monitor.Stats", `json:"stats,omitempty"`},
 		{"Action", "string", `json:"action,omitempty"`},
 		{"Operation", "approval.Operation", `json:"operation,omitempty"`},
 		{"TTL", "int", `json:"ttl,omitempty"`},
 		{"Idle", "int", `json:"idle,omitempty"`},
+		{"SkipMediumReview", "bool", `json:"skipMediumReview,omitempty"`},
 		{"ID", "string", `json:"id,omitempty"`},
 		{"Ticket", "string", `json:"ticket,omitempty"`},
 		{"Allow", "bool", `json:"allow,omitempty"`},
@@ -60,13 +62,14 @@ func TestMessageJSONFieldContract(t *testing.T) {
 		{"Request", "*approval.Request", `json:"request,omitempty"`},
 		{"Requests", "[]approval.Request", `json:"requests,omitempty"`},
 		{"Hosts", "[]string", `json:"hosts,omitempty"`},
-		{"Files", "[]sshconn.File", `json:"files,omitempty"`},
+		{"Files", "[]sshdata.File", `json:"files,omitempty"`},
 		{"Data", "[]uint8", `json:"data,omitempty"`},
 		{"Cols", "int", `json:"cols,omitempty"`},
 		{"Rows", "int", `json:"rows,omitempty"`},
 		{"ExitCode", "int", `json:"exitCode,omitempty"`},
 		{"Error", "string", `json:"error,omitempty"`},
 		{"Profile", "*vault.Profile", `json:"profile,omitempty"`},
+		{"Routes", "[]vault.RouteSummary", `json:"routes,omitempty"`},
 		{"Connections", "[]vault.Summary", `json:"connections,omitempty"`},
 		{"Details", "*vault.Summary", `json:"details,omitempty"`},
 		{"Target", "string", `json:"target,omitempty"`},
@@ -115,6 +118,7 @@ func TestMessageRequestJSONContract(t *testing.T) {
 	requireField(t, fields, "target", "host.example")
 	requireField(t, fields, "proof", base64.StdEncoding.EncodeToString(request.Proof))
 	requireAbsent(t, fields, "request")
+	requireAbsent(t, fields, "skipMediumReview")
 	requireAbsent(t, fields, "workspaceChange")
 	requireAbsent(t, fields, "error")
 
@@ -124,6 +128,12 @@ func TestMessageRequestJSONContract(t *testing.T) {
 		t.Fatalf("operation = %#v, want %#v", operation, request.Operation)
 	}
 	requireRoundTrip(t, request)
+}
+
+func TestGuardedMediumReviewDecisionJSON(t *testing.T) {
+	decision := protocol.Message{Action: "decide", ID: "synthetic-grant", Allow: true, SkipMediumReview: true}
+	requireField(t, marshalObject(t, decision), "skipMediumReview", true)
+	requireRoundTrip(t, decision)
 }
 
 func TestMessageResponseJSONContract(t *testing.T) {
@@ -140,7 +150,7 @@ func TestMessageResponseJSONContract(t *testing.T) {
 		Rows:          40,
 		Hosts:         []string{"host.example"},
 		Data:          []byte("synthetic-data"),
-		Transfer:      &sshconn.TransferMeta{Size: 42, Offset: 7, Hash: "synthetic-hash", PrefixHash: "synthetic-prefix"},
+		Transfer:      &sshdata.TransferMeta{Size: 42, Offset: 7, Hash: "synthetic-hash", PrefixHash: "synthetic-prefix"},
 	}
 
 	fields := marshalObject(t, response)
@@ -160,7 +170,7 @@ func TestMessageResponseJSONContract(t *testing.T) {
 	requireAbsent(t, fields, "proof")
 	requireAbsent(t, fields, "workspaceChange")
 
-	var transfer sshconn.TransferMeta
+	var transfer sshdata.TransferMeta
 	decodeField(t, fields, "transfer", &transfer)
 	if !reflect.DeepEqual(transfer, *response.Transfer) {
 		t.Fatalf("transfer = %#v, want %#v", transfer, *response.Transfer)

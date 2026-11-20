@@ -40,8 +40,8 @@ func runCompile(args []string) error {
 		if err := os.MkdirAll(directory, 0755); err != nil {
 			return err
 		}
-		fmt.Fprintf(out, "== go build -mod=vendor -o %s/ %s (%s)\n", directory, *packages, target)
-		command := exec.Command("go", "build", "-mod=vendor", "-o", directory+string(os.PathSeparator), *packages)
+		fmt.Fprintf(out, "== go build -mod=vendor -tags %s -ldflags %q -o %s/ %s (%s)\n", project.RuntimeTags, project.RuntimeLinkFlags, directory, *packages, target)
+		command := exec.Command("go", "build", "-mod=vendor", "-tags", project.RuntimeTags, "-ldflags", project.RuntimeLinkFlags, "-o", directory+string(os.PathSeparator), *packages)
 		command.Env = append(os.Environ(), "GOOS="+target.goos, "GOARCH="+target.goarch)
 		if target.goos != runtime.GOOS || target.goarch != runtime.GOARCH {
 			command.Env = append(command.Env, "CGO_ENABLED=0")

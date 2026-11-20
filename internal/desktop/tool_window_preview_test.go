@@ -10,6 +10,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/desktop/components"
 )
 
 // Both window contents are rendered offscreen through the real views. The
@@ -50,9 +51,9 @@ func TestDetachedToolsSnapshotsWithoutWindows(t *testing.T) {
 			main.SetDark(variant == "status-dark")
 			tools.SetDark(variant == "status-dark")
 			var previousRight float32
-			for _, label := range []string{"文件", "命令", "服务器状态"} {
+			for _, label := range []string{"命令", "文件", "服务器状态"} {
 				r, ok := tools.Find(label)
-				if !ok || r.W < 20 || r.Y < 0 || r.Y+r.H > 37 || r.X < previousRight {
+				if !ok || r.W < 20 || r.Y != (components.ToolHeaderHeight-28)/2 || r.H != 28 || r.Y+r.H > components.ToolHeaderHeight || r.X < previousRight {
 					t.Fatal("tool tab not visible in independent window", variant, label, r)
 				}
 				previousRight = r.X + r.W

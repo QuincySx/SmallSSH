@@ -140,9 +140,12 @@ func (c *Client) CheckAllowedPaths(ctx context.Context, paths []string, root str
 	defer s.Close()
 	stop := context.AfterFunc(ctx, func() { s.Close() })
 	defer stop()
-	resolvedRoot, err := guardedPath(s, root, true, 0)
-	if err != nil {
-		return pathGuardError(err)
+	resolvedRoot := root
+	if root != "/" {
+		resolvedRoot, err = guardedPath(s, root, true, 0)
+		if err != nil {
+			return pathGuardError(err)
+		}
 	}
 	for _, target := range paths {
 		resolved, err := guardedPath(s, target, true, 0)

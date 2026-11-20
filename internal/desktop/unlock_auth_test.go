@@ -40,10 +40,10 @@ func newVaultUnlockHarness(t *testing.T) *vaultUnlockHarness {
 		result := <-h.results // Deliberately ignores cancellation.
 		return result.owner, result.err
 	}
-	h.state.openBroker = func(dir string, owner *vault.Session) (*broker.Server, error) {
+	h.state.openBroker = func(_ context.Context, dir string, owner *vault.Session) (*desktopSession, error) {
 		h.count.Add(1)
 		h.opened <- owner
-		return broker.OpenSession(dir, owner)
+		return testDesktopOpen(broker.OpenSession(dir, owner))
 	}
 	// Successful unlock may initialize the local browser; keep every read in
 	// the generated fixture directory, including its directory caches.
@@ -56,7 +56,6 @@ func newVaultUnlockHarness(t *testing.T) *vaultUnlockHarness {
 		cancel()
 		h.a.cancelDirectoryLoads()
 		if h.a.server != nil {
-			h.a.server.Vault.Close()
 			h.a.server.Close()
 		}
 		if h.a.unlockCleanup != nil {
@@ -145,13 +144,13 @@ func TestVaultUnlockCancelledWaiterPreservesBrokerCleanupChain(t *testing.T) {
 	h := newVaultUnlockHarness(t)
 	release := make(chan struct{})
 	defer close(release)
-	h.state.openBroker = func(dir string, owner *vault.Session) (*broker.Server, error) {
+	h.state.openBroker = func(_ context.Context, dir string, owner *vault.Session) (*desktopSession, error) {
 		count := h.count.Add(1)
 		h.opened <- owner
 		if count == 1 {
 			<-release
 		}
-		return broker.OpenSession(dir, owner)
+		return testDesktopOpen(broker.OpenSession(dir, owner))
 	}
 	first := h.authenticate(t)
 	awaitApprovalValue(t, h.ui)()
@@ -191,10 +190,10 @@ func TestVaultUnlockCancelledWaiterPreservesBrokerCleanupChain(t *testing.T) {
 func TestVaultUnlockCancellationDuringBrokerStartupNeedsNoUICallback(t *testing.T) {
 	h := newVaultUnlockHarness(t)
 	release := make(chan struct{})
-	h.state.openBroker = func(dir string, owner *vault.Session) (*broker.Server, error) {
+	h.state.openBroker = func(_ context.Context, dir string, owner *vault.Session) (*desktopSession, error) {
 		h.opened <- owner
 		<-release
-		return broker.OpenSession(dir, owner)
+		return testDesktopOpen(broker.OpenSession(dir, owner))
 	}
 	owner := h.authenticate(t)
 	awaitApprovalValue(t, h.ui)()
@@ -291,8 +290,8 @@ func TestVaultUnlockTransientAutomaticInterruptionRetriesOnceWithoutError(t *tes
 	awaitApprovalValue(t, h.started)
 	h.results <- approvalAuthResult{err: err}
 	awaitApprovalValue(t, h.ui)()
-	if h.a.busy || h.state.passwordMode || h.a.unlockError == "" || !h.state.autoAttempted {
-		t.Fatal("second interruption did not stop with a retryable diagnostic")
+	if h.a.busy || !h.state.passwordMode || h.a.unlockError == "" || !h.state.autoAttempted {
+		t.Fatal("second interruption did not offer the master password")
 	}
 	h.state.queueAutomaticUnlock(ready, clock, post, current, start)
 	if h.state.autoQueued || h.count.Load() != 0 {
@@ -316,9 +315,20 @@ func TestVaultUnlockCancelAndRejectedFingerprintNeverAutoRetry(t *testing.T) {
 				if h.state.passwordMode || h.a.unlockError != "" {
 					t.Fatal("user cancellation became a hardware failure or forced password mode")
 				}
-			} else if !h.state.passwordMode || h.a.unlockError == "" {
+			} else if h.state.passwordMode != (code != "authenticationFailed") || h.a.unlockError == "" {
 				t.Fatal("a real failure lost its password fallback or diagnostic")
 			}
 		})
 	}
+	t.Run("linux-no-match", func(t *testing.T) {
+		h := newVaultUnlockHarness(t)
+		h.state.autoAttempted = true
+		h.a.beginVaultUnlockAttempt(true, true)
+		awaitApprovalValue(t, h.started)
+		h.results <- approvalAuthResult{err: systemauth.ErrFingerprintNotRecognized}
+		awaitApprovalValue(t, h.ui)()
+		if h.state.passwordMode || h.state.autoRetryUsed || h.a.unlockError == "" {
+			t.Fatal("the fingerprint mismatch did not offer a manual retry")
+		}
+	})
 }

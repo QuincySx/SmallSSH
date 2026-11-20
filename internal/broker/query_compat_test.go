@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"sshclient/internal/broker"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/protocol"
 	"sshclient/internal/snippet"
 	"sshclient/internal/vault"
@@ -101,6 +102,10 @@ func TestOwnerQueryProofCoversEveryWorkspaceChangeField(t *testing.T) {
 		name   string
 		change func(*protocol.WorkspaceChange)
 	}{
+		{"Route", func(change *protocol.WorkspaceChange) {
+			change.Route = &vault.SavedRoute{ID: "route-a", Name: "Route A"}
+		}},
+		{"KeepRoutePassword", func(change *protocol.WorkspaceChange) { change.KeepRoutePassword = true }},
 		{"Kind", func(change *protocol.WorkspaceChange) { change.Kind = "parameter-history-clear" }},
 		{"HostID", func(change *protocol.WorkspaceChange) { change.HostID = "host-b" }},
 		{"CommandID", func(change *protocol.WorkspaceChange) { change.CommandID = "command-b" }},
@@ -123,5 +128,17 @@ func TestOwnerQueryProofCoversEveryWorkspaceChangeField(t *testing.T) {
 				t.Fatalf("changing WorkspaceChange.%s did not change the signed bytes", tt.name)
 			}
 		})
+	}
+}
+
+func TestOwnerQueryProofBindsLiveConnectionRoute(t *testing.T) {
+	q := broker.Message{Action: "probeHost", ID: "destination", Target: "127.0.0.1", Port: 22, ConnectionRoute: &connectcfg.RouteSelection{Mode: "session", ID: "source"}}
+	original := captureOwnerQueryProof(t, q)
+	for _, route := range []*connectcfg.RouteSelection{nil, {Mode: "session", ID: "substitute"}, {Mode: "tunnel", ID: "source"}} {
+		changed := q
+		changed.ConnectionRoute = route
+		if bytes.Equal(original, captureOwnerQueryProof(t, changed)) {
+			t.Fatal("proof omitted live route", route)
+		}
 	}
 }

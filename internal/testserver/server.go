@@ -206,6 +206,18 @@ func (s *Server) session(c ssh.Channel, requests <-chan *ssh.Request) {
 				io.Copy(io.Discard, c)
 				return
 			}
+			if q.Command == monitor.PlatformProbe {
+				// The default fixture exposes Linux telemetry only on Linux.
+				// Other hosts model an unsupported POSIX server; Windows samplers
+				// have dedicated NewWithExec fixtures with synthetic CIM output.
+				platform := "Darwin"
+				if runtime.GOOS == "linux" {
+					platform = "Linux"
+				}
+				io.WriteString(c, "@@PROBE %OS% "+platform+"\n")
+				c.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+				return
+			}
 			if (q.Command == monitor.Command || q.Command == monitor.InventoryCommand) && runtime.GOOS == "linux" {
 				cmd := exec.Command("sh", "-c", q.Command)
 				cmd.Stdout = c

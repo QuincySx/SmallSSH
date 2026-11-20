@@ -6,93 +6,93 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[1400px] h-[2200px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-full bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="主窗底部/右侧面板；可独立窗口" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主窗底部/右侧面板；可独立窗口" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主窗四边停靠、平级工作区标签或系统窗口</p>
-      <div data-name="tools" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="tools" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">工具面板</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：顶栏单一小窗开关；工具面板自己的布局菜单</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：四边停靠、独立为工作区标签、拖回停靠；系统窗口、放大和收起</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：隐藏、右侧空间不足回退底部、独立窗</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：同一套工具状态；不是同时复制多个实例</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/filepanes.go; internal/desktop/tool_window.go; internal/desktop/layout.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件、02 工作台 / 小窗布局菜单</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：次要功能收进底部 / 右侧 tab；布局菜单用一排图标单选系统窗口、底部或右侧；移到画布、拖回停靠、放大或收起；主画布四向拆分不受工具区停靠方向限制</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：隐藏、右侧空间不足回退底部、独立窗；布局菜单高亮当前停靠位置，支持键盘选择与退出</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：每类工具一份展示；旧顶部 / 左侧停靠回退底部；右侧窄窗回退底部并保留选择；工具条高36、标签高28，左右留8、标签上下留4；文字标签与右侧操作分组排列；工具标签仅保留命令、文件、服务器状态，不重复提供任务入口</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/filepanes.go; internal/desktop/tool_window.go; internal/desktop/layout.go; internal/desktop/components/panel.go; internal/desktop/components/dock.go; internal/desktop/components/theme.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件、02 工作台 / 小窗布局菜单、02 工作台 / 工具停靠底部、02 工作台 / 工具停靠右侧、02 工作台 / 画布与功能开关、02 工作台 / 画布与标签混排</p>
       </div>
     </div>
-    <div data-name="主工作区标签" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主工作区标签" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主工作区标签</p>
-      <div data-name="file-tab" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
-        <p data-name="名称" class="w-full text-text type-section">文件管理大标签</p>
-        <p data-name="入口" class="w-full text-muted type-detail">入口：工具面板“在标签页打开文件管理”</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：完整文件工作区；标签右键返回停靠、关闭</p>
+      <div data-name="file-tab" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">画布文件管理 / 聚合标签</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：终端标题文件图标、右侧文件开关、工具区移到画布</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：独立到工作区标签；与终端共用选择、关闭、排序和四向分栏；拖回工具区；保留文件树、来源与选择</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：选中/未选、返回停靠</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：不是新的OS窗口；不复制传输任务</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_workspace.go; internal/desktop/workspace_menu.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件大标签</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不是新的OS窗口；不复制传输任务；画布文件标题32、来源/路径/操作行28，上下紧接，不再沿用40/36的两层高度</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_workspace.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go; internal/desktop/workspace_canvas.go; internal/desktop/file_toolbar.go; internal/desktop/filepanes.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件大标签、02 工作台 / 四个混合分栏、02 工作台 / 六个混合分栏</p>
       </div>
     </div>
-    <div data-name="居中模态弹窗" class="flex flex-col gap-[12px] w-full">
+    <div data-name="居中模态弹窗" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">居中模态弹窗</p>
-      <div data-name="connection" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="connection" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">新建/编辑连接</p>
-        <p data-name="入口" class="w-full text-muted type-detail">入口：服务器侧栏添加/右键编辑</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：分类常规、加速与代理、终端设置、访问策略；取消、保存/保存并连接</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：加载备注、验证错误定位分类、提交中禁改、未保存确认</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：既有密码保留或明确更换；不包含自动接收指纹</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connections.go; internal/desktop/connection_sections.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 常规与密码</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：顶部左侧＋新建连接（侧栏开关旁）；服务器右键编辑</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：分类常规、加速与代理、终端设置、访问策略；取消或保存连接；从服务器列表另行连接</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：加载备注、验证错误定位分类、提交中禁改、未保存确认；分类面板、底部操作右对齐/窄窗换行</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：既有密码保留或明确更换；不包含自动接收指纹；分类导航整块浅底、1px细边框、8px圆角和内边距；底部所有操作成组靠右，窄窗可换行；仅调整呈现；连接弹窗 820×620，窄窗随宿主收窄，表单独立滚动</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connections.go; internal/desktop/connection_sections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 常规与密码、03 连接 / 常规与密码 · 窄窗、03 连接 / 编辑连接 · 保留凭据</p>
       </div>
     </div>
-    <div data-name="连接弹窗分类" class="flex flex-col gap-[12px] w-full">
+    <div data-name="连接弹窗分类" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">连接弹窗分类</p>
-      <div data-name="connection-general" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="connection-general" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">常规与登录身份</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：新建/编辑连接→常规</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：名称、地址、端口、可创建分组、用户名、认证方式、备注；私钥文件选择与检查</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：密码/私钥/agent/PKCS#11分支；保留/更换已有凭据；备注读取失败重试/部分保存</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：FIDO2/sk通过agent；未实现keyboard-interactive/MFA；实际设备仍需验收</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connections.go; internal/desktop/connection_options.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 常规与密码、03 连接 / 硬件认证</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：名称、地址、端口、可创建分组、用户名、认证方式、备注；粘贴或选择私钥并检查；SmallSSH 密钥、SSH 密钥代理、硬件密钥</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：密码/私钥/agent/PKCS#11分支；PKCS#11读取中按钮变为「停止读取」，网络页路径实测中变为「停止测量」，都不关闭表单；主按钮只在读取身份/保存/连接时显示忙碌；保留/更换已有凭据；备注读取失败重试/部分保存</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：FIDO2/sk通过agent；未实现keyboard-interactive/MFA；实际设备仍需验收；分类区复用DialogSidebar整块面板，操作统一靠右</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connections.go; internal/desktop/connection_options.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 登录方式菜单、03 连接 / 已有私钥、03 连接 / SmallSSH 密钥、03 连接 / SSH 密钥代理、03 连接 / 硬件认证</p>
       </div>
-      <div data-name="connection-network" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="connection-network" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">加速与代理</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：连接→加速与代理</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：HTTP/HTTPS CONNECT、SOCKS5代理；已保存SSH中转；握手耗时比较</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：无代理、代理凭据、测量中/失败/结果</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：UDP双端加速和SSH压缩未实现；测量不代表吞吐</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_options.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 加速与代理</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：选择已保存线路；就地新建并自动选用；编辑所选线路；连接专用 HTTP/HTTPS CONNECT、SOCKS5 或已保存 SSH 中转；握手耗时比较</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：连接专用/直连、统一引用线路、线路不可用、代理凭据、测量中/失败/结果</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：连接只保存线路ID；线路修改下次连接生效，活动会话不变；不存在的线路不回退直连；UDP双端加速和SSH压缩未实现；测量不代表吞吐；分类区复用DialogSidebar整块面板，操作统一靠右</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/vault/saved_routes.go; internal/vault/route.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 加速与代理、03 连接 / 加速与代理 · 连接专用</p>
       </div>
-      <div data-name="connection-terminal" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="connection-terminal" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">终端设置</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：连接→终端设置</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：编码、退格序列、SSH保活间隔及无响应阈值</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：自动与显式编码、禁用保活、输入验证</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：编码仅转换终端；不改变文件字节</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_options.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 编码与保活</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：编码、退格序列；说明SSH保活的用途、启用/关闭效果；选择探测间隔和无响应等待上限，并显示当前等待秒数</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：自动与显式编码；保活默认关闭，等待上限禁用；启用后按实际间隔及倍数显示等待时长；输入验证</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：编码仅转换终端；不改变文件字节；保活发出小型探测，帮助维持空闲链路并发现无响应；单次探测等待上限为间隔×倍数（默认3），超时断开后需手动重连；关闭不再发送探测，不保证空闲连接不被外部断开；分类区复用DialogSidebar整块面板，操作统一靠右</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 编码与保活、03 连接 / 编码与保活 · 已开启</p>
       </div>
-      <div data-name="connection-policy" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="connection-policy" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">服务器访问策略</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：连接→访问策略或服务器菜单AI访问</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：开关AI访问、关键操作保护、保护路径编辑</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：关闭保护二次确认、输入错误</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：护栏非不可绕过安全边界</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_policy.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 访问策略</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：开关AI访问、关键操作保护；在当前访问策略表单直接编辑保护路径，每行一个绝对路径，留空恢复默认；内联校验并随连接一起保存</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：原生复选框选中/未选、禁用；关闭保护二次确认；路径错误原处提示并保留草稿，禁止保存；切换分类保留草稿</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：护栏非不可绕过安全边界；这些路径约束 AI 的结构化文件操作，不是任意远端命令的系统沙箱；保护路径不使用额外对话框或页面；无效路径在保护或AI访问关闭时也不能保存；分类区复用DialogSidebar整块面板，操作统一靠右</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_policy.go; internal/desktop/connections.go; internal/desktop/connection_sections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 访问策略、03 连接 / 访问策略 · 路径校验</p>
       </div>
     </div>
-    <div data-name="连接模态弹窗/复核确认" class="flex flex-col gap-[12px] w-full">
+    <div data-name="连接模态弹窗/复核确认" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">连接模态弹窗/复核确认</p>
-      <div data-name="host-identity" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="host-identity" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">服务器身份确认</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：首次连接、指纹变化时重新核对</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：显示服务器、公钥算法与指纹；信任并保存或连接</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：探测中、拒绝、指纹不匹配、重新核对</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：不自动信任；不写known_hosts</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connections.go</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：首次连接显示登录地址和完整主机指纹；取消或信任指纹并连接</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：小号确认、首次连接、取消、指纹不匹配、重新核对；实际主窗一次只显示一层身份确认</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：小号Dialog宽480，高度随内容，不固定撑满；大号表单宽820；不自动信任、不写known_hosts；指纹不作为可编辑输入</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go; internal/desktop/layout.go; internal/desktop/app.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：03 连接 / 核对服务器身份</p>
       </div>
     </div>

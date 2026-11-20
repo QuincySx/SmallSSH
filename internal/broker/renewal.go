@@ -7,24 +7,24 @@ import (
 	"sshclient/internal/approval"
 )
 
-func (s *Server) checkRenewalTarget(op approval.Operation) error {
+func (s *Server) checkRenewalTarget(op approval.Operation, peers ...approval.Peer) error {
 	p, err := s.Vault.Profile(op.Host)
 	if err != nil {
-		return s.recordAuthorityFailure(op, "", "invalid_authority", err)
+		return s.recordAuthorityFailure(op, "", "invalid_authority", err, peers...)
 	}
 	endpoint := fmt.Sprintf("%s@%s", p.User, net.JoinHostPort(p.Host, fmt.Sprint(p.Port)))
 	if endpoint != op.Endpoint || p.Fingerprint != op.HostFingerprint {
-		return s.recordAuthorityFailure(op, "", "invalid_authority", approval.ErrDenied)
+		return s.recordAuthorityFailure(op, "", "invalid_authority", approval.ErrDenied, peers...)
 	}
-	return s.checkAutomation(p, op, "")
+	return s.checkAutomation(p, op, "", peers...)
 }
 
 // The caller can prove possession of the expired client key; it cannot supply
 // a different endpoint, permission, key or duration for a renewal.
-func (s *Server) renewSession(q Message) (Message, error) {
+func (s *Server) renewSession(q Message, peers ...approval.Peer) (Message, error) {
 	if q.Action == "renewalChallenge" {
 		if _, err := s.Approvals.GetForTicket(q.ID, q.Ticket); err != nil {
-			return Message{}, s.recordAuthorityFailure(approval.Operation{Kind: q.Action}, "", "invalid_authority", err)
+			return Message{}, s.recordAuthorityFailure(approval.Operation{Kind: q.Action}, "", "invalid_authority", err, peers...)
 		}
 		attempt := approval.Operation{Kind: "renewalChallenge", Client: q.Operation.Client}
 		if previous, err := s.Approvals.SessionStatus(q.ID); err == nil {
@@ -32,13 +32,13 @@ func (s *Server) renewSession(q Message) (Message, error) {
 		}
 		r, c, err := s.Approvals.RenewalChallenge(q.ID)
 		if err != nil {
-			return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", err)
+			return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", err, peers...)
 		}
 		op := r.Operation
 		if c != nil {
 			op = c.Operation
 		}
-		if err = s.checkRenewalTarget(op); err != nil {
+		if err = s.checkRenewalTarget(op, peers...); err != nil {
 			if policyDenial(err) {
 				s.Approvals.InvalidateAutomationHost(op.Host)
 			} else {
@@ -57,9 +57,9 @@ func (s *Server) renewSession(q Message) (Message, error) {
 	}
 	r, created, err := s.Approvals.Renew(q.ID, q.Proof)
 	if err != nil {
-		return Message{}, s.recordAuthorityFailure(op, parent, "invalid_authority", err)
+		return Message{}, s.recordAuthorityFailure(op, parent, "invalid_authority", err, peers...)
 	}
-	if err = s.checkRenewalTarget(r.Operation); err != nil {
+	if err = s.checkRenewalTarget(r.Operation, peers...); err != nil {
 		if policyDenial(err) {
 			s.Approvals.InvalidateAutomationHost(r.Operation.Host)
 		} else {

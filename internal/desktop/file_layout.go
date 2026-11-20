@@ -6,7 +6,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/desktop/components"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 )
 
 const maxFilePanes = 8
@@ -94,11 +94,12 @@ func cloneFilePane(source *filePane) *filePane {
 	// A new window starts at the same location, independently pinned. Copy
 	// loaded listings, not in-flight requests, selections or mutable tables.
 	p := newFilePane(source.endpoint, false)
+	p.route = source.route
 	p.treeWidth = source.treeWidth
 	from, to := source.browser(), p.browser()
 	to.dir, to.address = from.dir, from.dir
 	for dir, files := range from.cache {
-		to.cache[dir] = append([]sshconn.File(nil), files...)
+		to.cache[dir] = append([]sshdata.File(nil), files...)
 	}
 	for dir, opened := range from.open {
 		value := *opened
@@ -135,6 +136,28 @@ func (a *app) showLocalFileWindow(p *filePane) *filePane {
 		added.focusList = true
 	}
 	return added
+}
+
+// serverFilePane is the window a terminal's folder action retargets. A local
+// window pinned beside the server stays local even when it was used last;
+// only a lone pinned local window is retargeted by that explicit action.
+func (a *app) serverFilePane() *filePane {
+	a.ensureFileLayout()
+	if p := a.activeFilePane; p.endpoint != localEndpoint || p.follow {
+		return p
+	}
+	panes := a.fileLayout.panes()
+	for _, p := range panes {
+		if p.follow {
+			return p
+		}
+	}
+	for _, p := range panes {
+		if p.endpoint != localEndpoint {
+			return p
+		}
+	}
+	return a.activeFilePane
 }
 
 func (a *app) addLocalFileWindow(p *filePane) *filePane {

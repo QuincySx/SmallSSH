@@ -36,3 +36,19 @@ func List(c *ui.Context, state *ui.ListState, count int, row func(int)) ui.Eleme
 func CellText(c *ui.Context, text string) ui.Element {
 	return ui.Text(c, text).SingleLine().FontSize(DetailFont).Tooltip(text)
 }
+
+// ReadableSelection keeps secondary audit/file metadata readable on the chosen
+// row while native list selection, keyboard focus and accessibility stay intact.
+func ReadableSelection(c *ui.Context) func() {
+	original := c.Theme()
+	theme := *original
+	amount := float32(.89)
+	if theme.Dark {
+		amount = .76
+	}
+	theme.Accent = original.Accent.Mix(original.Background, amount)
+	theme.AccentText = original.Text
+	theme.InactiveAccent = theme.Accent
+	c.SetTheme(&theme)
+	return func() { c.SetTheme(original) }
+}

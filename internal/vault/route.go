@@ -10,10 +10,54 @@ func (s *Session) ResolveRoute(target Profile) ([]Profile, error) {
 	if s.closed {
 		return nil, ErrUnlock
 	}
-	return resolveRoute(target, s.profiles)
+	return resolveRoute(target, s.profiles, s.routes)
 }
-func resolveRoute(target Profile, profiles []Profile) ([]Profile, error) {
-	route := []Profile{cloneProfile(target)}
+
+// Preserve working routes, including indirect dependents of an edited relay.
+// Older vaults may already contain dangling routes; let the owner repair those
+// one at a time instead of requiring every unrelated route to work first.
+func validateRouteChanges(profiles []Profile, saved []SavedRoute, previousProfiles []Profile, previousSaved []SavedRoute) error {
+	for _, p := range profiles {
+		if _, err := resolveRoute(p, profiles, saved); err != nil {
+			previouslyInvalid := false
+			for _, previous := range previousProfiles {
+				if previous.ID == p.ID {
+					_, previousErr := resolveRoute(previous, previousProfiles, previousSaved)
+					previouslyInvalid = previousErr != nil
+					break
+				}
+			}
+			if !previouslyInvalid {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func resolveRoute(target Profile, profiles []Profile, saved []SavedRoute) ([]Profile, error) {
+	expand := func(p Profile) (Profile, error) {
+		p = cloneProfile(p)
+		if err := p.Network.Validate(); err != nil {
+			return p, err
+		}
+		if p.Network.RouteID == "" {
+			return p, nil
+		}
+		for _, r := range saved {
+			if r.ID == p.Network.RouteID {
+				p.Network.RouteID = ""
+				p.Network.Proxy, p.Network.Relay = r.Proxy, r.Relay
+				return p, nil
+			}
+		}
+		return p, errors.New("已保存线路不存在，请重新选择线路")
+	}
+	target, err := expand(target)
+	if err != nil {
+		return nil, err
+	}
+	route := []Profile{target}
 	seen := map[string]bool{target.ID: true}
 	for route[len(route)-1].Network.Relay != "" {
 		id := route[len(route)-1].Network.Relay
@@ -24,7 +68,11 @@ func resolveRoute(target Profile, profiles []Profile) ([]Profile, error) {
 		found := false
 		for _, p := range profiles {
 			if p.ID == id {
-				route = append(route, cloneProfile(p))
+				hop, err := expand(p)
+				if err != nil {
+					return nil, err
+				}
+				route = append(route, hop)
 				found = true
 				break
 			}

@@ -6,28 +6,28 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[900px] h-[600px] bg-canvas">
-  <div data-name="模态承载" class="flex flex-col gap-[8px] p-[40px] w-full h-full bg-canvas">
-    <div data-name="对话框" class="flex flex-col gap-[16px] p-[16px] w-full h-full bg-surface rounded-panel">
-      <div data-name="标题" class="flex flex-row items-center gap-[8px] w-full">
+  <div data-name="模态承载" class="flex flex-col items-center justify-center gap-space-sm p-dialog-backdrop w-full h-full bg-canvas">
+    <div data-name="对话框" class="flex flex-col gap-space-lg p-space-lg w-[520px] h-fit bg-surface rounded-panel">
+      <div data-name="标题" class="flex flex-row items-center gap-space-sm w-full">
         <p data-name="标题文字" class="w-full text-text type-section">下载到本机</p>
         <sp-use component="图标按钮" data-name="关闭弹窗">
           <p data-name="图标"></p>
         </sp-use>
       </div>
-      <div data-name="确认内容" class="flex flex-col gap-[8px] w-full">
-        <div data-name="字段 来源" class="flex flex-row items-center gap-[8px] w-full">
+      <div data-name="确认内容" class="flex flex-col gap-space-sm w-full">
+        <div data-name="字段 来源" class="flex flex-row items-center gap-space-sm w-full">
           <p data-name="标签" class="w-[116px] text-text type-body">来源</p>
           <sp-use component="输入框" data-name="值" class="w-full">
             <p data-name="值">Web 生产环境 · /srv/site</p>
           </sp-use>
         </div>
-        <div data-name="字段 所选文件" class="flex flex-row items-center gap-[8px] w-full">
+        <div data-name="字段 所选文件" class="flex flex-row items-center gap-space-sm w-full">
           <p data-name="标签" class="w-[116px] text-text type-body">所选文件</p>
           <sp-use component="输入框" data-name="值" class="w-full">
             <p data-name="值">nginx.conf、compose.yaml</p>
           </sp-use>
         </div>
-        <div data-name="字段 目标目录" class="flex flex-row items-center gap-[8px] w-full">
+        <div data-name="字段 目标目录" class="flex flex-row items-center gap-space-sm w-full">
           <p data-name="标签" class="w-[116px] text-text type-body">目标目录</p>
           <sp-use component="输入框" data-name="值" class="w-full">
             <p data-name="值">~/Downloads</p>
@@ -35,7 +35,7 @@
         </div>
         <p data-name="规则" class="w-full text-muted type-body">核对后加入传输队列，不自动覆盖已有文件。</p>
       </div>
-      <div data-name="底部操作" class="flex flex-row items-center gap-[8px] w-full">
+      <div data-name="底部操作" class="flex flex-row items-center gap-space-sm w-full justify-end">
         <sp-use component="按钮" props="样式: 普通" data-name="取消">
           <p data-name="文字">取消</p>
         </sp-use>

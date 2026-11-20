@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -142,6 +143,23 @@ func TestHiddenAndBusyFrontendsDoNotConsumeRequests(t *testing.T) {
 		if _, ok := a.nextApprovalPopup(now); !ok {
 			t.Fatal("blocked request was silently consumed", blocked)
 		}
+	}
+}
+
+func TestHandledApprovalDoesNotPopFromStalePendingSnapshot(t *testing.T) {
+	a, r, now := popupFixture()
+	r.Nonce = "reviewed"
+	a.ctx = context.Background()
+	a.requests = []approval.Request{r}
+	state := &approvalPromptState{}
+	a.bindApprovalFlow(r, state, func(fn func()) { fn() }, func() bool { return true }, func() {})
+	state.flow.handled()
+	if _, ok := a.nextApprovalPopup(now); ok {
+		t.Fatal("a completed decision opened a new popup from the old snapshot")
+	}
+	a.requests[0].Nonce = "new-review"
+	if got, ok := a.nextApprovalPopup(now); !ok || got.Nonce != "new-review" {
+		t.Fatal("a genuinely new review was not shown")
 	}
 }
 

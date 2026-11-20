@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -46,6 +47,25 @@ func TestGrantIdleLimitAllowsOnlyAnAbsoluteDeadlineBeyondThirtyMinutes(t *testin
 		if err := scope.Validate(); (err == nil) != test.valid {
 			t.Fatalf("lifetime %d idle %d: valid=%t, error=%v", test.lifetime, test.idle, test.valid, err)
 		}
+	}
+}
+
+func TestMaintenanceGrantExpiresWithoutRenewal(t *testing.T) {
+	m, r, _, _ := grantFixture(t, MaintenancePermission)
+	now := time.Now()
+	m.now = func() time.Time { return now }
+	approve(t, m, r)
+	op := grantedOperation(r, "upgrade-preview")
+	op.Path = ""
+	if _, err := m.DelegationChallenge(r.ID, op, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(15 * time.Minute)
+	if _, err := m.DelegationChallenge(r.ID, op, time.Minute); !errors.Is(err, ErrDenied) {
+		t.Fatal("expired maintenance grant remained usable", err)
+	}
+	if _, _, err := m.RenewalChallenge(r.ID); !errors.Is(err, ErrDenied) {
+		t.Fatal("expired maintenance grant became renewable", err)
 	}
 }
 

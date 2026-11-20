@@ -12,14 +12,10 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"sshclient/internal/sshdata"
 )
 
-type TransferMeta struct {
-	Size       int64  `json:"size"`
-	Offset     int64  `json:"offset"`
-	Hash       string `json:"hash"`
-	PrefixHash string `json:"prefixHash"`
-}
+type TransferMeta = sshdata.TransferMeta
 
 var transferID = regexp.MustCompile(`^[A-Za-z0-9_-]{24}$`)
 
@@ -61,11 +57,14 @@ func (c *Client) prepareUpload(ctx context.Context, p, id, expected string, size
 		}
 	}()
 	if info, e := s.Lstat(p); e == nil {
-		if createOnly {
-			return nil, errors.New("新上传目标已存在，不会覆盖或复用")
+		if !info.Mode().IsRegular() {
+			return nil, errors.New("远程目标不是普通文件，不能覆盖")
 		}
-		if !info.Mode().IsRegular() || info.Size() != size {
-			return nil, errors.New("目标已存在且不同，续传不会覆盖")
+		if createOnly {
+			return nil, sshdata.ErrUploadTargetExists
+		}
+		if info.Size() != size {
+			return nil, sshdata.ErrUploadTargetExists
 		}
 		f, e := s.Open(p)
 		if e != nil {
@@ -77,7 +76,7 @@ func (c *Client) prepareUpload(ctx context.Context, p, id, expected string, size
 			return nil, e
 		}
 		if hex.EncodeToString(u.hash.Sum(nil)) != expected {
-			return nil, errors.New("目标已存在且内容不同")
+			return nil, sshdata.ErrUploadTargetExists
 		}
 		u.Meta.Offset = size
 		u.Meta.PrefixHash = expected
@@ -155,6 +154,9 @@ func (u *UploadSession) Finish(r io.Reader) error {
 		return e
 	}
 	if e = u.s.Link(u.part, u.target); e != nil {
+		if info, statErr := u.s.Lstat(u.target); statErr == nil && info.Mode().IsRegular() {
+			return sshdata.ErrUploadTargetExists
+		}
 		return fmt.Errorf("无覆盖提交失败，部分文件已保留: %w", e)
 	}
 	return u.s.Remove(u.part)

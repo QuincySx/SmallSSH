@@ -1,0 +1,9 @@
+<sp-component name="工具标签" props="状态: 普通 | 选中; 密度: 标准 | 紧凑">
+  <div class="flex flex-row items-center justify-center px-space-md h-panel-tab bg-[#00000000] rounded-control">
+    <p data-name="文字" class="text-muted type-panel-label">文件</p>
+  </div>
+  <sp-variant when="状态: 选中" class="bg-accentsoft">
+    <p data-name="文字" class="text-accent"></p>
+  </sp-variant>
+  <sp-variant when="密度: 紧凑" class="px-field-inline"></sp-variant>
+</sp-component>

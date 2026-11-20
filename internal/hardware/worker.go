@@ -75,10 +75,10 @@ func ModuleHash(path string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
-func start() (w *worker, err error) {
-	executable, e := os.Executable()
-	if e != nil {
-		return nil, e
+func start() (*worker, error) {
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, err
 	}
 	command := exec.Command(executable, workerFlag)
 	configureWorker(command)
@@ -156,9 +156,17 @@ func Inspect(ctx context.Context, config connectcfg.Hardware) (string, []Key, er
 	if len(config.PIN) > 1024 || len(config.TokenSerial) > 32 || config.PIN != "" && config.TokenSerial == "" {
 		return "", nil, errors.New("请先选择令牌序列号再输入 PIN；PIN 最多 1024 字节")
 	}
-	hash, e := ModuleHash(config.Module)
-	if e != nil {
-		return "", nil, e
+	var hash string
+	if config.Module == connectcfg.MacSmartCard {
+		if config.PIN != "" {
+			return "", nil, errors.New("系统智能卡的 PIN 由 macOS 验证")
+		}
+	} else {
+		var err error
+		hash, err = ModuleHash(config.Module)
+		if err != nil {
+			return "", nil, err
+		}
 	}
 	w, e := start()
 	if e != nil {
@@ -192,6 +200,10 @@ func Open(ctx context.Context, config connectcfg.Hardware) (ssh.Signer, io.Close
 		}
 		return nil, nil, e
 	}
+	if config.Module == connectcfg.MacSmartCard && (r.Keys[0].Serial != config.TokenSerial || r.Keys[0].ID != config.KeyID) {
+		w.Close()
+		return nil, nil, errors.New("系统智能卡身份已变化")
+	}
 	w.public, e = x509.ParsePKIXPublicKey(r.Keys[0].Public)
 	if e != nil {
 		w.Close()
@@ -209,6 +221,23 @@ func Open(ctx context.Context, config connectcfg.Hardware) (ssh.Signer, io.Close
 	return signer, w, nil
 }
 
+type hardwareSession interface {
+	keys(config connectcfg.Hardware, selectKey bool) ([]Key, error)
+	sign(digest []byte, hash crypto.Hash) ([]byte, error)
+	Close()
+}
+
+func openHardwareSession(config connectcfg.Hardware) (hardwareSession, error) {
+	if config.Module == connectcfg.MacSmartCard {
+		return openMacSmartCard()
+	}
+	module, err := openNative(config)
+	if err != nil {
+		return nil, err
+	}
+	return module, nil
+}
+
 // MaybeWorker is checked before either application's flag parser or UI starts.
 func MaybeWorker() bool {
 	if len(os.Args) != 2 || os.Args[1] != workerFlag {
@@ -221,7 +250,7 @@ func MaybeWorker() bool {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), 64<<10)
 	encoder := json.NewEncoder(os.Stdout)
-	var module *nativeModule
+	var module hardwareSession
 	defer func() {
 		if module != nil {
 			module.Close()
@@ -238,7 +267,7 @@ func MaybeWorker() bool {
 					e = errors.New("硬件工作进程不能重新选取密钥")
 					break
 				}
-				module, e = openNative(q.Config)
+				module, e = openHardwareSession(q.Config)
 				if e == nil {
 					r.Keys, e = module.keys(q.Config, q.Action == "open")
 				}

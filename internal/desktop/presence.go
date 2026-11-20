@@ -28,14 +28,16 @@ type presenceEffects struct {
 }
 
 type presenceState struct {
-	effects      *presenceEffects
-	tray         presenceTray
-	quitting     bool
-	backgrounded bool
-	dockFallback bool
-	trayFailed   bool
-	warning      string
-	quitAttempt  uint64
+	effects       *presenceEffects
+	tray          presenceTray
+	quitting      bool
+	backgrounded  bool
+	dockFallback  bool
+	trayFailed    bool
+	warning       string
+	saveError     string
+	hiddenWindows []toolsWindow
+	quitAttempt   uint64
 }
 
 type nativePresenceTray struct {
@@ -62,9 +64,19 @@ func (a *app) installPresence() {
 				mygo.App.SetActivationPolicy(policy)
 			}
 		},
-		hide:             func() { a.win.Hide() },
+		hide: func() {
+			a.win.Hide()
+			if runtime.GOOS == "darwin" {
+				// Cocoa also owns auxiliary WebKit/fullscreen windows which
+				// are not independent workbench views.
+				mygo.App.Hide()
+			}
+		},
 		mainNeedsRestore: func() bool { return !a.win.IsVisible() || a.win.IsMinimized() },
 		show: func() {
+			if runtime.GOOS == "darwin" {
+				mygo.App.Show()
+			}
 			if a.win.IsMinimized() {
 				a.win.Restore()
 			}
@@ -145,9 +157,7 @@ func (a *app) applyPresence(next behaviorPreferences) error {
 			a.presence.warning = tr(nil, "通知区域图标不可用。")
 		}
 	}
-	if e.dockSupported {
-		e.setDock(a.presenceDock(next))
-	}
+	a.syncPresenceDock()
 	if !next.ShowTrayIcon && a.presence.tray != nil {
 		a.presence.tray.destroy()
 		a.presence.tray = nil
@@ -183,9 +193,7 @@ func (a *app) restorePresence() {
 	} else {
 		a.presence.warning = ""
 	}
-	if e.dockSupported {
-		e.setDock(a.presence.dockFallback || a.presenceDock(a.behavior))
-	}
+	a.syncPresenceDock()
 }
 
 func (a *app) presenceClose(prevent func()) bool {
@@ -199,7 +207,9 @@ func (a *app) presenceClose(prevent func()) bool {
 		return true
 	}
 	a.presence.backgrounded = true
+	a.hidePresenceWindows()
 	a.presence.effects.hide()
+	a.syncPresenceDock()
 	return true
 }
 
@@ -222,7 +232,9 @@ func (a *app) showFromPresence() {
 	}
 	if a.presence.effects != nil {
 		a.presence.backgrounded = false
+		a.syncPresenceDock()
 		a.presence.effects.show()
+		a.restorePresenceWindows()
 		a.presence.effects.focus()
 	}
 }
@@ -237,6 +249,7 @@ func (a *app) refreshPresenceLabels() {
 	}
 }
 func (a *app) destroyPresence() {
+	a.presence.hiddenWindows = nil
 	if a.presence.tray != nil {
 		a.presence.tray.destroy()
 		a.presence.tray = nil

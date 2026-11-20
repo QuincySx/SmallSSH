@@ -17,11 +17,12 @@ type networkRate struct {
 	valid  bool
 }
 type statusPoint struct {
-	at                              time.Time
-	cpu, user, system, wait, memory float64
-	read, write                     float64
-	cpuValid, ioValid               bool
-	networks                        []networkRate
+	at                               time.Time
+	cpu, user, system, wait, memory  float64
+	read, write                      float64
+	cpuValid, cpuExtraValid, ioValid bool
+	interval                         time.Duration
+	networks                         []networkRate
 }
 type statusHistory struct{ points []statusPoint }
 
@@ -32,7 +33,7 @@ func (h *statusHistory) add(s *monitor.Stats) {
 	if n := len(h.points); n > 0 && !s.Time.After(h.points[n-1].at) {
 		return
 	}
-	p := statusPoint{at: s.Time, cpu: s.CPU, user: s.CPUDetail.User, system: s.CPUDetail.System, wait: s.CPUDetail.Wait, memory: percentage(s.MemoryUsed, s.MemoryTotal), cpuValid: s.CPUDetail.Valid}
+	p := statusPoint{at: s.Time, cpu: s.CPU, user: s.CPUDetail.User, system: s.CPUDetail.System, wait: s.CPUDetail.Wait, memory: percentage(s.MemoryUsed, s.MemoryTotal), cpuValid: s.CPUDetail.Valid, cpuExtraValid: s.CPUDetail.Valid && !s.CPUDetail.BasicOnly, interval: statusSampleInterval(s)}
 	for _, b := range s.BlockIO {
 		p.read += b.ReadRate
 		p.write += b.WriteRate
@@ -198,7 +199,7 @@ func trendChart(c *ui.Context, label string, history *statusHistory, window time
 				}
 				x := plot.X + float32(point.at.Sub(start).Seconds()/window.Seconds())*plot.W
 				y := plot.Y + plot.H*(1-float32(max(0, min(upper, v))/upper))
-				if drawing && point.at.Sub(last) > 8*time.Second {
+				if drawing && point.at.Sub(last) > statusPointMaxGap(point) {
 					flush()
 				}
 				if !drawing {
@@ -243,6 +244,10 @@ func trendChart(c *ui.Context, label string, history *statusHistory, window time
 			p.Text(box.X+9, box.Y+25+float32(j)*17, s.name+"  "+text, 11, s.color)
 		}
 	})
+}
+
+func statusPointMaxGap(point statusPoint) time.Duration {
+	return max(8*time.Second, 4*point.interval)
 }
 
 func nearestStatusPoint(points []statusPoint, at time.Time) int {

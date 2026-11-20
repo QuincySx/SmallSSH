@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"math"
 	"slices"
 	"time"
 
@@ -21,7 +20,8 @@ const scrollbarWidth = 10
 func (ed *editor) input(ev ui.InputEvent) bool {
 	// The key after the first of a chord is the chord's, as VS Code's
 	// keybindings resolve chords before an extension's type command.
-	chord := ed.chord != nil && ev.Kind == ui.InputKeyDown
+	// A key of no name, as the modifier the second key is held with, is not it.
+	chord := ed.chord != nil && ev.Kind == ui.InputKeyDown && ev.Key != ui.KeyUnknown
 	if !chord && ed.offer(ev) {
 		return true
 	}
@@ -39,9 +39,11 @@ func (ed *editor) offer(ev ui.InputEvent) bool {
 
 // retry runs fn, which edits the text as the editor shows it, again on
 // the text as it is when another goroutine edited the buffer meanwhile,
-// rather than leaving the edit out (apply).
+// rather than leaving the edit out (apply), as many times as it takes:
+// each run that comes too late found another goroutine's edit in, so the
+// buffer moves on, and a letter typed is never lost.
 func (ed *editor) retry(fn func() bool) bool {
-	for range 4 {
+	for {
 		ed.sync()
 		ed.stale = false
 		ok := fn()
@@ -49,14 +51,13 @@ func (ed *editor) retry(fn func() bool) bool {
 			return ok
 		}
 	}
-	return false
 }
 
 func (ed *editor) dispatch(ev ui.InputEvent) bool {
 	ed.frameNow = ev.Time
 	switch ev.Kind {
 	case ui.InputKeyDown:
-		return ed.key(ev)
+		return ev.Key != ui.KeyUnknown && ed.key(ev)
 	case ui.InputCommand:
 		cmd := map[string]Command{"copy": Copy, "cut": Cut, "paste": Paste, "pasteAndMatchStyle": Paste, "selectAll": SelectAll,
 			"undo": Undo, "redo": Redo, "delete": Backspace}[ev.Text]
@@ -153,10 +154,10 @@ const (
 
 func (ed *editor) regionAt(x, y float32) region {
 	vertical, horizontal := ed.scrollbars()
-	if vertical && x >= ed.r.W-scrollbarWidth {
+	if vertical && x >= ed.r.W-ed.barWidth() {
 		return regionVScroll
 	}
-	if horizontal && y >= ed.viewH-scrollbarWidth {
+	if horizontal && y >= ed.hbarY && y < ed.hbarY+ed.barWidth() {
 		return regionHScroll
 	}
 	if x < ed.gutterW {
@@ -214,7 +215,7 @@ func (ed *editor) pointerDown(ev ui.InputEvent) bool {
 		ed.gesture.colStart = ui.Point{X: cx, Y: float32(cy)}
 		ed.columnSelect(cx, cy)
 		return true
-	case mods == ui.Cmd && ed.o.onDefinition != nil && ev.Clicks == 1:
+	case ed.clickGoesToDefinition(mods) && ev.Clicks == 1:
 		ed.gesture.active = false
 		ed.setSels([]sel{ed.newSel(off, off)}, revealNone)
 		ed.o.onDefinition(off)
@@ -257,6 +258,45 @@ func (ed *editor) pointerDown(ev ui.InputEvent) bool {
 	}
 	ed.extendGesture(off)
 	return true
+}
+
+// textAt returns the offset of the text at a point of the element, or -1
+// past the end of a line, below the last, or off the text.
+func (ed *editor) textAt(x, y float32) int {
+	if ed.regionAt(x, y) != regionText {
+		return -1
+	}
+	cx, cy := ed.toContent(x, y)
+	off := ed.offsetAt(cx, cy)
+	if cr, ok := ed.caretRect(off); !ok || float64(cy) > float64(cr.Y+cr.H) ||
+		off == ed.view.text.LineEnd(ed.view.text.LineOf(off)) && cx > cr.X+ed.view.charWidth/2 {
+		return -1
+	}
+	return off
+}
+
+// clickGoesToDefinition reports whether a click with mods goes to the
+// definition of the word under it, which the press and the link both ask.
+func (ed *editor) clickGoesToDefinition(mods ui.Modifiers) bool {
+	return mods == ui.Cmd && ed.o.onDefinition != nil && !ed.o.noDefinitionClick
+}
+
+// linkAt returns the word under the pointer that a click with mods would
+// go to the definition of, as the editor's link holds it.
+func (ed *editor) linkAt(mods ui.Modifiers) [2]int {
+	if !ed.clickGoesToDefinition(mods) || ed.o.noDefinitionLink || !ed.pointerIn || ed.gesture.active || ed.scrollbar.active {
+		return [2]int{}
+	}
+	off := ed.textAt(ed.pointer.X, ed.pointer.Y)
+	if off < 0 {
+		return [2]int{}
+	}
+	extra := ed.wordChars()
+	a, z := wordAt(ed.view.text, off, extra)
+	if z <= a || classOf(firstRune(ed.view.text.Slice(a, z)), extra) != classWord {
+		return [2]int{}
+	}
+	return [2]int{a, z}
 }
 
 // extendGesture extends the selection being dragged to off.
@@ -360,15 +400,18 @@ func (ed *editor) pointerMove(ev ui.InputEvent) bool {
 		ed.hoverLine = line
 		changed = true
 	}
+	if l := ed.linkAt(ev.Mods); l != ed.link {
+		ed.link = l
+		changed = true
+	}
 	h := &ed.hover
-	off := -1
-	if ed.regionAt(ev.X, ev.Y) == regionText {
-		cx, cy := ed.toContent(ev.X, ev.Y)
-		off = ed.offsetAt(cx, cy)
-		// Past the end of a line, or below the last, is over no text.
-		if cr, ok := ed.caretRect(off); !ok || float64(cy) > float64(cr.Y+cr.H) ||
-			off == ed.view.text.LineEnd(ed.view.text.LineOf(off)) && cx > cr.X+ed.view.charWidth/2 {
-			off = -1
+	off := ed.textAt(ev.X, ev.Y)
+	// Trailing inlays are the exception: their caret deliberately stays
+	// before them, but their rendered text is still a hover target. Not a
+	// link's, which would underline the line's last word.
+	if off < 0 && ed.regionAt(ev.X, ev.Y) == regionText {
+		if cx, cy := ed.toContent(ev.X, ev.Y); ed.overTrailingInlay(cx, float64(cy)) {
+			off = ed.offsetAt(cx, cy)
 		}
 	}
 	if off < 0 {
@@ -385,7 +428,7 @@ func (ed *editor) pointerMove(ev ui.InputEvent) bool {
 			changed = true
 		}
 	}
-	if off >= 0 && (ed.o.onHover != nil || len(ed.diags) > 0) && off != h.restOff {
+	if off >= 0 && !ed.o.noPointerHover && (ed.o.onHover != nil || len(ed.diags) > 0) && off != h.restOff {
 		h.restOff, h.restAt, h.pending = off, ed.frameNow, true
 		changed = true
 	}
@@ -416,26 +459,38 @@ func (ed *editor) wheel(ev ui.InputEvent) bool {
 }
 
 // trackWidth is the room the scroll bar's track takes at the right edge:
-// none when the editor fits its content, as it then never scrolls. The
-// old side of a split diff, which draws no scroll bar of its own
-// (noScrollbar), keeps the room all the same, so that both sides wrap
-// their lines at the same width.
+// none when the editor fits its content, as it then never scrolls, or
+// hides its scroll bars (NoScrollbars). The old side of a split diff,
+// which draws no scroll bar of its own (noScrollbar), keeps the room all
+// the same, so that both sides wrap their lines at the same width.
 func (ed *editor) trackWidth() float32 {
-	if ed.o.fitContent {
+	if ed.o.fitContent || ed.o.hideScrollbars {
 		return 0
 	}
-	return scrollbarWidth
+	return ed.barWidth()
 }
+
+// barWidth is how wide the editor's scroll bars are, as State.Scrollbar
+// says and its theme fills in: 10 DIPs unless it says otherwise.
+func (ed *editor) barWidth() float32 { return ed.barStyle.TrackWidth }
 
 // scrollbars reports which scroll bars the editor shows, and takes
 // presses on: the vertical one while it scrolls, as it does past the end
-// of a short text, and the horizontal one while a line runs under the
-// vertical one or beyond.
+// of a short text, and never for an editor as high as its content or the
+// old side of a split diff; the horizontal one while a line runs under
+// the vertical one's track or beyond; neither with NoScrollbars.
 func (ed *editor) scrollbars() (vertical, horizontal bool) {
-	if ed.o.noScrollbar || ed.o.fitContent {
+	if ed.o.hideScrollbars {
 		return false, false
 	}
-	return ed.scrollMax() > 0, !ed.view.wrap && ed.view.maxLine > ed.r.W-ed.textX-scrollbarWidth
+	vertical = !ed.o.noScrollbar && !ed.o.fitContent && ed.scrollMax() > 0
+	return vertical, !ed.view.wrap && ed.view.maxLine > ed.hTrack()
+}
+
+// hTrack is the length of the horizontal scroll bar's track: the text's
+// width, short of the vertical one's.
+func (ed *editor) hTrack() float32 {
+	return ed.r.W - ed.textX - ed.trackWidth()
 }
 
 func (ed *editor) maxScrollX() float32 {
@@ -444,36 +499,31 @@ func (ed *editor) maxScrollX() float32 {
 
 // scrollbarPress grabs a thumb, or jumps to where the track was pressed.
 func (ed *editor) scrollbarPress(ev ui.InputEvent, horizontal bool) bool {
-	t0, t1 := ed.thumb(horizontal)
+	t0, n := ed.bar(horizontal).Thumb()
 	pos := ev.Y
 	if horizontal {
-		pos = ev.X - ed.textX
+		pos = ev.X
 	}
 	ed.scrollbar = scrollbarDrag{active: true, horizontal: horizontal}
-	if pos >= t0 && pos <= t1 {
+	if pos >= t0 && pos <= t0+n {
 		ed.scrollbar.grab = pos - t0
 	} else {
-		ed.scrollbar.grab = (t1 - t0) / 2
+		ed.scrollbar.grab = n / 2
 		ed.dragScrollbar(ev)
 	}
 	return true
 }
 
 func (ed *editor) dragScrollbar(ev ui.InputEvent) {
-	t0, t1 := ed.thumb(ed.scrollbar.horizontal)
-	size := t1 - t0
+	bar := ed.bar(ed.scrollbar.horizontal)
 	if ed.scrollbar.horizontal {
-		track := ed.r.W - ed.textX - scrollbarWidth
-		f := (ev.X - ed.textX - ed.scrollbar.grab) / max(1, track-size)
-		ed.scrollX = max(0, min(f*ed.maxScrollX(), ed.maxScrollX()))
+		ed.scrollX = bar.OffsetAt(ev.X - ed.scrollbar.grab)
 		if s := ed.o.sharedScroll; s != nil {
 			s.setX(ed.scrollX)
 		}
 		return
 	}
-	track := ed.viewH
-	f := float64(ev.Y-ed.scrollbar.grab) / float64(max(1, track-size))
-	ed.setScrollShared(f * ed.scrollMax())
+	ed.setScrollShared(float64(bar.OffsetAt(ev.Y - ed.scrollbar.grab)))
 }
 
 // setScrollShared scrolls, through the owner when it shares the scroll
@@ -486,26 +536,24 @@ func (ed *editor) setScrollShared(y float64) {
 	ed.setScroll(y)
 }
 
-// thumb returns where the scroll bar's thumb is along its track.
-func (ed *editor) thumb(horizontal bool) (float32, float32) {
+// bar returns a scroll bar, in the element's coordinates: the vertical
+// one along its right edge, the horizontal one under the text, at the
+// bottom of what shows (hbarY), short of the vertical one's track.
+func (ed *editor) bar(horizontal bool) ui.Scrollbar {
+	style := ed.barStyle
 	if horizontal {
-		track := ed.r.W - ed.textX - scrollbarWidth
-		content := ed.view.maxLine + ed.view.charWidth*4
-		size := max(24, track*track/max(content, track))
-		f := float32(0)
-		if m := ed.maxScrollX(); m > 0 {
-			f = ed.scrollX / m
+		return ui.Scrollbar{
+			Box:        ui.Rect{X: ed.textX, W: ed.hTrack(), H: ed.hbarY + style.TrackWidth},
+			Horizontal: true,
+			View:       ed.r.W - ed.textX, Content: ed.view.maxLine + ed.view.charWidth*4, Offset: ed.scrollX,
+			Style: style,
 		}
-		return f * (track - size), f*(track-size) + size
 	}
-	track := ed.viewH
-	content := float32(ed.scrollMax()) + ed.viewH
-	size := max(24, track*track/max(content, track))
-	f := float32(0)
-	if m := ed.scrollMax(); m > 0 {
-		f = float32(ed.scrollY / m)
+	return ui.Scrollbar{
+		Box:  ui.Rect{W: ed.r.W, H: ed.viewH},
+		View: ed.viewH, Content: float32(ed.scrollMax()) + ed.viewH, Offset: float32(ed.scrollY),
+		Style: style,
 	}
-	return f * (track - size), f*(track-size) + size
 }
 
 // gutterPress folds at a fold marker, selects lines at a number, or
@@ -592,7 +640,7 @@ func (ed *editor) foldPlaceholderAt(x float32, y float64) (int, bool) {
 	last := &l.rows[len(l.rows)-1]
 	end := last.indent + last.width
 	g := v.heights.geometry(line)
-	rowTop := g.rows + float64(len(l.rows)-1)*float64(v.lineHeight)
+	rowTop := g.rows + float64(len(l.rows)-1)*float64(l.rowHeight)
 	if y >= rowTop && x >= end+4 && x <= end+4+v.charWidth*3+8 {
 		return line, true
 	}
@@ -680,6 +728,7 @@ func (ed *editor) replaceText(r *ui.TextInputRange, s string) {
 	}
 	ts := ed.targets(r)
 	ed.markedActive, ed.marked = false, nil
+	s = lf(s)
 	ed.replaceRanges(ts, s, editCompose, -1, -1)
 	if b := ed.buf(); b != nil {
 		b.endGroup()
@@ -807,27 +856,33 @@ func (ed *editor) IndexForPoint(p ui.Point) (int, bool) {
 	return ed.view.text.UTF16(off), true
 }
 
-// autoscroll scrolls while a drag goes past the top or the bottom, and
-// reports whether it did.
+// autoscroll scrolls while a drag goes past the top or the bottom, or,
+// without wrapping, past the text's left or right edge, and reports
+// whether it did.
 func (ed *editor) autoscroll() bool {
 	if !ed.gesture.active {
 		return false
 	}
-	y := ed.pointer.Y
-	var dy float32
-	switch {
-	case y < 0:
-		dy = y
-	case y > ed.viewH:
-		dy = y - ed.viewH
-	default:
+	dy := past(ed.pointer.Y, 0, ed.viewH)
+	before := ed.scrollX
+	if !ed.view.wrap {
+		// The vertical scroll bar's column counts as past the right edge, so
+		// that an editor at the screen's edge still scrolls right.
+		if dx := past(ed.pointer.X, ed.textX, ed.r.W-ed.trackWidth()); dx != 0 {
+			x := ed.scrollX + edgeSpeed(dx)
+			if s := ed.o.sharedScroll; s != nil {
+				s.setX(x)
+			} else {
+				ed.scrollX = max(0, min(x, ed.maxScrollX()))
+			}
+		}
+	}
+	if dy == 0 && ed.scrollX == before {
 		return false
 	}
-	speed := float32(math.Min(float64(abs(dy)), 300)) / 4
-	if dy < 0 {
-		speed = -speed
+	if dy != 0 {
+		ed.setScrollShared(ed.scrollY + float64(edgeSpeed(dy)))
 	}
-	ed.setScrollShared(ed.scrollY + float64(speed))
 	cx, cy := ed.toContent(ed.pointer.X, ed.pointer.Y)
 	if ed.gesture.mode == 3 {
 		ed.columnSelect(cx, cy)
@@ -835,6 +890,28 @@ func (ed *editor) autoscroll() bool {
 		ed.extendGesture(ed.offsetAt(cx, cy))
 	}
 	return true
+}
+
+// past returns how far v lies outside [lo, hi]: negative below lo,
+// positive above hi, and 0 within.
+func past(v, lo, hi float32) float32 {
+	switch {
+	case v < lo:
+		return v - lo
+	case v > hi:
+		return v - hi
+	}
+	return 0
+}
+
+// edgeSpeed returns how far a frame of autoscroll moves for a pointer
+// d past the edge.
+func edgeSpeed(d float32) float32 {
+	s := min(abs(d), 300) / 4
+	if d < 0 {
+		return -s
+	}
+	return s
 }
 
 func abs(f float32) float32 {

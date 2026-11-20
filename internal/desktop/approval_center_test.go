@@ -37,6 +37,9 @@ func TestApprovalCategoryNavigationRemainsAvailableWithoutRequests(t *testing.T)
 					t.Fatal(err)
 				}
 				empty := "暂无请求"
+				if index == 1 {
+					empty = "暂无有效服务器授权"
+				}
 				if index == 2 {
 					empty = "暂无访问历史"
 				}
@@ -85,7 +88,7 @@ func TestApprovalCategorySelectionClearsAuthenticationWithoutDeciding(t *testing
 				t.Fatal("category navigation initiated an approval or revocation")
 			}
 		}
-		if err := tt.Click("授权分类：活动"); err != nil {
+		if err := tt.Click("授权分类：当前授权"); err != nil {
 			t.Fatal(err)
 		}
 		// Both widths use the same native focus group: arrows move the
@@ -99,7 +102,7 @@ func TestApprovalCategorySelectionClearsAuthenticationWithoutDeciding(t *testing
 		}
 		a.ownerPass = "synthetic-arrow-confirmation"
 		tt.Key(0, ui.KeyDown)
-		if a.approvalTab != 1 || a.ownerPass == "" || !tt.Focused("授权分类：历史") {
+		if a.approvalTab != 1 || a.ownerPass == "" || !tt.Focused("授权分类：审计记录") {
 			t.Fatal("category arrow navigation did not move focus independently", collapsed)
 		}
 		tt.Key(0, ui.KeySpace)
@@ -121,7 +124,7 @@ func TestApprovalCategoryCollapseKeepsRequestSelectionAndPasswordFocus(t *testin
 		a.requests = []approval.Request{first, second}
 		a.selectedRequest = second.ID
 		tt := ui.NewTester(a.approvalView, width, 760)
-		if err := tt.Click("允许"); err != nil {
+		if err := tt.Click("允许操作"); err != nil {
 			t.Fatal(err)
 		}
 		if err := tt.Click("保险库主密码"); err != nil {

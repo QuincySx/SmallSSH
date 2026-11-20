@@ -5,67 +5,67 @@
   <title>页面地图 3</title>
   <link rel="stylesheet" href="../../tokens.css">
 </head>
-<body class="flex flex-col w-[1400px] h-[2010px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+<body class="flex flex-col w-[1400px] h-[2800px] bg-canvas">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-full bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="独立原生窗口" class="flex flex-col gap-[12px] w-full">
+    <div data-name="独立原生窗口" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">独立原生窗口</p>
-      <div data-name="settings" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="settings" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">设置</p>
-        <p data-name="入口" class="w-full text-muted type-detail">入口：主窗右上设置或系统菜单</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：固定导航：工作区、安全与解锁、运行与后台、授权中心；关闭</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：主窗右上设置；macOS 应用菜单「设置…」（Cmd+,）；Windows / Linux「安全」菜单「设置…」</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：固定导航：工作区、安全与解锁、加速与代理、运行与后台、授权中心；关闭</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：分类切换、滚动、验证中取消</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：实际窗口已有；原型不等于独立公钥向导</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：实际窗口已有；导航200宽、内容最大720并居中；原型不等于独立公钥向导</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/settings_window.go; internal/desktop/settings.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 工作区</p>
       </div>
     </div>
-    <div data-name="设置窗口分类" class="flex flex-col gap-[12px] w-full">
+    <div data-name="设置窗口分类" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">设置窗口分类</p>
-      <div data-name="settings-workspace" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="settings-workspace" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">工作区设置</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：设置→工作区</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：语言、侧栏和工具显隐、停靠位置、恢复默认布局</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：明暗/语言切换、布局恢复确认相关状态</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：语言、侧栏和工具显隐、停靠位置、画布 / 标签聚合、恢复默认布局</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：明暗/语言切换、布局恢复确认相关状态；分段选择的当前项用强调色浅底与强调色文字标出</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：自定义主题/字体/快捷键设置尚未实现</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/settings.go; internal/desktop/settings_language.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 工作区</p>
       </div>
-      <div data-name="settings-security" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="settings-security" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">安全与解锁</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：设置→安全与解锁</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：闲置锁定、系统验证启用/停用与重测、主密码确认、本机代理身份与CLI配对</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：不可用、验证中、取消、密码错误、系统验证反馈</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：设备/平台可用性不同；不等同服务器登录公钥</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/workspace.go; internal/desktop/idle.go; internal/desktop/settings.go</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：保险库闲置锁定与新CLI会话默认闲置断开分别配置开关和等待时间；快速解锁（默认开）：关闭无需密码并立即清除，开启或立即启用需确认主密码；重新检测、本机代理身份与CLI配对</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：不可用、已就绪、下次用主密码解锁后生效、已关闭、验证中、取消、密码错误、系统验证反馈</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：设备/平台可用性不同；快速解锁记录只在本机后台内存、绑定桌面程序身份，开机/更新/48小时需主密码；CLI 不使用系统验证；不等同服务器登录公钥</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/workspace.go; internal/desktop/quick_unlock.go; internal/desktop/idle.go; internal/desktop/settings.go; internal/service/quick_unlock.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 安全与解锁</p>
       </div>
-      <div data-name="settings-presence" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="settings-presence" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">运行与后台</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：设置→运行与后台</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：驻留方式、窗口关闭行为、托盘/Dock等系统可用选项</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：托盘不可用、后台关闭、平台差异</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：托盘不可用、后台关闭、平台差异；保存失败只显示本页错误并可关闭，不再混入应用其他状态提示</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：独立后台架构仍有后续需求，勿等同UDP加速</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/settings_presence.go; internal/desktop/presence.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 运行与后台</p>
       </div>
     </div>
-    <div data-name="设置页确认弹窗" class="flex flex-col gap-[12px] w-full">
+    <div data-name="设置页确认弹窗" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">设置页确认弹窗</p>
-      <div data-name="pair" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="pair" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">本机代理身份配对</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：安全与解锁→信任本机代理</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：核对/复制公钥指纹；确认替换本机代理配对</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：首次配对、不同身份、错误</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：仅信任本机代理，不授予服务器访问</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/workspace.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/workspace.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 本机 CLI 配对确认</p>
       </div>
     </div>
-    <div data-name="设置窗口分类；请求也可独立弹窗" class="flex flex-col gap-[12px] w-full">
+    <div data-name="设置窗口分类；请求也可独立弹窗" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">设置窗口分类；请求也可独立弹窗</p>
-      <div data-name="approvals" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="approvals" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">授权中心</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：设置→授权中心；新授权请求通知</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：待处理、活动、历史；按请求审阅与授权</p>
@@ -75,16 +75,44 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 授权中心 · 待处理、08 设置 / 授权中心 · 活动、08 设置 / 授权中心 · 历史</p>
       </div>
     </div>
-    <div data-name="授权中心子页/请求弹窗" class="flex flex-col gap-[12px] w-full">
+    <div data-name="授权中心子页/请求弹窗" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">授权中心子页/请求弹窗</p>
-      <div data-name="approval-pending" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="approval-pending" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">待处理授权</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：授权中心→待处理，或新请求弹窗</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：核对请求者、服务器、动作/范围、期限，批准或拒绝；必要时系统认证或主密码</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：等待、验证、失败、拒绝、取消、目标过期</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：只读/完整与操作范围不同；不做无确认的全局授权</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/approval_review.go; internal/desktop/approval_auth.go; internal/desktop/approval_notifications.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 授权中心 · 待处理</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 授权中心 · 待处理、08 设置 / 授权中心 · 无请求、08 设置 / 服务器操作授权</p>
+      </div>
+    </div>
+    <div data-name="共享线路管理" class="flex flex-col gap-space-md w-full"><p data-name="标题" class="w-full text-text type-section">共享线路管理</p>
+      <div data-name="settings-routes" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-muted type-detail">加速与代理线路库</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：设置→加速与代理</p>
+        <p data-name="操作" class="w-full text-muted type-detail">操作：保存并复用 SS、Snell、VLESS/REALITY、AnyTLS、Hy2，以及传统代理/SSH跳板机；连接按ID引用</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：空列表、已保存、引用计数、在用禁删、删除确认、保存失败</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：所有者专用读写；密码只在加密保险库保存，列表不返回明文；下次连接用最新配置，已有流保持快照；最多128条</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/settings.go; internal/desktop/saved_routes.go; internal/vault/saved_routes.go; internal/broker/workspace.go; internal/broker/workspace_write.go</p>
+        <p data-name="画布" class="w-full text-muted type-detail">画布：08 设置 / 加速与代理、08 设置 / 删除线路确认</p>
+      </div>
+      <div data-name="route-editor" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-muted type-detail">新建 / 编辑共享线路</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：连接→新建并选用线路/编辑所选线路；设置→加速与代理→新建/编辑</p>
+        <p data-name="操作" class="w-full text-muted type-detail">操作：命名；粘贴分享链接或单节点/节点数组/含outbounds的整份JSON，解析并选择出站节点；重新导入；传统代理或SSH跳板机；保存/取消；从连接新建成功自动选用；Snell v6 保留 mode / reuse，旧v5 TCP兼容不变</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：导入输入、节点选择、脱敏预览、编辑保留凭据、重新导入、校验失败、传统代理、中转、保存中、取消、Snell v6 导入预览</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：复用当前窗口模态容器，不启动额外OS窗口；输入与保存交互以Go实现为准；SmallPen仅静态示例/链接</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/saved_routes.go; internal/client/workspace.go; internal/protocol/workspace.go; internal/vault/saved_routes.go</p>
+        <p data-name="画布" class="w-full text-muted type-detail">画布：03 连接 / Snell v6 导入预览、新建线路、选择导入节点、导入节点预览、编辑导入线路、重新导入节点、编辑线路、编辑中转线路</p>
+      </div>
+      <div data-name="session-route" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
+        <p data-name="名称" class="w-full text-text type-section">默认线路与本次线路</p>
+        <p data-name="入口" class="w-full text-muted type-detail">入口：连接→加速与代理→默认线路；服务器右键→本次使用线路连接</p>
+        <p data-name="操作" class="w-full text-muted type-detail">操作：本次直连、已保存代理线路或SSH跳板线路；新会话标记本次线路；重连、派生终端与关联工具沿用</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不改默认配置；不存在、循环或不可用时失败，不回退直连；仅所有者签名操作使用临时线路</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/session_route.go; internal/desktop/connection_rail.go; internal/client/route.go; internal/connectcfg/route_selection.go; internal/broker/broker.go</p>
+        <p data-name="画布" class="w-full text-muted type-detail">画布：03 连接 / 服务器连接菜单、本次线路菜单；02 工作台 / 本次线路会话</p>
       </div>
     </div>
   </div>

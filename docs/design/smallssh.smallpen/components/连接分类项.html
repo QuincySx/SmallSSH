@@ -1,0 +1,14 @@
+<sp-component name="连接分类项" props="状态: 普通 | 选中">
+  <div class="flex flex-row items-center gap-field-inline w-[126px] h-dialog-category px-connection-nav-symbol rounded-native-navigation">
+    <div data-name="图标容器" class="flex flex-row items-center w-connection-nav-symbol h-connection-nav-symbol shrink-0 justify-center rounded-connection-symbol bg-connection-nav-symbol">
+      <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-action-icon text-text"></p>
+    </div>
+    <p data-name="标签" class="type-native-copy text-text">常规</p>
+  </div>
+  <sp-variant when="状态: 选中" class="bg-connection-nav-selected">
+    <div data-name="图标容器" class="bg-connection-nav-symbol-selected">
+      <p data-name="图标" class="text-accent"></p>
+    </div>
+    <p data-name="标签" class="text-accent"></p>
+  </sp-variant>
+</sp-component>

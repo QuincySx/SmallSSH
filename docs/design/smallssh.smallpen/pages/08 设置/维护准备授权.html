@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>维护准备授权</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col gap-space-sm w-authorization-prompt h-approval-prompt-height px-approval-prompt-inline py-space-lg bg-canvas">
+    <div data-name="申请方和类型" class="flex flex-col w-full gap-connection-nav-gap">
+      <p data-name="申请方" class="w-full text-center type-native-dialog text-text">test.smallssh.client</p>
+      <div data-name="授权类别" class="flex flex-row items-center gap-connection-nav-gap w-full justify-center">
+        <p data-name="类型图标" class="w-menu-icon shrink-0 text-center type-native-icon text-accent"></p>
+        <p data-name="类别" class="type-native-caption-emphasis text-accent">服务器操作授权</p>
+      </div>
+    </div>
+    <div data-name="请求内容" class="flex flex-col w-full gap-space-sm p-approval-panel bg-surface rounded-native-navigation border border-border">
+      <div data-name="折叠标题" class="flex flex-row items-center gap-toolbar w-full h-approval-card-heading">
+        <p data-name="展开" class="w-approval-card-toggle shrink-0 text-center type-native-action-icon text-text"></p>
+        <p data-name="权限" class="type-native-caption-emphasis text-warning">维护准备</p>
+      </div>
+      <p data-name="服务器目标" class="type-native-hint text-muted">个人服务器 · deploy@192.0.2.10:22</p>
+      <p data-name="说明" class="type-native-hint text-muted">系统检查 · 备份下载 · APT 升级预览</p>
+      <div data-name="备份来源" class="flex flex-row items-center gap-space-md w-full">
+        <p data-name="名称" class="w-audit-fact-label shrink-0 type-native-small text-muted">备份来源</p>
+        <p data-name="值" class="flex-1 min-w-0 type-native-copy text-text">/srv/backups/archive.enc</p>
+      </div>
+    </div>
+    <div data-name="期限和规则" class="flex flex-col w-full gap-space-sm">
+      <div data-name="有效期" class="flex flex-row items-center gap-space-sm w-full">
+        <p data-name="标签" class="flex-1 type-native-small text-text">有效期</p>
+        <div data-name="授权时长" class="flex flex-row items-center gap-native-field w-fit h-approval-duration px-space-sm border border-border rounded-segment bg-surface">
+          <p data-name="选项" class="type-native-hint text-text">1 小时</p>
+          <p data-name="图标" class="w-selector-icon shrink-0 text-center type-native-icon text-muted"></p>
+        </div>
+      </div>
+      <div data-name="闲置断开" class="flex flex-row items-center gap-space-sm w-full">
+        <p data-name="标签" class="flex-1 type-native-small text-text">闲置断开</p>
+        <div data-name="输入" class="flex flex-row items-center gap-space-sm w-approval-idle shrink-0 h-panel-tab px-field-inline bg-surface border border-border rounded-control">
+          <p data-name="值" class="type-native-copy text-text flex-1 min-w-0">15 分钟</p>
+          <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-icon text-muted"></p>
+        </div>
+        <div data-name="启用闲置断开" class="flex h-switch-height w-switch-track shrink-0 flex-row items-center rounded-switch p-switch-inset justify-end bg-accent">
+          <div data-name="滑块" class="h-switch-knob w-switch-knob rounded-switch bg-switch-knob">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-name="预留区" class="flex-1 w-full">
+    </div>
+    <sp-use data-name="配对码核对" component="配对码核对" props="密度: 紧凑" class="w-full"></sp-use>
+    <sp-use data-name="验证与决定" component="授权验证底栏" props="切换验证: 有" class="w-full">
+      <div data-name="操作"><div data-name="拒绝" data-click="back"></div></div>
+    </sp-use>
+</body>
+</html>

@@ -2,14 +2,17 @@ package desktop
 
 import (
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
 	"sshclient/internal/desktop/components"
 )
 
 const (
-	settingsWorkspace = "workspace"
-	settingsSecurity  = "security"
-	settingsPresence  = "presence"
-	settingsApprovals = "approvals"
+	settingsRoutes     = "routes"
+	settingsWorkspace  = "workspace"
+	settingsSecurity   = "security"
+	settingsIdentities = "identities"
+	settingsPresence   = "presence"
+	settingsApprovals  = "approvals"
 )
 
 type settingsCategory struct {
@@ -22,8 +25,10 @@ type settingsCategory struct {
 var settingsCategories = []settingsCategory{
 	{settingsWorkspace, "工作区", components.WorkspaceIcon, (*app).workspaceSettings},
 	{settingsSecurity, "安全与解锁", components.ShieldIcon, (*app).securityView},
+	{settingsIdentities, "SSH 密钥", components.KeyIcon, (*app).identitySettings},
+	{settingsRoutes, "加速与代理", components.TransfersIcon, (*app).routesSettings},
 	{settingsPresence, "运行与后台", components.WorkspaceIcon, (*app).presenceSettings},
-	{settingsApprovals, "授权中心", components.ShieldIcon, (*app).approvalView},
+	{settingsApprovals, "授权中心", components.ShieldIcon, (*app).approvalSettingsView},
 }
 
 func settingsCategoryFor(id string) settingsCategory {
@@ -39,6 +44,9 @@ func (a *app) selectSettingsSection(id string) {
 	previous := settingsCategoryFor(a.settingsSection)
 	next := settingsCategoryFor(id)
 	if previous.id != next.id {
+		if previous.id == settingsIdentities {
+			a.cancelIdentitySettings()
+		}
 		a.ownerPass = ""
 		a.clearInlineApproval()
 		if previous.id == settingsSecurity && a.authCancel != nil {
@@ -46,6 +54,9 @@ func (a *app) selectSettingsSection(id string) {
 		}
 	}
 	a.settingsSection = next.id
+	if next.id == settingsIdentities && !a.identities.loaded && !a.identities.busy {
+		a.refreshIdentities(nil)
+	}
 }
 
 func (a *app) settingsView(c *ui.Context) {
@@ -54,7 +65,7 @@ func (a *app) settingsView(c *ui.Context) {
 	bar := c.TitleBar()
 	headerHeight := max(float32(32), bar.Height-16)
 	ui.Row(c).Fill().Padding(8).Gap(8).Background(c.Theme().Background).Label(tr(c, "设置页面")).Children(func() {
-		ui.Column(c).Width(200).FillHeight().Shrink(0).Padding(0, 12, 12, 12).Gap(4).Radius(12).Background(c.Theme().Surface).Children(func() {
+		ui.Column(c).Width(design.Length("size-settings-nav")).FillHeight().Shrink(0).Padding(0, 12, 12, 12).Gap(4).Radius(12).Background(c.Theme().Surface).Children(func() {
 			ui.Row(c).FillWidth().Height(headerHeight).Padding(0, 0, 0, max(0, bar.Left-12)).AlignItems(ui.Center).DragWindow().Children(func() {
 				ui.Text(c, tr(c, "设置")).FontSize(14).Bold()
 				ui.Spacer(c).Grow(1).Height(32).DragWindow()
@@ -63,7 +74,7 @@ func (a *app) settingsView(c *ui.Context) {
 				for _, item := range settingsCategories {
 					entry := components.Button(c, tr(c, item.title), components.ButtonOptions{Variant: components.Quiet}).FillWidth().Justify(ui.Start).Label(tr(c, "设置分类：") + tr(c, item.title))
 					if item.id == category.id {
-						entry.Background(c.Theme().Accent.Alpha(.12)).TextColor(c.Theme().Accent)
+						entry.Background(ui.Hex(design.Color(c.Theme().Dark, "color-native-settings-selected"))).TextColor(c.Theme().Accent)
 					}
 					if entry.Clicked() {
 						a.selectSettingsSection(item.id)
@@ -82,7 +93,7 @@ func (a *app) settingsView(c *ui.Context) {
 				category.render(a, c)
 			} else {
 				ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Label(tr(c, "设置内容")).Children(func() {
-					ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Column(c).FillWidth().AlignItems(ui.Start).Children(func() {
 						ui.Column(c).FillWidth().MaxWidth(720).Gap(12).Label(tr(c, "设置内容容器")).Children(func() { category.render(a, c) })
 					})
 				})
@@ -134,7 +145,7 @@ func (a *app) workspaceSettings(c *ui.Context) {
 					dock = i
 				}
 			}
-			if ui.Segmented(c, &dock, tr(c, "底部"), tr(c, "右侧")).Height(32).Label(tr(c, "工作区工具停靠位置")).Changed() {
+			if components.Segmented(c, &dock, tr(c, "底部"), tr(c, "右侧")).Height(32).Label(tr(c, "工作区工具停靠位置")).Changed() {
 				a.applySettingsLayout(func() { a.setToolsDockSide(sides[dock]) })
 			}
 		})
@@ -143,7 +154,7 @@ func (a *app) workspaceSettings(c *ui.Context) {
 			if !a.workspaceCanvas {
 				mode = 1
 			}
-			if ui.Segmented(c, &mode, tr(c, "画布"), tr(c, "标签聚合")).Height(32).Label(tr(c, "工作区呈现方式")).Changed() {
+			if components.Segmented(c, &mode, tr(c, "画布"), tr(c, "标签聚合")).Height(32).Label(tr(c, "工作区呈现方式")).Changed() {
 				a.applySettingsLayout(func() { a.setWorkspaceCanvas(mode == 0) })
 			}
 		})

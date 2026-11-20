@@ -1,0 +1,229 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>本次 SOCKS5 会话</title>
+    <link rel="stylesheet" href="../../tokens.css">
+  </head>
+  <body data-flow="02 工作台 / 本次 SOCKS5 会话" class="flex flex-col w-[1280px] h-[860px] bg-canvas">
+    <div data-name="工作台根" class="flex flex-row gap-space-sm p-space-sm w-full h-full">
+      <div data-name="服务器侧栏外框" class="flex flex-col gap-space-sm w-[204px] h-full bg-surface rounded-panel">
+        <div data-name="侧栏标题栏" class="flex flex-row items-center gap-space-xs w-full h-control">
+          <sp-use component="窗口控制" props="位置: 侧栏" data-name="原生窗口按钮" class="w-sidebar-window-reserve h-control"></sp-use>
+          <sp-use component="图标按钮" data-name="侧栏开关" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="新建连接" data-click="03 连接/常规与密码" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <div data-name="侧栏标题留白" class="w-full h-control"></div>
+        </div>
+        <div data-name="服务器侧栏" class="flex flex-col gap-space-sm w-full h-full p-connection-sidebar bg-surface rounded-panel">
+          <sp-use component="输入框" data-name="搜索服务器" class="w-full h-connection-search">
+            <p data-name="值">搜索服务器</p>
+          </sp-use>
+          <p data-name="分组" class="w-full text-muted type-detail">我的服务器</p>
+          <sp-use component="导航项" props="状态: 选中" data-name="Web 生产环境" class="w-full h-[36px]" data-press="overlay:03 连接/服务器连接菜单; position: top-right; close-outside">
+            <p data-name="标签">Web 生产环境</p>
+            <div data-name="图标">
+              <p data-name="字标">W</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="Staging" class="w-full h-[36px]">
+            <p data-name="标签">Staging</p>
+            <div data-name="图标">
+              <p data-name="字标">S</p>
+            </div>
+          </sp-use>
+          <sp-use component="导航项" data-name="备份服务器" class="w-full h-[36px]">
+            <p data-name="标签">备份服务器</p>
+            <div data-name="图标">
+              <p data-name="字标">备</p>
+            </div>
+          </sp-use>
+        </div>
+      </div>
+      <div data-name="主内容列" class="flex flex-col gap-space-sm w-full h-full">
+        <div data-name="标题栏" class="flex flex-row items-center gap-space-xs w-full h-control pl-space-sm">
+          <div data-name="顶部工作区选项卡" class="flex flex-row items-center gap-workspace-tabs w-full h-control">
+            <sp-use component="工作区标签" props="状态: 选中" data-name="顶部标签：Web 生产环境" class="h-control">
+              <p data-name="名称">Web 生产环境 · 本次：SOCKS5 · 办公跳板</p>
+            </sp-use>
+          </div>
+          <div data-name="拖动空白" class="w-control h-control"></div>
+          <sp-use component="服务入口" props="状态: 运行中" data-name="端口转发" data-click="09 工具/服务列表" class="w-control h-control"></sp-use>
+<sp-use component="图标按钮" data-name="任务入口" data-click="09 工具/传输与任务中心" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="工具面板开关" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+          <sp-use component="图标按钮" data-name="设置入口" data-click="08 设置/工作区" class="w-control h-control">
+            <p data-name="图标"></p>
+          </sp-use>
+        </div>
+        <div data-name="工作区" class="flex flex-row items-center gap-space-sm w-full h-full">
+          <div data-name="主内容" class="flex flex-col gap-space-sm w-full h-full">
+            <div data-name="Web 生产环境终端卡片" class="flex flex-col w-full h-full bg-surface rounded-panel">
+              <sp-use component="画布标题栏" data-name="面板标题" class="w-full h-card-header bg-pane-focus">
+                <p data-name="类型图标"></p>
+                <p data-name="标题">Web 生产环境 · 本次：SOCKS5 · 办公跳板</p>
+              </sp-use>
+              <div data-name="终端内容" class="flex flex-col gap-space-sm w-full h-full px-terminal-inline py-terminal-block">
+                <p data-name="终端输出" class="w-full text-text type-code">demo@example:~$ uname -a<br>Linux example 6.12.0 x86_64<br>demo@example:~$ </p>
+              </div>
+            </div>
+            <div data-name="工具面板" class="flex flex-col w-full bg-surface rounded-panel h-bottom-tools">
+              <div data-name="工具栏" class="flex flex-row items-center gap-toolbar w-full h-panel-bar px-tool-inset">
+                <div data-name="工具选项卡" class="flex flex-row items-center w-full h-full">
+                  <sp-use component="工具标签" props="状态: 普通" data-name="命令" data-click="05 命令/命令列表" class="h-panel-tab">
+                    <p data-name="文字">命令</p>
+                  </sp-use>
+                  <sp-use component="工具标签" props="状态: 选中" data-name="文件" class="h-panel-tab">
+                    <p data-name="文字">文件</p>
+                  </sp-use>
+                  <sp-use component="工具标签" props="状态: 普通" data-name="服务器状态" data-click="06 状态/资源概览" class="h-panel-tab">
+                    <p data-name="文字">服务器状态</p>
+                  </sp-use>
+                </div>
+                <div data-name="工具操作" class="flex flex-row items-center gap-toolbar w-fit h-full">
+                  <sp-use component="图标按钮" data-name="移到画布" class="w-[32px] h-[32px]">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                  <sp-use component="图标按钮" data-name="工具面板布局" data-click="02 工作台/小窗布局菜单" class="w-[32px] h-[32px]">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                  <sp-use component="图标按钮" data-name="收起工具面板" class="w-[32px] h-[32px]">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                </div>
+              </div>
+              <div data-name="文件管理" class="flex flex-col w-full h-full">
+                <div data-name="文件工具栏" class="flex flex-row items-center gap-toolbar px-tool-inset w-full h-panel-bar">
+                  <sp-use component="文件来源" data-name="来源选择" props="模式: 跟随" class="w-file-source h-field">
+                    <p data-name="来源">Web</p>
+                  </sp-use>
+                  <div data-name="目录路径" class="flex flex-row items-center px-file-address w-full h-file-address">
+                    <p data-name="路径" class="w-full text-text type-file-label">/srv/site</p>
+                  </div>
+                  <div data-name="显示本机文件" class="flex flex-row items-center justify-center w-file-action h-file-action">
+                    <svg data-name="图标" viewBox="0 0 16 16" class="w-file-action-icon h-file-action-icon border-file-action-icon stroke-muted">
+                      <path d="M 5.333333 14 h 5.333333 m -2.666667 -3.333333 v 3.333333 M 3.333333 2 h 9.333333 a 1.333333 1.333333 0 0 1 1.333333 1.333333 v 6 a 1.333333 1.333333 0 0 1 -1.333333 1.333333 H 3.333333 a 1.333333 1.333333 0 0 1 -1.333333 -1.333333 V 3.333333 a 1.333333 1.333333 0 0 1 1.333333 -1.333333 Z"></path>
+                    </svg>
+                  </div>
+                  <div data-name="显示或隐藏目录树" class="flex flex-row items-center justify-center w-file-action h-file-action">
+                    <svg data-name="图标" viewBox="0 0 16 16" class="w-file-action-icon h-file-action-icon border-file-action-icon stroke-muted">
+                      <path d="M 13.333333 6.666667 a 0.666667 0.666667 0 0 0 0.666667 -0.666667 V 4 a 0.666667 0.666667 0 0 0 -0.666667 -0.666667 h -1.666667 a 0.666667 0.666667 0 0 1 -0.533333 -0.266667 l -0.6 -0.8 A 0.666667 0.666667 0 0 0 10 2 h -1.333333 a 0.666667 0.666667 0 0 0 -0.666667 0.666667 v 3.333333 a 0.666667 0.666667 0 0 0 0.666667 0.666667 Z M 13.333333 14 a 0.666667 0.666667 0 0 0 0.666667 -0.666667 v -2 a 0.666667 0.666667 0 0 0 -0.666667 -0.666667 h -1.933333 a 0.666667 0.666667 0 0 1 -0.586667 -0.366667 l -0.28 -0.566667 a 0.666667 0.666667 0 0 0 -0.613333 -0.4 H 8.666667 a 0.666667 0.666667 0 0 0 -0.666667 0.666667 v 3.333333 a 0.666667 0.666667 0 0 0 0.666667 0.666667 Z M 2 3.333333 a 1.333333 1.333333 0 0 0 1.333333 1.333333 h 2 M 2 2 v 8.666667 a 1.333333 1.333333 0 0 0 1.333333 1.333333 h 2"></path>
+                    </svg>
+                  </div>
+                  <sp-use component="图标按钮" data-name="上一级" class="w-file-action h-file-action">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                  <sp-use component="图标按钮" data-name="刷新" class="w-file-action h-file-action">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                  <div data-name="新建文件夹" class="flex flex-row items-center justify-center w-file-action h-file-action">
+                    <svg data-name="图标" viewBox="0 0 16 16" class="w-file-action-icon h-file-action-icon border-file-action-icon stroke-muted">
+                      <path d="M 8 6.666667 v 4 M 6 8.666667 h 4 M 13.333333 13.333333 a 1.333333 1.333333 0 0 0 1.333333 -1.333333 V 5.333333 a 1.333333 1.333333 0 0 0 -1.333333 -1.333333 h -5.266667 a 1.333333 1.333333 0 0 1 -1.126667 -0.6 L 6.4 2.6 A 1.333333 1.333333 0 0 0 5.286667 2 H 2.666667 a 1.333333 1.333333 0 0 0 -1.333333 1.333333 v 8.666667 a 1.333333 1.333333 0 0 0 1.333333 1.333333 Z"></path>
+                    </svg>
+                  </div>
+                  <sp-use component="图标按钮" data-name="上传" class="w-file-action h-file-action">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                  <sp-use component="图标按钮" data-name="下载" class="w-file-action h-file-action">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                  <sp-use component="图标按钮" data-name="更多文件操作" class="w-file-action h-file-action">
+                    <p data-name="图标"></p>
+                  </sp-use>
+                </div>
+                <div data-name="树与列表" class="flex flex-row items-center w-full h-full gap-file-split">
+                  <div data-name="目录树" class="flex flex-col p-tree-frame w-file-tree h-full bg-subtle">
+                    <sp-use component="目录树行" props="状态: 普通; 展开: 展开" data-name="树0" class="w-full h-row">
+                      <div data-name="行内容">
+                        <div data-name="目录名称">
+                          <p data-name="名称">/</p>
+                        </div>
+                      </div>
+                    </sp-use>
+                    <sp-use component="目录树行" props="状态: 普通; 展开: 折叠" data-name="树1" class="w-full h-row">
+                      <div data-name="层级缩进" class="w-tree-level-one"></div>
+                      <div data-name="行内容">
+                        <div data-name="目录名称">
+                          <p data-name="名称">etc</p>
+                        </div>
+                      </div>
+                    </sp-use>
+                    <sp-use component="目录树行" props="状态: 普通; 展开: 展开" data-name="树2" class="w-full h-row">
+                      <div data-name="层级缩进" class="w-tree-level-one"></div>
+                      <div data-name="行内容">
+                        <div data-name="目录名称">
+                          <p data-name="名称">srv</p>
+                        </div>
+                      </div>
+                    </sp-use>
+                    <sp-use component="目录树行" props="状态: 选中; 展开: 展开" data-name="树3" class="w-full h-row">
+                      <div data-name="层级缩进" class="w-tree-level-two"></div>
+                      <div data-name="行内容">
+                        <div data-name="目录名称">
+                          <p data-name="名称">site</p>
+                        </div>
+                      </div>
+                    </sp-use>
+                    <sp-use component="目录树行" props="状态: 普通; 展开: 折叠" data-name="树4" class="w-full h-row">
+                      <div data-name="层级缩进" class="w-tree-level-three"></div>
+                      <div data-name="行内容">
+                        <div data-name="目录名称">
+                          <p data-name="名称">assets</p>
+                        </div>
+                      </div>
+                    </sp-use>
+                    <sp-use component="目录树行" props="状态: 普通; 展开: 叶子" data-name="树5" class="w-full h-row">
+                      <div data-name="层级缩进" class="w-tree-level-three"></div>
+                      <div data-name="行内容">
+                        <div data-name="目录名称">
+                          <p data-name="名称">logs</p>
+                        </div>
+                      </div>
+                    </sp-use>
+                    <div data-name="树底留白" class="w-full h-full"></div>
+                  </div>
+                  <div data-name="文件列表" class="flex flex-col w-full h-full">
+                    <div data-name="文件表格" class="flex flex-col w-full h-full">
+                      <sp-use component="文件表头" props="列: 完整" data-name="列标题" class="w-full"></sp-use>
+                      <sp-use component="文件行" data-name="文件0" class="w-full h-row"><div data-name="文件名单元格"><p data-name="类型"></p><p data-name="名称">assets</p></div><div data-name="大小单元格"><p data-name="大小">—</p></div><div data-name="修改时间单元格"><p data-name="修改时间">2026-11-07 09:30</p></div></sp-use>
+                      <sp-use component="文件行" data-name="文件1" class="w-full h-row"><div data-name="文件名单元格"><p data-name="类型"></p><p data-name="名称">logs</p></div><div data-name="大小单元格"><p data-name="大小">—</p></div><div data-name="修改时间单元格"><p data-name="修改时间">2026-11-07 09:30</p></div></sp-use>
+                      <sp-use component="文件行" data-name="文件2" class="w-full h-row"><div data-name="文件名单元格"><p data-name="类型"></p><p data-name="名称">compose.yaml</p></div><div data-name="大小单元格"><p data-name="大小">1.5 KiB</p></div><div data-name="修改时间单元格"><p data-name="修改时间">2026-11-07 09:30</p></div></sp-use>
+                      <sp-use component="文件行" data-name="文件3" class="w-full h-row bg-accentsoft"><div data-name="文件名单元格"><p data-name="类型"></p><p data-name="名称">index.html</p></div><div data-name="大小单元格"><p data-name="大小">6.0 KiB</p></div><div data-name="修改时间单元格"><p data-name="修改时间">2026-11-07 09:30</p></div></sp-use>
+                      <sp-use component="文件行" data-name="文件4" class="w-full h-row"><div data-name="文件名单元格"><p data-name="类型"></p><p data-name="名称">nginx.conf</p></div><div data-name="大小单元格"><p data-name="大小">876 B</p></div><div data-name="修改时间单元格"><p data-name="修改时间">2026-11-07 09:30</p></div></sp-use>
+                      <sp-use component="文件行" data-name="文件5" class="w-full h-row"><div data-name="文件名单元格"><p data-name="类型"></p><p data-name="名称">README.md</p></div><div data-name="大小单元格"><p data-name="大小">2.0 KiB</p></div><div data-name="修改时间单元格"><p data-name="修改时间">2026-11-07 09:30</p></div></sp-use>
+                      <div data-name="表格留白" class="w-full h-full"></div>
+                    </div>
+                    <sp-use component="文件状态栏" data-name="文件计数" class="w-full">
+                      <p data-name="计数">4 个文件 · 2 个目录 · 已选 1 项</p>
+                    </sp-use>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div data-name="画布功能开关" class="flex flex-col gap-space-xs h-full w-control items-center">
+            <sp-use component="图标按钮" data-name="画布功能：文件" class="w-[32px] h-[32px]">
+              <p data-name="图标"></p>
+            </sp-use>
+            <sp-use component="图标按钮" data-name="画布功能：命令" class="w-[32px] h-[32px]">
+              <p data-name="图标"></p>
+            </sp-use>
+            <sp-use component="图标按钮" data-name="画布功能：服务器状态" class="w-[32px] h-[32px]">
+              <p data-name="图标"></p>
+            </sp-use>
+            <div data-name="弹性留白" class="flex flex-col gap-space-sm w-full h-full"></div>
+            <sp-use component="图标按钮" data-name="画布布局" class="w-[32px] h-[32px]">
+              <p data-name="图标"></p>
+            </sp-use>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

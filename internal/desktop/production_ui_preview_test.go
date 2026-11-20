@@ -4,6 +4,7 @@ package desktop
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
@@ -30,7 +31,7 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, dark := range []bool{false, true} {
-		for _, screen := range []string{"workspace", "unlock", "unlock-system", "unlock-expanded", "vault-create", "connection", "connection-narrow", "connection-hardware", "connection-hardware-narrow", "settings", "canvas-mixed", "canvas-grouped", "canvas-tabs", "canvas-bottom", "canvas-right", "canvas-small", "files-tab", "workspace-four", "workspace-six", "dock-left", "dock-top", "protected-paths", "protected-paths-narrow", "editor", "editor-loading", "ports"} {
+		for _, screen := range []string{"workspace", "readme-workspace", "unlock", "unlock-system", "unlock-expanded", "vault-create", "connection", "connection-narrow", "connection-hardware", "connection-hardware-narrow", "settings", "settings-security", "settings-presence", "canvas-home", "canvas-mixed", "canvas-grouped", "canvas-tabs", "canvas-bottom", "canvas-right", "canvas-small", "files-tab", "workspace-four", "workspace-six", "dock-left", "dock-top", "protected-paths", "protected-paths-narrow", "editor", "editor-loading", "ports"} {
 			name := screen + "-light"
 			if dark {
 				name = screen + "-dark"
@@ -42,7 +43,7 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 				a.page = 1
 				a.sidebarWidth = 204
 				lightColors, darkColors := workspaceTerminalColors()
-				term, err := terminal.New(terminal.Options{Conn: newTerminalRecorder(), Theme: lightColors, DarkTheme: darkColors, ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
+				term, err := terminal.New(terminal.Options{Conn: newTerminalRecorder(), Theme: lightColors, DarkTheme: darkColors, Padding: workspaceTerminalPadding(), ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -52,6 +53,28 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 				width, height := 1280, 860
 				view := a.view
 				switch screen {
+				case "readme-workspace":
+					width, height = 1280, 700
+					a.connections[0].Name, a.connections[0].Group = "Web 生产环境", "生产环境"
+					a.connections[1].Name, a.connections[1].Group = "Staging", "测试环境"
+					a.connections[2].Name, a.connections[2].Group = "Backup", "生产环境"
+					a.sessions[0].name, a.sessions[1].name = "Web 生产环境", "Staging"
+					sample := detailedStatusDemo().sessions[0]
+					a.sessions[0].stats = sample.stats
+					a.sessions[0].history = sample.history
+					a.sessions[0].monitorStatus = sample.monitorStatus
+					a.setToolsDockSide("right")
+					a.dock = toolDiagnostics
+					term.Feed([]byte("\x1b[2J\x1b[Hops@web:~$ uptime\r\n" +
+						" 13:42:28 up 7 days, load average: 0.10, 0.20, 0.30\r\n\r\n" +
+						"ops@web:~$ systemctl status nginx --no-pager\r\n" +
+						"● nginx.service - A high performance web server\r\n" +
+						"     Loaded: loaded (/usr/lib/systemd/system/nginx.service; enabled)\r\n" +
+						"     Active: \x1b[32mactive (running)\x1b[0m\r\n" +
+						"   Main PID: 445 (nginx)\r\n\r\n" +
+						"ops@web:~$ df -h /\r\n" +
+						"Filesystem      Size  Used Avail Use% Mounted on\r\n" +
+						"/dev/vda1        64G   18G   43G  30% /\r\n\r\nops@web:~$ "))
 				case "connection", "connection-narrow", "connection-hardware", "connection-hardware-narrow":
 					a.newConnection()
 					a.form.Name, a.form.Host, a.form.User = "示例服务器", "192.0.2.10", "demo"
@@ -73,10 +96,23 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 						a.ensureUnlockState().passwordMode = true
 					}
 					view = a.view
-				case "settings":
+				case "settings", "settings-security", "settings-presence":
 					width, height = 1080, 760
 					a.settingsOpen = true
+					if screen == "settings-security" {
+						a.settingsSection, height = settingsSecurity, 860
+					}
+					if screen == "settings-presence" {
+						a.settingsSection = settingsPresence
+						var events []string
+						fakePresence(a, &events)
+					}
 					view = a.settingsWindowView
+				case "canvas-home":
+					fixture, _ := terminalSplitFixture(t, 1)
+					a.sessions = fixture.sessions
+					a.setWorkspaceCanvas(true)
+					a.toolsHidden, a.dock = false, toolFiles
 				case "canvas-mixed", "canvas-grouped", "canvas-tabs", "canvas-bottom", "canvas-right", "canvas-small":
 					fixture, _ := terminalSplitFixture(t, 2)
 					a.sessions = fixture.sessions
@@ -128,11 +164,12 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 				case "protected-paths", "protected-paths-narrow":
 					a.newConnection()
 					a.form.Name = "示例服务器"
-					a.editProtectedPaths()
-					view = a.promptView
+					a.connection.section = connectionAccess
+					view = a.view
 					width, height = 960, 760
 					if screen == "protected-paths-narrow" {
 						width = 560
+						a.updateProtectedPaths("/srv/private\nrelative/path")
 					}
 				case "files-tab":
 					a.openFileTab()
@@ -167,6 +204,31 @@ func TestProductionWorkspaceSnapshotsWithoutWindows(t *testing.T) {
 					t.Fatal(err)
 				}
 				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+				bounds := map[string]ui.Rect{}
+				for _, label := range []string{"保护路径输入", "允许 AI 访问此服务器", "保护关键操作", "连接分类内容", "顶部工作区选项卡", "画布功能开关", "画布功能：文件", "设置", "工具栏标题", "工具选项卡", "目录树", "文件列表", "目录路径", "显示本机文件", "显示或隐藏目录树", "上一级", "刷新目录", "新建文件夹", "上传文件", "下载到本机…", "文件窗口菜单", "设置页面", "设置分类", "设置内容容器"} {
+					if rect, ok := tt.Find(label); ok {
+						bounds[label] = rect
+					}
+				}
+				if _, ok := bounds["顶部工作区选项卡"]; ok {
+					selected := a.selectedWorkspaceTab(a.activeTerminalGroup)
+					label := "顶部标签：" + a.workspaceTabTitle(nil, selected)
+					r, visible := tt.Find(label)
+					if !visible || r.Y < 0 || r.Y+r.H > 48 {
+						t.Fatal("canvas or split workspace lost its selected top tab", label, r)
+					}
+					bounds[label] = r
+				}
+				if rail, ok := bounds["画布功能开关"]; ok && rail.W != 32 {
+					t.Fatal("canvas rail differs from the 32 DIP design specification", rail)
+				}
+				metadata, err := json.MarshalIndent(bounds, "", "  ")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(directory, name+".json"), append(metadata, '\n'), 0600); err != nil {
 					t.Fatal(err)
 				}
 			})

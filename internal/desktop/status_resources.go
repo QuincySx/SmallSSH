@@ -10,6 +10,13 @@ import (
 	"sshclient/internal/monitor"
 )
 
+func statusSampleInterval(s *monitor.Stats) time.Duration {
+	if s.SampleIntervalSeconds <= 0 || s.SampleIntervalSeconds > 3600 {
+		return 2 * time.Second
+	}
+	return time.Duration(s.SampleIntervalSeconds) * time.Second
+}
+
 func (a *app) statusIndicator(c *ui.Context, sess *session) {
 	s := sess.stats
 	text, color := tr(c, "实时"), c.Theme().Success
@@ -17,10 +24,10 @@ func (a *app) statusIndicator(c *ui.Context, sess *session) {
 		text, color = tr(c, "已断开 · 最后状态"), c.Theme().TextMuted
 	} else if sess.monitorStatus != "" && !strings.HasPrefix(sess.monitorStatus, "自动更新") {
 		text, color = monitorStatusText(c, sess.monitorStatus), c.Theme().Warning
-	} else if time.Since(s.Time) > 10*time.Second {
+	} else if time.Since(s.Time) > max(10*time.Second, 3*statusSampleInterval(s)) {
 		text, color = tr(c, "更新延迟 · ")+s.Time.Local().Format("15:04:05"), c.Theme().Warning
 	}
-	ui.Text(c, "● "+reviewText(text)).FontSize(10).SingleLine().TextColor(color).Tooltip(tr(c, "最后采集 ") + s.Time.Local().Format("2006-01-02 15:04:05") + tr(c, " · 连接期间每 2 秒更新"))
+	ui.Text(c, "● "+reviewText(text)).FontSize(10).SingleLine().TextColor(color).Tooltip(tr(c, "最后采集 ") + s.Time.Local().Format("2006-01-02 15:04:05") + fmt.Sprintf(tr(c, " · 连接期间每 %d 秒更新"), int(statusSampleInterval(s)/time.Second)))
 }
 
 func (a *app) selectedNetwork(s *monitor.Stats) string {
@@ -131,14 +138,18 @@ func (a *app) resourceNavigation(c *ui.Context, s *monitor.Stats) {
 }
 
 func coreText(s *monitor.Stats) string {
+	load := strings.TrimSpace(s.Load)
+	if load == "" {
+		load = "—"
+	}
 	n := len(s.Cores)
 	if s.Inventory != nil && s.Inventory.Cores > 0 {
 		n = s.Inventory.Cores
 	}
 	if n == 0 {
-		return tr(nil, "负载 ") + s.Load
+		return tr(nil, "负载 ") + load
 	}
-	return fmt.Sprintf(tr(nil, "%d 核 · 负载 %s"), n, s.Load)
+	return fmt.Sprintf(tr(nil, "%d 核 · 负载 %s"), n, load)
 }
 
 func (a *app) resourceCard(c *ui.Context, name, value, note string, h *statusHistory, series []trendSeries, ceiling float64, compact bool) {
@@ -178,16 +189,25 @@ func (a *app) resourceDetail(c *ui.Context, sess *session) {
 			cpu = "—"
 		}
 		a.detailHeadline(c, cpu, coreText(s))
-		series := []trendSeries{{tr(c, "总使用"), c.Theme().Accent, func(p statusPoint) (float64, bool) { return p.cpu, p.cpuValid }, percentText}, {tr(c, "I/O 等待"), ui.Hex("#f59e0b"), func(p statusPoint) (float64, bool) { return p.wait, p.cpuValid }, percentText}}
+		series := []trendSeries{{tr(c, "总使用"), c.Theme().Accent, func(p statusPoint) (float64, bool) { return p.cpu, p.cpuValid }, percentText}, {tr(c, "I/O 等待"), ui.Hex("#f59e0b"), func(p statusPoint) (float64, bool) { return p.wait, p.cpuExtraValid }, percentText}}
+		if s.CPUDetail.BasicOnly {
+			series = series[:1]
+		}
 		trendLegend(c, series)
 		trendChart(c, tr(c, "CPU 使用率趋势"), history, window, series, 100, chartHeight, false)
 		ui.Grid(c).Columns(components.ResourceColumns(a.resourceContentWidth(c), 130, 4)).FillWidth().Gap(10).Children(func() {
-			statValue(c, tr(c, "用户态"), percentText(s.CPUDetail.User))
-			statValue(c, tr(c, "系统态"), percentText(s.CPUDetail.System))
-			statValue(c, tr(c, "I/O 等待"), percentText(s.CPUDetail.Wait))
-			statValue(c, tr(c, "空闲"), percentText(max(0, 100-s.CPU-s.CPUDetail.Wait)))
-			statValue(c, "Guest", percentText(s.CPUDetail.Guest))
-			statValue(c, "Steal", percentText(s.CPUDetail.Steal))
+			basicValid := s.CPUDetail.Valid
+			extraValid := basicValid && !s.CPUDetail.BasicOnly
+			statValue(c, tr(c, "用户态"), samplePercent(s.CPUDetail.User, basicValid))
+			statValue(c, tr(c, "系统态"), samplePercent(s.CPUDetail.System, basicValid))
+			statValue(c, tr(c, "I/O 等待"), samplePercent(s.CPUDetail.Wait, extraValid))
+			idle := max(0, 100-s.CPU)
+			if !s.CPUDetail.BasicOnly {
+				idle = max(0, idle-s.CPUDetail.Wait)
+			}
+			statValue(c, tr(c, "空闲"), samplePercent(idle, basicValid))
+			statValue(c, "Guest", samplePercent(s.CPUDetail.Guest, extraValid))
+			statValue(c, "Steal", samplePercent(s.CPUDetail.Steal, extraValid))
 		})
 		sectionTitle(c, tr(c, "各核心使用率"))
 		if len(s.Cores) == 0 {
@@ -199,7 +219,7 @@ func (a *app) resourceDetail(c *ui.Context, sess *session) {
 		ui.Grid(c).Columns(components.ResourceColumns(a.resourceContentWidth(c), 130, 3)).FillWidth().Gap(10).Children(func() {
 			for j, title := range []string{tr(c, "1 分钟"), tr(c, "5 分钟"), tr(c, "15 分钟")} {
 				value := "—"
-				if j < len(fields) {
+				if j < len(fields) && strings.TrimSpace(fields[j]) != "" {
 					value = fields[j]
 				}
 				statValue(c, title, value)
@@ -358,7 +378,13 @@ func (a *app) systemSummary(c *ui.Context, s *monitor.Stats) {
 			ui.Text(c, tr(c, "已运行 ")+uptime(s.Uptime)).FontSize(11).TextColor(c.Theme().TextMuted)
 		}
 		if s.ProcessCount > 0 {
-			ui.Text(c, fmt.Sprintf(tr(c, "%d 任务 · %d 运行"), s.ProcessCount, s.RunningProcesses)).FontSize(11).TextColor(c.Theme().TextMuted)
+			text := fmt.Sprintf(tr(c, "%d 任务 · %d 运行"), s.ProcessCount, s.RunningProcesses)
+			if s.RunningProcesses < 0 {
+				text = fmt.Sprintf(tr(c, "%d 任务 · 运行数未知"), s.ProcessCount)
+			}
+			ui.Text(c, text).FontSize(11).TextColor(c.Theme().TextMuted)
+		} else if s.ProcessCount < 0 {
+			ui.Text(c, tr(c, "任务数量未知")).FontSize(11).TextColor(c.Theme().TextMuted)
 		}
 	})
 }

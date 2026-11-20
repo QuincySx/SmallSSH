@@ -10,10 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sshclient/internal/vault"
 	"time"
 )
@@ -23,6 +21,11 @@ type Status struct {
 	Name, Reason string
 	Enabled      bool
 }
+
+const LinuxFingerprintName = "Linux 指纹认证"
+
+var ErrFingerprintNotRecognized = errors.New("未识别指纹。请重试或使用保险库主密码。")
+
 type Backend interface {
 	Probe(context.Context) error
 	Wrap(context.Context, []byte) (json.RawMessage, error)
@@ -35,7 +38,7 @@ type Service struct{ backend Backend }
 // system keychain entry, which has to be deleted when the record is replaced or
 // removed. Linux stores the device key in secret-tool; the macOS Secure Enclave
 // envelope and the Windows DPAPI blob carry their own protected key, so there is
-// nothing beside device-unlock.json to clean up.
+// nothing beside the sealed record to clean up.
 type recordRemover interface {
 	Remove(context.Context, json.RawMessage) error
 }
@@ -48,119 +51,136 @@ type record struct {
 	Data      json.RawMessage `json:"data"`
 }
 
-func path(dir string) string { return filepath.Join(dir, "device-unlock.json") }
-func (s *Service) Status(ctx context.Context, dir string) Status {
+// legacyPath is where releases before in-memory quick unlock kept the wrapped
+// key. Any same-user process could read it and ask the OS to unwrap it with a
+// prompt of its own wording, so it is only ever read to be deleted.
+func legacyPath(dir string) string { return filepath.Join(dir, "device-unlock.json") }
+
+// Status reports whether this machine can verify the owner. Whether a sealed
+// record exists is the local service's business, not a file's.
+func (s *Service) Status(ctx context.Context, _ string) Status {
 	var st Status
-	// Enabled means the record is usable, not that a file exists. readRecord
-	// rejects what Open would also reject, so the settings cannot offer system
-	// unlock that every attempt would then fail to perform.
-	if _, e := readRecord(dir); e == nil {
-		st.Enabled = true
-	} else if !os.IsNotExist(e) {
-		st.Reason = e.Error()
-	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	e := s.backend.Probe(ctx)
 	st.Name = s.backend.Name() // Probing is what learns whether it is really Touch ID.
 	if e == nil {
 		st.Available = true
-	} else if st.Reason == "" {
+	} else {
 		st.Reason = e.Error()
 	}
 	return st
 }
-func (s *Service) Enroll(ctx context.Context, dir string, pass []byte) error {
-	// A previous record that no longer parses cannot name the system entry it
-	// owns, so re-enrolling over it may leave that entry behind. Refusing instead
-	// would trap the user: Open and Disable reject the same record, and the only
-	// way out is re-enrolling.
-	previous, previousErr := readRecord(dir)
-	if previousErr != nil {
-		previous = record{}
+
+// Seal wraps the unlock key of an already unlocked vault with this machine's
+// owner-verification key and returns the record. The caller hands it to the
+// local service, which keeps it in memory only; nothing is written to disk.
+func (s *Service) Seal(ctx context.Context, v *vault.Session) ([]byte, error) {
+	return s.seal(ctx, "", v)
+}
+
+// SealForDirectory also records non-secret cleanup identifiers for backends
+// whose device keys live outside the envelope. A new daemon can remove these
+// after obtaining the data directory's exclusive service lock.
+func (s *Service) SealForDirectory(ctx context.Context, dir string, v *vault.Session) ([]byte, error) {
+	return s.seal(ctx, dir, v)
+}
+
+type directoryWrapper interface {
+	WrapForDirectory(context.Context, string, []byte) (json.RawMessage, error)
+}
+
+func (s *Service) seal(ctx context.Context, dir string, v *vault.Session) ([]byte, error) {
+	if v == nil {
+		return nil, errors.New("保险库未解锁")
 	}
-	v, e := vault.Read(filepath.Join(dir, "vault.json"), pass)
-	if e != nil {
-		return e
-	}
-	defer v.Close()
 	key, e := v.UnlockKey()
 	if e != nil {
-		return e
+		return nil, e
 	}
 	defer wipe(key)
 	if e = s.backend.Probe(ctx); e != nil {
-		return e
+		return nil, e
 	}
-	data, e := s.backend.Wrap(ctx, key)
+	var data json.RawMessage
+	if scoped, ok := s.backend.(directoryWrapper); ok && dir != "" {
+		data, e = scoped.WrapForDirectory(ctx, dir, key)
+	} else {
+		data, e = s.backend.Wrap(ctx, key)
+	}
 	if e != nil {
-		return e
+		return nil, e
 	}
 	if e = ctx.Err(); e != nil {
-		if cleaner, ok := s.backend.(recordRemover); ok {
-			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = cleaner.Remove(cleanup, data)
-		}
-		return e
+		s.discardData(data)
+		return nil, e
 	}
 	h := sha256.Sum256(key)
-	r := record{1, hex.EncodeToString(h[:]), data}
-	b, e := json.Marshal(r)
+	return json.Marshal(record{1, hex.EncodeToString(h[:]), data})
+}
+
+// Discard releases what a record holds outside itself (the Linux keyring
+// entry). Records of the other backends carry their own protected key.
+func (s *Service) Discard(_ context.Context, sealed []byte) {
+	r, e := parseRecord(sealed)
 	if e != nil {
-		return e
+		return
 	}
-	f, e := os.CreateTemp(dir, ".device-")
+	s.discardData(r.Data)
+}
+
+func (s *Service) discardData(data json.RawMessage) {
+	if cleaner, ok := s.backend.(recordRemover); ok && len(data) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = cleaner.Remove(ctx, data)
+	}
+}
+
+// RemoveLegacy deletes a device-unlock.json left by an older release and its
+// keyring entry, and reports whether one existed. It never unwraps it.
+func (s *Service) RemoveLegacy(ctx context.Context, dir string) (bool, error) {
+	st, e := os.Lstat(legacyPath(dir))
+	if os.IsNotExist(e) {
+		return false, nil
+	}
 	if e != nil {
-		return e
+		return true, e
 	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	_, e = f.Write(b)
-	if e == nil {
-		e = f.Sync()
-	}
-	ce := f.Close()
-	if e != nil {
-		return e
-	}
-	if ce != nil {
-		return ce
-	}
-	if e = os.Rename(tmp, path(dir)); e != nil {
-		return e
-	}
-	if cleaner, ok := s.backend.(recordRemover); ok && len(previous.Data) > 0 {
-		if e = cleaner.Remove(ctx, previous.Data); e != nil {
-			return errors.New("系统验证已更新，但旧钥匙串条目清理失败")
+	if st.Mode().IsRegular() && st.Size() <= 65536 {
+		if data, err := os.ReadFile(legacyPath(dir)); err == nil {
+			if r, err := parseRecord(data); err == nil {
+				if cleaner, ok := s.backend.(recordRemover); ok {
+					_ = cleaner.Remove(ctx, r.Data)
+				}
+			}
+			clear(data)
 		}
 	}
-	return nil
+	if e = os.Remove(legacyPath(dir)); e != nil && !os.IsNotExist(e) {
+		return true, e
+	}
+	return true, nil
 }
-func readRecord(dir string) (record, error) {
-	f, e := os.Open(path(dir))
-	if e != nil {
-		return record{}, e
-	}
-	defer f.Close()
-	st, e := f.Stat()
-	if e != nil {
-		return record{}, e
-	}
-	if !st.Mode().IsRegular() || st.Size() > 65536 || (runtime.GOOS != "windows" && st.Mode().Perm()&0077 != 0) {
-		return record{}, errors.New("系统解锁记录的类型或权限不安全")
+
+func parseRecord(data []byte) (record, error) {
+	if len(data) == 0 || len(data) > 65536 {
+		return record{}, errors.New("系统解锁记录无效")
 	}
 	var r record
-	if e = json.NewDecoder(io.LimitReader(f, 65537)).Decode(&r); e != nil {
-		return record{}, e
+	if e := json.Unmarshal(data, &r); e != nil {
+		return record{}, errors.New("系统解锁记录无效")
 	}
-	if r.Version != 1 {
+	if r.Version != 1 || len(r.VaultHash) != 64 || len(r.Data) == 0 {
 		return record{}, errors.New("系统解锁记录版本不支持")
 	}
 	return r, nil
 }
-func (s *Service) Open(ctx context.Context, dir, reason string) (*vault.Session, error) {
-	return s.open(ctx, dir, reason, s.backend.Unwrap)
+
+// OpenRecord verifies the owner with the OS, unwraps the sealed key and opens
+// the vault. The prompt names reason, which the desktop writes.
+func (s *Service) OpenRecord(ctx context.Context, dir string, sealed []byte, reason string) (*vault.Session, error) {
+	return s.open(ctx, dir, sealed, reason, s.backend.Unwrap)
 }
 
 // SupportsEmbedded reports whether this platform hosts the biometric view in
@@ -170,12 +190,12 @@ func (s *Service) SupportsEmbedded() bool {
 	return ok
 }
 
-// OpenEmbedded uses the same record and vault checks as Open. Platforms without
-// an embedded backend keep their existing owner-verification flow.
-func (s *Service) OpenEmbedded(ctx context.Context, dir, reason string, presentation *EmbeddedPresentation) (*vault.Session, error) {
+// OpenRecordEmbedded uses the same record and vault checks as OpenRecord.
+// Platforms without an embedded backend keep their existing verification flow.
+func (s *Service) OpenRecordEmbedded(ctx context.Context, dir string, sealed []byte, reason string, presentation *EmbeddedPresentation) (*vault.Session, error) {
 	b, ok := s.backend.(embeddedBackend)
 	if !ok {
-		return s.Open(ctx, dir, reason)
+		return s.OpenRecord(ctx, dir, sealed, reason)
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -183,13 +203,13 @@ func (s *Service) OpenEmbedded(ctx context.Context, dir, reason string, presenta
 	if !presentation.Ready() {
 		return nil, &EmbeddedError{Code: "notReady", Message: "窗口内指纹验证区域尚未就绪"}
 	}
-	return s.open(ctx, dir, reason, func(ctx context.Context, data json.RawMessage, reason string) ([]byte, error) {
+	return s.open(ctx, dir, sealed, reason, func(ctx context.Context, data json.RawMessage, reason string) ([]byte, error) {
 		return b.UnwrapEmbedded(ctx, data, reason, presentation)
 	})
 }
 
-func (s *Service) open(ctx context.Context, dir, reason string, unwrap func(context.Context, json.RawMessage, string) ([]byte, error)) (*vault.Session, error) {
-	r, e := readRecord(dir)
+func (s *Service) open(ctx context.Context, dir string, sealed []byte, reason string, unwrap func(context.Context, json.RawMessage, string) ([]byte, error)) (*vault.Session, error) {
+	r, e := parseRecord(sealed)
 	if e != nil {
 		return nil, e
 	}
@@ -218,32 +238,6 @@ func (s *Service) open(ctx context.Context, dir, reason string, unwrap func(cont
 		return nil, fmt.Errorf("系统验证已取消或超时: %w", ctx.Err())
 	}
 	return session, e
-}
-func (s *Service) Disable(dir string, pass []byte) error {
-	v, e := vault.Read(filepath.Join(dir, "vault.json"), pass)
-	if e != nil {
-		return e
-	}
-	v.Close()
-	if cleaner, ok := s.backend.(recordRemover); ok {
-		r, err := readRecord(dir)
-		if os.IsNotExist(err) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if e = cleaner.Remove(ctx, r.Data); e != nil {
-			return e
-		}
-	}
-	e = os.Remove(path(dir))
-	if os.IsNotExist(e) {
-		return nil
-	}
-	return e
 }
 func wipe(b []byte) {
 	for i := range b {

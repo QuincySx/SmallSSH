@@ -32,6 +32,7 @@ const maxFileSize = 32 << 20
 var ErrUnlock = errors.New("保险库解锁失败：密码不正确或文件损坏")
 
 type Profile struct {
+	VNC              VNCSettings         `json:"vnc,omitzero"`
 	Terminal         connectcfg.Terminal `json:"terminal,omitzero"`
 	Network          connectcfg.Network  `json:"network,omitzero"`
 	Hardware         connectcfg.Hardware `json:"hardware,omitzero"`
@@ -44,7 +45,8 @@ type Profile struct {
 	User             string              `json:"user"`
 	Fingerprint      string              `json:"fingerprint"`
 	AgentFingerprint string              `json:"agentFingerprint,omitempty"`
-	Auth             string              `json:"auth"` // password, key, or agent
+	AgentSocket      string              `json:"-"`    // resolved by the broker; never client-configured or persisted
+	Auth             string              `json:"auth"` // password, key, agent, managed, or pkcs11
 	Password         string              `json:"password,omitempty"`
 	PrivateKey       string              `json:"privateKey,omitempty"`
 	KeyPassphrase    string              `json:"keyPassphrase,omitempty"`
@@ -60,6 +62,10 @@ type ProfileChange struct {
 
 func (s *Session) ResolveChange(change ProfileChange) (Profile, error) {
 	p := cloneProfile(change.Profile)
+	// SSH form edits do not replace independently saved VNC credentials.
+	if old, err := s.Profile(p.ID); err == nil {
+		p.VNC = old.VNC
+	}
 	if change.KeepCredential {
 		old, err := s.Profile(p.ID)
 		if err != nil {
@@ -83,7 +89,7 @@ func (s *Session) ResolveChange(change ProfileChange) (Profile, error) {
 		}
 		p.Network.Proxy.Password = old.Network.Proxy.Password
 	}
-	return p, Validate(p)
+	return p, ValidateStored(p)
 }
 
 type Header struct {
@@ -97,6 +103,7 @@ type envelope struct {
 	Ciphertext []byte `json:"ciphertext"`
 }
 type payload struct {
+	Routes   []SavedRoute          `json:"routes,omitempty"`
 	Profiles []Profile             `json:"profiles"`
 	Snippets []snippet.Command     `json:"snippets,omitempty"`
 	Notes    map[string]ServerNote `json:"serverNotes,omitempty"`
@@ -109,6 +116,7 @@ type Session struct {
 	mu        sync.Mutex
 	header    Header
 	key       []byte
+	routes    []SavedRoute
 	profiles  []Profile
 	snippets  []snippet.Command
 	notes     map[string]ServerNote
@@ -157,7 +165,7 @@ func OpenKey(data, key []byte) (*Session, error) {
 		wipe(ownedKey)
 		return nil, ErrUnlock
 	}
-	return &Session{header: header, key: ownedKey, profiles: p.Profiles, snippets: p.Snippets, notes: p.Notes, auditHead: p.AuditHead}, nil
+	return &Session{header: header, key: ownedKey, routes: p.Routes, profiles: p.Profiles, snippets: p.Snippets, notes: p.Notes, auditHead: p.AuditHead}, nil
 }
 
 // openEnvelope authenticates the envelope with a temporary key copy. It returns
@@ -191,7 +199,7 @@ func (s *Session) Seal() ([]byte, error) {
 	if s.closed {
 		return nil, errors.New("保险库已锁定")
 	}
-	plain, err := json.Marshal(payload{Profiles: s.profiles, Snippets: s.snippets, Notes: s.notes, AuditHead: s.auditHead})
+	plain, err := json.Marshal(payload{Routes: s.routes, Profiles: s.profiles, Snippets: s.snippets, Notes: s.notes, AuditHead: s.auditHead})
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +214,18 @@ func (s *Session) Seal() ([]byte, error) {
 	}
 	return data, err
 }
+
+// Validate is the connection boundary: an unverified saved profile must not dial.
 func Validate(p Profile) error {
+	if p.Fingerprint == "" {
+		return errors.New("必须先核对并保存服务器SHA256主机指纹")
+	}
+	return ValidateStored(p)
+}
+
+// ValidateStored checks local configuration only. Saving is allowed offline,
+// before the first explicitly requested connection confirms a host key.
+func ValidateStored(p Profile) error {
 	if e := p.Terminal.Validate(); e != nil {
 		return e
 	}
@@ -217,6 +236,9 @@ func Validate(p Profile) error {
 		return errors.New("连接不能以自身作为中转")
 	}
 	if err := p.Policy.Validate(); err != nil {
+		return err
+	}
+	if err := p.VNC.Validate(); err != nil {
 		return err
 	}
 	if len(p.Group) > 128 || strings.ContainsAny(p.Group, "\x00\r\n") {
@@ -231,9 +253,6 @@ func Validate(p Profile) error {
 	if bytes.ContainsAny([]byte(p.Host), "\x00\r\n") || bytes.ContainsAny([]byte(p.User), "\x00\r\n") {
 		return errors.New("连接字段格式错误")
 	}
-	if p.Fingerprint == "" {
-		return errors.New("必须先核对并保存服务器SHA256主机指纹")
-	}
 	switch p.Auth {
 	case "password":
 		// An empty password is still an explicit password credential; the
@@ -242,7 +261,7 @@ func Validate(p Profile) error {
 		if p.PrivateKey == "" {
 			return errors.New("未提供私钥")
 		}
-	case "agent":
+	case "agent", "managed":
 		if p.AgentFingerprint == "" {
 			return errors.New("请明确选择SSH代理中的公钥指纹")
 		}
@@ -328,9 +347,13 @@ func (s *Session) SaveDetails(file string, d Summary) error {
 	p.Network = d.Network
 	return s.SaveProfile(file, p)
 }
+
+// MaxProfiles is shared by offline and service-backed profile creation.
+const MaxProfiles = 1024
+
 func (s *Session) Put(p Profile) error {
 	p = cloneProfile(p)
-	if err := Validate(p); err != nil {
+	if err := ValidateStored(p); err != nil {
 		return err
 	}
 	s.mu.Lock()
@@ -338,32 +361,54 @@ func (s *Session) Put(p Profile) error {
 	if s.closed {
 		return errors.New("保险库已锁定")
 	}
-	if _, e := resolveRoute(p, s.profiles); e != nil {
-		return e
-	}
-	for i := range s.profiles {
-		if s.profiles[i].ID == p.ID {
-			s.profiles[i] = p
-			return nil
+	profiles := append([]Profile(nil), s.profiles...)
+	found := false
+	for i := range profiles {
+		if profiles[i].ID == p.ID {
+			if profiles[i].Group != p.Group {
+				profiles = append(profiles[:i:i], profiles[i+1:]...)
+				at := len(profiles)
+				for j, other := range profiles {
+					if other.Group == p.Group {
+						at = j + 1
+					}
+				}
+				profiles = append(profiles, Profile{})
+				copy(profiles[at+1:], profiles[at:])
+				profiles[at] = p
+			} else {
+				profiles[i] = p
+			}
+			found = true
+			break
 		}
 	}
-	s.profiles = append(s.profiles, p)
+	if !found {
+		if len(profiles) >= MaxProfiles {
+			return errors.New("连接数量超过上限")
+		}
+		profiles = append(profiles, p)
+	}
+	if _, err := resolveRoute(p, profiles, s.routes); err != nil {
+		return err
+	}
+	if err := validateRouteChanges(profiles, s.routes, s.profiles, s.routes); err != nil {
+		return err
+	}
+	s.profiles = profiles
 	return nil
 }
 
 // SaveProfile commits to disk before publishing new credentials in memory.
 func (s *Session) SaveProfile(file string, p Profile) error {
 	p = cloneProfile(p)
-	if e := Validate(p); e != nil {
+	if e := ValidateStored(p); e != nil {
 		return e
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
 		return errors.New("保险库已锁定")
-	}
-	if _, e := resolveRoute(p, s.profiles); e != nil {
-		return e
 	}
 	profiles := append([]Profile(nil), s.profiles...)
 	found := false
@@ -375,12 +420,18 @@ func (s *Session) SaveProfile(file string, p Profile) error {
 		}
 	}
 	if !found {
-		if len(profiles) >= 1024 {
+		if len(profiles) >= MaxProfiles {
 			return errors.New("连接数量超过上限")
 		}
 		profiles = append(profiles, p)
 	}
-	copy := &Session{header: s.header, key: s.key, profiles: profiles, snippets: s.snippets, notes: s.notes, auditHead: s.auditHead}
+	if _, err := resolveRoute(p, profiles, s.routes); err != nil {
+		return err
+	}
+	if err := validateRouteChanges(profiles, s.routes, s.profiles, s.routes); err != nil {
+		return err
+	}
+	copy := &Session{header: s.header, key: s.key, routes: s.routes, profiles: profiles, snippets: s.snippets, notes: s.notes, auditHead: s.auditHead}
 	if e := Save(file, copy, false); e != nil {
 		return e
 	}
@@ -448,6 +499,7 @@ func (s *Session) Close() {
 	defer s.mu.Unlock()
 	wipe(s.key)
 	s.key = nil
+	s.routes = nil
 	s.profiles = nil
 	s.snippets = nil
 	s.notes = nil

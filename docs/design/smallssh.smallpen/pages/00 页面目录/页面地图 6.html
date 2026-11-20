@@ -6,12 +6,12 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[1400px] h-[1820px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-full bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="Docker子页" class="flex flex-col gap-[12px] w-full">
+    <div data-name="Docker子页" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">Docker子页</p>
-      <div data-name="docker-containers" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="docker-containers" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">容器</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：Docker→容器</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：容器卡片/表格、启停/重启、日志详情、sh/bash终端</p>
@@ -20,7 +20,7 @@
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/docker.go; internal/desktop/docker_dialog.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：07 Docker / 容器</p>
       </div>
-      <div data-name="docker-images" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="docker-images" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">镜像</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：Docker→镜像</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：搜索、排序、镜像名称/标签/ID/大小/创建时间</p>
@@ -30,9 +30,9 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：07 Docker / 镜像</p>
       </div>
     </div>
-    <div data-name="Docker子页/项目详情" class="flex flex-col gap-[12px] w-full">
+    <div data-name="Docker子页/项目详情" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">Docker子页/项目详情</p>
-      <div data-name="docker-compose" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="docker-compose" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">Compose项目</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：Docker→Compose</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：项目卡片、容器子状态；启动/停止/重启、更新计划与任务</p>
@@ -42,9 +42,9 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：07 Docker / Compose 项目</p>
       </div>
     </div>
-    <div data-name="工具区内详情" class="flex flex-col gap-[12px] w-full">
+    <div data-name="工具区内详情" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">工具区内详情</p>
-      <div data-name="container-details" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="container-details" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">容器日志与详情</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：容器菜单→日志/详情</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：日志/详情切换、行数、搜索、复制、暂停/跟随；容器终端</p>
@@ -54,27 +54,27 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：07 Docker / 容器日志与详情</p>
       </div>
     </div>
-    <div data-name="模态弹窗/全局任务" class="flex flex-col gap-[12px] w-full">
+    <div data-name="模态弹窗/全局任务" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">模态弹窗/全局任务</p>
-      <div data-name="compose-update" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="compose-update" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">Compose更新确认与任务</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：Compose项目→更新</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：确认服务器及已发现服务、计划核对、下载、复核与重建；查看任务</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：成员变化、来源不完整禁用、分阶段失败/取消</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：不承诺自动回滚，不扩大到未选容器</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/compose_work.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/compose_work.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：07 Docker / Compose 更新确认</p>
       </div>
     </div>
-    <div data-name="弹窗/独立备注视图" class="flex flex-col gap-[12px] w-full">
+    <div data-name="弹窗/独立备注视图" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">弹窗/独立备注视图</p>
-      <div data-name="server-notes" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="server-notes" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">服务器备注</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器右键→备注</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：查看和编辑服务器备注</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：读取中、失败重试、保存中、冲突/未保存确认</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：备注与登录凭据分离；不推断服务器实时信息</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/server_notes.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/server_notes.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：09 工具 / 服务器备注</p>
       </div>
     </div>

@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/client"
 	"sshclient/internal/fileattrs"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/protocol"
+	"sshclient/internal/sshdata"
+	"sshclient/internal/transfer"
 )
 
 func sessionCommand(ctx context.Context, c client.Client, label string, args []string) (int, error) {
@@ -26,6 +27,8 @@ func sessionCommand(ctx context.Context, c client.Client, label string, args []s
 	switch args[0] {
 	case "serve":
 		return serveSession(ctx, c, label, args[1:], os.Stdin, os.Stdout, os.Stderr)
+	case "maintenance":
+		return serveWithPermission(ctx, c, label, args[1:], os.Stdin, os.Stdout, os.Stderr, approval.MaintenancePermission)
 	case "exec":
 		return execSession(ctx, c, label, args[1:], os.Stdin, os.Stdout, os.Stderr)
 	default:
@@ -39,38 +42,57 @@ type cliSessionOptions struct {
 }
 
 type sessionInput struct {
-	ID        string             `json:"id"`
-	Action    string             `json:"action,omitempty"`
-	Operation approval.Operation `json:"operation,omitempty"`
+	ID         string             `json:"id"`
+	Action     string             `json:"action,omitempty"`
+	Operation  approval.Operation `json:"operation,omitempty"`
+	Remote     string             `json:"remote,omitempty"`
+	Local      string             `json:"local,omitempty"`
+	Directory  bool               `json:"directory,omitempty"`
+	TransferID string             `json:"transferId,omitempty"`
 }
 
 type sessionOutput struct {
-	ID       string            `json:"id"`
-	Request  *approval.Request `json:"request,omitempty"`
-	ExitCode int               `json:"exitCode"`
-	Stdout   []byte            `json:"stdout,omitempty"`
-	Stderr   []byte            `json:"stderr,omitempty"`
-	Files    []sshconn.File    `json:"files,omitempty"`
-	FileInfo *fileattrs.Info   `json:"fileInfo,omitempty"`
-	Error    string            `json:"error,omitempty"`
+	ID         string            `json:"id"`
+	Request    *approval.Request `json:"request,omitempty"`
+	ExitCode   int               `json:"exitCode"`
+	Stdout     []byte            `json:"stdout,omitempty"`
+	Stderr     []byte            `json:"stderr,omitempty"`
+	Files      []sshdata.File    `json:"files,omitempty"`
+	FileInfo   *fileattrs.Info   `json:"fileInfo,omitempty"`
+	TransferID string            `json:"transferId,omitempty"`
+	Error      string            `json:"error,omitempty"`
 }
 
 // session serve owns one stdio channel for its entire lifetime. It never
 // publishes a socket or a reusable session credential for other processes.
 func parseCLISessionOptions(args []string, notices io.Writer) (cliSessionOptions, error) {
-	options := cliSessionOptions{permission: "read", lifetime: 2 * time.Hour, idle: 15 * time.Minute}
-	fs := flag.NewFlagSet("session serve", flag.ContinueOnError)
+	return parseSessionOptions(args, notices, "")
+}
+
+func parseSessionOptions(args []string, notices io.Writer, fixedPermission string) (cliSessionOptions, error) {
+	options := cliSessionOptions{permission: "guarded", lifetime: 2 * time.Hour, idle: 15 * time.Minute}
+	name := "session serve"
+	if fixedPermission == approval.MaintenancePermission {
+		name = "session maintenance"
+		options = cliSessionOptions{permission: fixedPermission, lifetime: time.Hour, idle: time.Hour}
+	}
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(notices)
-	readRoot := fs.String("read-root", "", "限定文件读取的绝对根目录")
-	writeRoot := fs.String("write-root", "", "限定文件写入的绝对根目录")
+	fs.StringVar(&options.readRoot, "read-root", "", "限定文件读取的绝对路径")
+	if fixedPermission == "" {
+		fs.StringVar(&options.writeRoot, "write-root", "", "限定文件写入的绝对根目录")
+	}
 	if err := fs.Parse(args); err != nil {
 		return options, err
 	}
 	args = fs.Args()
-	if len(args) < 1 || len(args) > 4 {
-		return options, errors.New("用法: smallssh session serve [--read-root /srv] [--write-root /srv] 连接ID [read|full] [2h] [15m]")
+	if fixedPermission != "" && len(args) != 1 {
+		return options, errors.New("用法: smallssh session maintenance [--read-root /srv/backups] 连接ID")
 	}
-	options.host, options.readRoot, options.writeRoot = args[0], *readRoot, *writeRoot
+	if len(args) < 1 || len(args) > 4 {
+		return options, errors.New("用法: smallssh session serve [--read-root /srv] [--write-root /srv] 连接ID [read|guarded|maintenance|full] [2h] [15m]")
+	}
+	options.host = args[0]
 	if len(args) > 1 {
 		options.permission = args[1]
 	}
@@ -108,7 +130,11 @@ func approvedCLISession(ctx context.Context, c client.Client, label string, opti
 }
 
 func serveSession(ctx context.Context, c client.Client, label string, args []string, input io.Reader, output, notices io.Writer) (int, error) {
-	options, err := parseCLISessionOptions(args, notices)
+	return serveWithPermission(ctx, c, label, args, input, output, notices, "")
+}
+
+func serveWithPermission(ctx context.Context, c client.Client, label string, args []string, input io.Reader, output, notices io.Writer, fixedPermission string) (int, error) {
+	options, err := parseSessionOptions(args, notices, fixedPermission)
 	if err != nil {
 		return 2, err
 	}
@@ -138,10 +164,19 @@ func serveSession(ctx context.Context, c client.Client, label string, args []str
 			case "close":
 				return 0, encoder.Encode(sessionOutput{ID: q.ID})
 			case "status":
-				message, e := c.CallWithSession(ctx, broker.Message{Action: "sessionStatus", ID: d.ParentID, Ticket: d.Ticket}, d)
+				message, e := c.CallWithSession(ctx, protocol.Message{Action: "sessionStatus", ID: d.ParentID, Ticket: d.Ticket}, d)
 				result.Request = message.Request
 				if e != nil {
 					result.Error = e.Error()
+				}
+			case "backup", "resume-backup":
+				result = runSessionBackup(ctx, c, label, options.host, q)
+			case "preview-upgrade":
+				if q.Operation != (approval.Operation{}) || q.Remote != "" || q.Local != "" || q.Directory || q.TransferID != "" {
+					result.Error = "升级预览不接受命令、参数或传输设置"
+				} else {
+					q.Operation.Kind = "upgrade-preview"
+					result = runSessionOperation(ctx, c, label, options.host, q)
 				}
 			case "", "run":
 				result = runSessionOperation(ctx, c, label, options.host, q)
@@ -159,6 +194,36 @@ func serveSession(ctx context.Context, c client.Client, label string, args []str
 	return 0, nil
 }
 
+func runSessionBackup(ctx context.Context, c client.Client, label, host string, q sessionInput) sessionOutput {
+	result := sessionOutput{ID: q.ID}
+	if c.Delegation == nil || c.Delegation.Permission != approval.MaintenancePermission || c.Delegation.Validate(c.Dir) != nil || q.Operation != (approval.Operation{}) {
+		result.Error = "备份操作需要维护准备授权"
+		return result
+	}
+	manager := transfer.NewWithClient(c)
+	id := q.TransferID
+	if q.Action == "backup" {
+		if id != "" || q.Local == "" || !approval.WithinRoot(c.Delegation.ReadRoot, q.Remote) {
+			result.Error = "请指定授权范围内的备份来源和本地目标"
+			return result
+		}
+		job, err := manager.AddDownload(host, q.Local, q.Remote, c.Delegation.Endpoint, c.Delegation.HostFingerprint, q.Directory)
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		id = job.ID
+	} else if id == "" || q.Remote != "" || q.Local != "" || q.Directory {
+		result.Error = "续传只能指定原备份任务编号"
+		return result
+	}
+	result.TransferID = id
+	if err := manager.Run(ctx, id, label); err != nil {
+		result.Error = err.Error()
+	}
+	return result
+}
+
 func runSessionOperation(ctx context.Context, c client.Client, label, host string, q sessionInput) sessionOutput {
 	result := sessionOutput{ID: q.ID}
 	op := q.Operation
@@ -167,15 +232,21 @@ func runSessionOperation(ctx context.Context, c client.Client, label, host strin
 	}
 	op.Client = label
 	switch op.Kind {
-	case "exec", "list", "get", "file-info":
+	case "exec", "list", "get", "file-info", "upgrade-preview":
 	default:
-		result.Error = "stdio 会话支持 exec、list、get 和 file-info；流式写入或终端请使用同进程 SDK"
+		result.Error = "stdio 会话支持 exec、list、get、file-info 和 upgrade-preview"
 		return result
 	}
 	r, ticket, err := c.Request(ctx, op, time.Minute)
 	if err != nil {
 		result.Error = err.Error()
 		return result
+	}
+	if r.Status == "pending" {
+		if err = c.Wait(ctx, r.ID, ticket); err != nil {
+			result.Error = err.Error()
+			return result
+		}
 	}
 	stream, err := c.Start(ctx, r.ID, ticket, 0, 0)
 	if err != nil {

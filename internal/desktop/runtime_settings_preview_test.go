@@ -66,6 +66,30 @@ func TestRuntimeSettingsSnapshotsWithoutWindows(t *testing.T) {
 			})
 		}
 	}
+	for _, style := range []struct {
+		name, locale string
+		dark         bool
+	}{
+		{"light", "zh-Hans", false}, {"dark", "zh-Hans", true}, {"english", "en", false},
+	} {
+		t.Run("presence-minimum-"+style.name, func(t *testing.T) {
+			a := &app{page: 4, settingsSection: settingsPresence, behavior: behaviorPreferences{BackgroundMode: "application", ShowDockIcon: &no, ShowTrayIcon: true}}
+			var events []string
+			fakePresence(a, &events)
+			tt := settingsTester(a, 720, 640)
+			tt.SetLocale(style.locale)
+			tt.SetDark(style.dark)
+			label := "驻留时显示 Dock"
+			if style.locale == "en" {
+				label = "Keep Dock icon in background"
+			}
+			bounds, ok := tt.Find(label)
+			if !ok || bounds.H < 11 || bounds.X < 0 || bounds.X+bounds.W > 720 || bounds.Y+bounds.H > 640 {
+				t.Fatal("presence label clipped", label, bounds)
+			}
+			write("runtime-presence-minimum-"+style.name, tt)
+		})
+	}
 	a, r := reviewFixture("full")
 	a.behavior.SessionIdleEnabled = &no
 	state := &approvalPromptState{}

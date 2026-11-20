@@ -12,6 +12,7 @@ import (
 // A tool has one presentation owner. Its source is captured when promoted;
 // changing focus or dragging it must not silently retarget an operation.
 type workspaceToolTab struct {
+	vnc           *vncRun
 	kind          int
 	group         *terminalGroup
 	source        *session
@@ -60,6 +61,9 @@ func (a *app) workspaceTabTitle(c *ui.Context, tab workspaceTab) string {
 		return sessionDisplayName(c, tab.session)
 	}
 	if tab.tool != nil {
+		if tab.tool.vnc != nil {
+			return tab.tool.vnc.name
+		}
 		return workspaceToolTitle(c, tab.tool.kind)
 	}
 	name := a.editPath
@@ -87,7 +91,12 @@ func workspaceToolTitle(c *ui.Context, kind int) string {
 
 func (a *app) workspaceTabDisplayTitle(c *ui.Context, tab workspaceTab) string {
 	label := a.workspaceTabTitle(c, tab)
-	if tab.tool != nil && tab.tool.kind != toolFiles && tab.tool.kind != toolTransfers && tab.tool.source != nil {
+	if tab.session != nil {
+		if route := a.sessionRouteLabel(c, tab.session.target.Route); route != "" {
+			label += " · " + route
+		}
+	}
+	if tab.tool != nil && tab.tool.vnc == nil && tab.tool.kind != toolFiles && tab.tool.kind != toolTransfers && tab.tool.source != nil {
 		label += " · " + sessionDisplayName(c, tab.tool.source)
 	}
 	return label
@@ -109,6 +118,16 @@ func (a *app) selectedWorkspaceTab(g *terminalGroup) workspaceTab {
 func (a *app) workspaceTerminalSelected(s *session) bool {
 	g := a.activeTerminalGroup
 	return g != nil && g.selectedTool == nil && !g.editorSelected && g.active == s && a.currentTerminal() == s
+}
+
+func (a *app) workspaceTabGroup(tab workspaceTab) *terminalGroup {
+	if tab.session != nil {
+		return tab.session.group
+	}
+	if tab.tool != nil {
+		return tab.tool.group
+	}
+	return a.editorTerminalGroup
 }
 
 func (a *app) activateWorkspaceTab(g *terminalGroup, tab workspaceTab) {
@@ -139,6 +158,33 @@ func (a *app) activateWorkspaceTab(g *terminalGroup, tab workspaceTab) {
 		a.active, a.lastActiveTerminal = index, tab.tool.source
 	}
 	a.syncWorkspaceFileFlags()
+}
+
+// cycleWorkspaceTab selects the neighbouring top tab in the order the strip
+// shows them, wrapping at either end, as browsers and terminal apps do. It
+// only activates the tab: cards, splits and their order stay unchanged, and
+// it is a no-op while another window or a modal prompt owns the keyboard.
+func (a *app) cycleWorkspaceTab(step int) {
+	if a.currentDialogHost() != dialogHostMain || a.prompt.open {
+		return
+	}
+	a.ensureTerminalGroups()
+	var entries []workspaceTab
+	for _, group := range a.terminalGroups() {
+		entries = append(entries, a.workspaceTabs(group)...)
+	}
+	if len(entries) < 2 {
+		return
+	}
+	a.page = 1
+	next := 0
+	if current := slices.Index(entries, a.selectedWorkspaceTab(a.activeTerminalGroup)); current >= 0 {
+		next = (current + step%len(entries) + len(entries)) % len(entries)
+	} else if step < 0 {
+		next = len(entries) - 1
+	}
+	a.activateWorkspaceTab(a.workspaceTabGroup(entries[next]), entries[next])
+	a.invalidateWindows()
 }
 
 func (a *app) syncWorkspaceFileFlags() {
@@ -231,6 +277,10 @@ func (a *app) closeWorkspaceTab(tab workspaceTab) {
 		tool.group.selectedTool = nil
 	}
 	delete(a.workspaceTools, tool.kind)
+	if tool.vnc != nil {
+		tool.vnc.tab = nil
+		a.stopVNC(tool.vnc)
+	}
 	if tool.kind == toolFiles {
 		a.filesTabOpen, a.filesTabSelected = false, false
 	}
@@ -242,7 +292,7 @@ func (a *app) closeWorkspaceTab(tab workspaceTab) {
 }
 
 func (a *app) dockWorkspaceTool(tool *workspaceToolTab) {
-	if tool == nil {
+	if tool == nil || tool.vnc != nil {
 		return
 	}
 	if a.deferTerminalMutation(func() { a.dockWorkspaceTool(tool) }) {
@@ -259,7 +309,7 @@ func (a *app) workspaceTabMenu(m *ui.Menu, tab workspaceTab) {
 	}
 	if tab.session != nil {
 		a.terminalTabMenu(m, tab.session)
-	} else if tab.tool != nil {
+	} else if tab.tool != nil && tab.tool.vnc == nil {
 		if m.Item(tr(nil, "返回停靠面板")).Chosen() {
 			a.dockWorkspaceTool(tab.tool)
 		}
@@ -269,21 +319,23 @@ func (a *app) workspaceTabMenu(m *ui.Menu, tab workspaceTab) {
 		a.closeWorkspaceTab(tab)
 	}
 	m.Separator()
-	g := a.editorTerminalGroup
-	if tab.session != nil {
-		g = tab.session.group
-	}
-	if tab.tool != nil {
-		g = tab.tool.group
-	}
+	g := a.workspaceTabGroup(tab)
 	for _, item := range []struct{ label, edge string }{{"向左拆分", "left"}, {"向右拆分", "right"}, {"向上拆分", "top"}, {"向下拆分", "bottom"}} {
 		if m.Item(tr(nil, item.label)).Disabled(g == nil || len(a.workspaceTabs(g)) < 2).Chosen() {
 			a.dropWorkspaceTab(a.workspaceTabPayload(tab), g, workspaceTab{}, item.edge)
 		}
 	}
+	m.Separator()
+	a.workspaceLayoutMenu(m, tab)
 }
 
 func (a *app) renderWorkspaceTool(c *ui.Context, tool *workspaceToolTab) {
+	if tool.vnc != nil {
+		if tool.vnc.view != nil {
+			ui.WebView(c, tool.vnc.view).Fill().Label(tr(c, "VNC 远程桌面内容"))
+		}
+		return
+	}
 	previous := a.renderingWorkspaceTool
 	previousBounds := a.workspaceToolBounds
 	a.renderingWorkspaceTool = tool

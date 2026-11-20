@@ -1,4 +1,4 @@
-// Package client is the shared CLI/desktop frontend to the local broker.
+// Package client is the shared CLI/desktop frontend to the local protocol.
 package client
 
 import (
@@ -7,24 +7,25 @@ import (
 	"fmt"
 	"io"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/fileattrs"
 	"sshclient/internal/localipc"
 	"sshclient/internal/monitor"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/protocol"
+	"sshclient/internal/sshdata"
 	"sync"
 	"time"
 )
 
 type Client struct {
-	Dir              string
-	BrokerKey        string
-	Owner            OwnerProof
-	Delegation       *Delegation
-	OnSessionRenewal func(approval.Request)
+	Dir               string
+	BrokerKey         string
+	Owner             OwnerProof
+	Delegation        *Delegation
+	OnSessionRenewal  func(approval.Request)
+	ServiceExecutable string // optional trusted companion path for unlock notices
 }
 
-func (c Client) Call(ctx context.Context, q broker.Message) (broker.Message, error) {
+func (c Client) Call(ctx context.Context, q protocol.Message) (protocol.Message, error) {
 	if q.Action == "request" || q.Action == "ownerRequest" {
 		return c.request(ctx, q)
 	}
@@ -36,27 +37,31 @@ func (c Client) Call(ctx context.Context, q broker.Message) (broker.Message, err
 			}
 			return r, err
 		}
-		return broker.Message{}, approval.ErrDenied
+		return protocol.Message{}, approval.ErrDenied
 	}
-	if HasOwnerProof(c.Owner) && broker.OwnerQueryAction(q.Action) && q.Challenge == "" && q.Ticket == "" {
+	if HasOwnerProof(c.Owner) && protocol.OwnerQueryAction(q.Action) && q.Challenge == "" && q.Ticket == "" {
 		return c.CallWithOwner(ctx, q, c.Owner)
 	}
 	return c.call(ctx, q)
 }
 
-func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, error) {
+func (c Client) call(ctx context.Context, q protocol.Message) (protocol.Message, error) {
 	w, e := c.connect(ctx)
 	if e != nil {
-		return broker.Message{}, e
+		return protocol.Message{}, e
 	}
 	defer w.Conn.Close()
 	stop := context.AfterFunc(ctx, func() { w.Conn.Close() })
 	defer stop()
-	w.Conn.SetDeadline(time.Now().Add(15 * time.Second))
-	if e = w.Send(q); e != nil {
-		return broker.Message{}, e
+	timeout := 15 * time.Second
+	if q.Action == "workspaceWrite" && q.WorkspaceChange != nil && q.WorkspaceChange.Kind == "ssh-identity-change" {
+		timeout = 2 * time.Minute
 	}
-	var r broker.Message
+	w.Conn.SetDeadline(time.Now().Add(timeout))
+	if e = w.Send(q); e != nil {
+		return protocol.Message{}, e
+	}
+	var r protocol.Message
 	e = w.Receive(&r)
 	if e == nil {
 		e = responseError(r)
@@ -64,15 +69,19 @@ func (c Client) call(ctx context.Context, q broker.Message) (broker.Message, err
 	return r, e
 }
 
-func responseError(r broker.Message) error {
+func responseError(r protocol.Message) error {
 	var e error
 	if r.Error != "" {
 		e = errors.New(r.Error)
 		switch r.ErrorCode {
+		case protocol.ErrorUploadTargetExists:
+			e = sshdata.ErrUploadTargetExists
 		case "session_expired":
 			e = approval.ErrSessionExpired
 		case "session_renewing":
 			e = approval.ErrSessionRenewing
+		case "operation_review_pending":
+			e = approval.ErrReviewPending
 		case "automation_policy":
 			// Keep the refusal recognisable: a caller may be able to ask for a
 			// narrower, allowed operation instead of failing outright.
@@ -86,11 +95,14 @@ func responseError(r broker.Message) error {
 // policy, which no approval can override.
 var ErrAutomationPolicy = errors.New("自动化策略拒绝")
 
+// ErrOperationDenied means the owner declined this operation, not its session.
+var ErrOperationDenied = errors.New("本次操作已拒绝")
+
 func (c Client) Request(ctx context.Context, op approval.Operation, ttl time.Duration) (approval.Request, string, error) {
 	if c.Delegation != nil {
 		return c.RequestDelegated(ctx, op, ttl, c.Delegation)
 	}
-	r, e := c.request(ctx, broker.Message{Action: "request", Operation: op, TTL: int(ttl / time.Second)})
+	r, e := c.request(ctx, protocol.Message{Action: "request", Operation: op, TTL: int(ttl / time.Second)})
 	if e != nil {
 		return approval.Request{}, "", e
 	}
@@ -103,7 +115,7 @@ func (c Client) Wait(ctx context.Context, id, ticket string) error {
 	t := time.NewTicker(350 * time.Millisecond)
 	defer t.Stop()
 	for {
-		r, e := c.Call(ctx, broker.Message{Action: "status", ID: id, Ticket: ticket})
+		r, e := c.Call(ctx, protocol.Message{Action: "status", ID: id, Ticket: ticket})
 		if e != nil {
 			return e
 		}
@@ -114,6 +126,11 @@ func (c Client) Wait(ctx context.Context, id, ticket string) error {
 		case "approved":
 			return nil
 		case "pending":
+		case "denied":
+			if h := c.channel(id, ticket); h != nil {
+				h.close()
+			}
+			return fmt.Errorf("%w: %w", ErrOperationDenied, approval.ErrDenied)
 		default:
 			if h := c.channel(id, ticket); h != nil {
 				h.close()
@@ -132,7 +149,7 @@ type Stream struct {
 	ListenAddress string
 	RequestID     string
 	Operation     approval.Operation
-	Meta          *sshconn.TransferMeta
+	Meta          *sshdata.TransferMeta
 	wire          *localipc.Wire
 	stop          func() bool
 	once          sync.Once
@@ -145,7 +162,7 @@ func (c Client) Start(ctx context.Context, id, ticket string, cols, rows int) (*
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	status, err := h.callLocked(ctx, broker.Message{Action: "status", ID: id, Ticket: ticket})
+	status, err := h.callLocked(ctx, protocol.Message{Action: "status", ID: id, Ticket: ticket})
 	if err != nil {
 		return nil, err
 	}
@@ -166,17 +183,20 @@ func (c Client) Start(ctx context.Context, id, ticket string, cols, rows int) (*
 	w := h.wire
 	stop := context.AfterFunc(ctx, h.close)
 	var e error
-	if e = w.Send(broker.Message{Action: "run", ID: id, Ticket: ticket, Cols: cols, Rows: rows}); e != nil {
+	if e = w.Send(protocol.Message{Action: "run", ID: id, Ticket: ticket, Cols: cols, Rows: rows}); e != nil {
 		stop()
 		h.close()
 		return nil, e
 	}
-	var r broker.Message
+	var r protocol.Message
 	if e = w.Receive(&r); e != nil || r.Action != "ready" {
 		stop()
 		h.close()
 		if e == nil {
-			e = errors.New(r.Error)
+			e = responseError(r)
+			if e == nil {
+				e = errors.New("代理未准备好执行操作")
+			}
 		}
 		return nil, e
 	}
@@ -187,7 +207,7 @@ func (s *Stream) Write(p []byte) (int, error) {
 	n := 0
 	for len(p) > 0 {
 		k := min(48<<10, len(p))
-		if e := s.wire.Send(broker.Message{Action: "data", Data: p[:k]}); e != nil {
+		if e := s.wire.Send(protocol.Message{Action: "data", Data: p[:k]}); e != nil {
 			return n, e
 		}
 		n += k
@@ -195,28 +215,28 @@ func (s *Stream) Write(p []byte) (int, error) {
 	}
 	return n, nil
 }
-func (s *Stream) End() error { return s.wire.Send(broker.Message{Action: "end"}) }
+func (s *Stream) End() error { return s.wire.Send(protocol.Message{Action: "end"}) }
 
 // SetMonitorActive tells the broker whether this session's server status is still
 // on screen. The broker probes only while some subscriber shows it, so a
 // collapsed panel or an inactive tab costs nothing on the server.
 func (s *Stream) SetMonitorActive(active bool) error {
-	return s.wire.Send(broker.Message{Action: "monitor", MonitorActive: active})
+	return s.wire.Send(protocol.Message{Action: "monitor", MonitorActive: active})
 }
 
 func (s *Stream) Resize(cols, rows int) error {
-	return s.wire.Send(broker.Message{Action: "resize", Cols: cols, Rows: rows})
+	return s.wire.Send(protocol.Message{Action: "resize", Cols: cols, Rows: rows})
 }
-func (s *Stream) Receive() (broker.Message, error) {
-	var r broker.Message
+func (s *Stream) Receive() (protocol.Message, error) {
+	var r protocol.Message
 	e := s.wire.Receive(&r)
-	if e == nil && r.Error != "" {
-		e = errors.New(r.Error)
+	if e == nil {
+		e = responseError(r)
 	}
 	return r, e
 }
-func (s *Stream) Copy(out, stderr io.Writer) (int, []sshconn.File, error) {
-	var files []sshconn.File
+func (s *Stream) Copy(out, stderr io.Writer) (int, []sshdata.File, error) {
+	var files []sshdata.File
 	for {
 		m, e := s.Receive()
 		if e != nil {

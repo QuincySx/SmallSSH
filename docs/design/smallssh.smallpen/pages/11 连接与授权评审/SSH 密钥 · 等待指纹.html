@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>SSH 密钥 · 等待指纹</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" class="flex flex-col gap-space-md w-dialog-small h-fit p-space-lg bg-canvas">
+  <div data-name="标题区" class="flex flex-col w-full gap-native-field">
+    <p data-name="标题" class="type-native-dialog text-text">允许终端使用 SSH 密钥？</p>
+    <p data-name="决定范围" class="type-native-hint text-muted">仅当前指纹 · 本次请求</p>
+  </div>
+  <div data-name="请求对象" class="flex flex-col w-full gap-space-sm p-space-md bg-surface border border-border rounded-window-panel">
+    <div data-name="密钥" class="flex flex-row items-center gap-space-sm w-full">
+      <div data-name="钥匙图标" class="flex flex-col items-center justify-center w-control h-control shrink-0 rounded-control bg-native-tab-selected">
+        <p data-name="图标" class="type-native-action-icon text-accent w-menu-icon text-center"></p>
+      </div>
+      <div data-name="标识" class="flex flex-col gap-native-field flex-1 min-w-0">
+        <p data-name="标签" class="type-native-hint text-muted">SSH 密钥</p>
+        <p data-name="名称" class="type-native-dialog text-text">工作 Mac</p>
+      </div>
+      <sp-use data-name="查看指纹" class="shrink-0" component="按钮" props="样式: 轻量" data-click="overlay:11 连接与授权评审/SSH 密钥 · 指纹详情; position: center; backdrop; close-outside">
+        <p data-name="文字">查看指纹</p>
+      </sp-use>
+    </div>
+    <div data-name="目标分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+    <div data-name="用途和账号" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="用途标签" class="type-native-hint text-muted">用途</p>
+      <p data-name="用途" class="type-native-copy text-text flex-1">SSH 登录</p>
+      <p data-name="账号标签" class="type-native-hint text-muted">登录账号</p>
+      <p data-name="账号" class="type-native-copy text-text">deploy</p>
+    </div>
+    <div data-name="主机" class="flex flex-row items-center gap-space-sm w-full">
+      <p data-name="标签" class="type-native-hint text-muted">主机</p>
+      <p data-name="值" class="type-native-copy text-muted">可核对主机指纹</p>
+    </div>
+  </div>
+  <div data-name="决定分隔" class="w-full h-review-divider bg-border shrink-0"></div>
+  <sp-use data-name="验证与决定" component="授权验证底栏" props="状态: 等待验证; 切换验证: 无" class="w-full">
+    <div data-name="操作">
+      <div data-name="拒绝" data-click="11 连接与授权评审/SSH 密钥 · 请求被拒绝"></div>
+      <div data-name="正在验证" data-click="11 连接与授权评审/SSH 密钥 · 使用通知"></div>
+    </div>
+  </sp-use>
+</body>
+</html>

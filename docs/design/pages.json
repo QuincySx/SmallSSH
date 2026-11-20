@@ -18,13 +18,14 @@
       "name": "解锁保险库",
       "host": "主窗锁定页",
       "entry": "启动已存在的保险库或手动锁定后",
-      "actions": "主密码或已启用系统验证解锁；切换密码方式",
-      "states": "系统验证就绪、密码输入、密码回退；验证中、取消、重试、失败",
-      "source": "internal/desktop/locked.go; internal/desktop/unlock_auth.go",
-      "limits": "系统认证依平台与设备；锁定后关闭会话",
+      "actions": "点系统验证图标启动或重试；点使用主密码展开输入框；验证中可取消并留在锁定页",
+      "states": "系统验证就绪、验证中、取消、未识别可重试；不可用、锁定或保险库需要主密码时直接显示密码输入；服务会话失效返回锁定，锁定等待后台确认，失败如实显示未确认",
+      "source": "internal/desktop/locked.go; internal/desktop/unlock_auth.go; internal/desktop/backend.go; internal/client/service_prepare.go; internal/client/service_owner_session.go",
+      "limits": "根会话只用于 prepare/commit，提交后关闭；持有当前进程绑定的服务管理能力；最长8小时后重新解锁，不改变受托请求审批规则",
       "design_pages": [
         "01 访问 / 解锁",
         "01 访问 / 系统验证解锁",
+        "01 访问 / 系统验证进行中",
         "01 访问 / 系统验证密码回退"
       ]
     },
@@ -33,41 +34,51 @@
       "name": "工作台",
       "host": "主窗口",
       "entry": "解锁成功",
-      "actions": "默认卡片画布；右侧独立开关文件、命令、状态、任务；平铺或标签聚合；可混排局部标签组，保持源会话与队列",
-      "states": "空服务器、未选择、已选择无会话、窄窗回退、锁定",
-      "source": "internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go; internal/desktop/workspace_canvas.go",
-      "limits": "不等于独立设置或工具窗口",
+      "actions": "默认卡片画布；右侧独立开关文件、命令、状态；任务统一从顶栏全局入口打开；平铺或标签聚合；视图可共享分栏，保持源会话与队列；两种模式均保留顶部工作区选项卡，切换定位对应视图；画布中不合并或重排分栏；画布/标签呈现与分组操作收在标签右键菜单，顶栏不另放分栏图标；右上角端口转发图标及运行数量，左键进入列表，右键可直接停止单个或全部转发",
+      "states": "空服务器、未选择、已选择无会话、窄窗回退、锁定；顶部标签选中、跨分栏定位、溢出横向滚动；端口转发图标常驻，包括无运行服务时",
+      "source": "internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go; internal/desktop/workspace_canvas.go; internal/desktop/terminal_group_view.go; internal/desktop/components/theme.go; internal/desktop/tunnel_activity.go",
+      "limits": "不等于独立设置或工具窗口；顶栏高48，常规图标按钮32×32；终端与功能卡片标题高32，单标题左留16、右留12，卡片标题显示当前视图；画布模式不得隐藏顶部选项卡，视图切换仅在窗口顶部；卡片内部不显示选项卡；顶部选中标签底色为6%强调色，活动画布标题底色为3.5%，文字/状态点保留；顶栏首个标签相对主内容左边界内缩8，不向侧栏探出；随侧栏宽度调整，紧凑macOS原生控件区优先；全高侧栏背景与工作区、右侧按钮共用8外边距，宽度共用同一计算规则；运行代理入口与相邻动作同为32×32，图形14、数量9，紧凑显示",
       "design_pages": [
         "02 工作台 / 终端与底部文件",
         "02 工作台 / 四个混合分栏",
         "02 工作台 / 六个混合分栏",
         "02 工作台 / 画布与功能开关",
         "02 工作台 / 画布与标签混排",
-        "02 工作台 / 标签聚合"
+        "02 工作台 / 标签聚合",
+        "02 工作台 / 运行中的 SSH 代理"
       ]
     },
     {
       "id": "server-rail",
       "name": "服务器列表",
-      "host": "主窗侧栏/紧凑栏",
+      "host": "主窗全高侧栏/紧凑栏",
       "entry": "工作台左侧",
-      "actions": "添加、搜索、分组展开；单击选择、双击新终端；右键连接、文件、编辑、AI策略、备注、隧道、删除",
-      "states": "无连接、搜索无结果、折叠、连接中可取消",
-      "source": "internal/desktop/connection_rail.go; internal/desktop/layout.go",
-      "limits": "收藏及拖动排序未实现",
+      "actions": "搜索、分组展开；单击选择，双击或选中后按 Enter 打开新终端（经未保存连接守卫）；方向键 / Home / End 跳过分组标题；右键连接、文件、编辑、AI策略、备注、中转与服务、删除；新建连接位于顶部左侧，紧邻连接侧栏开关；新建终端通过服务器操作、菜单或快捷键；右键→终端连接→默认、直连、已连接SSH服务器或已启动SOCKS5入口及已保存线路，一点即另开终端；分隔线区分已就绪通道和新建中转，新建可直接选已保存服务器，不改默认线路；拖动分组排序、组内连接排序、连接跨组移动，落到折叠/过滤分组时保留未显示成员",
+      "states": "首帧加载显示骨架，读取失败提示正在重试，成功后区分真实空列表；无连接、搜索无结果、折叠、连接中可取消；本次线路子菜单、未保存表单守卫、同服务器多线路并存；可用来源随会话和SOCKS5服务启停更新；未知目标当场确认指纹，取消不认证",
+      "source": "internal/desktop/app.go; internal/desktop/connection_rail.go; internal/desktop/layout.go; internal/desktop/workspace_menu.go; internal/desktop/components/sidebar_split.go; internal/desktop/components/theme.go; internal/desktop/session_route.go; internal/client/route.go; internal/connectcfg/route_selection.go; internal/desktop/connection_order.go; internal/vault/connection_order.go; internal/client/workspace.go; internal/desktop/connection_live_routes.go; internal/desktop/connection_trust_plan.go; internal/broker/live_routes.go",
+      "limits": "收藏未实现；松手即显示新位置，等待加密保存时忽略旧列表快照；保存失败恢复已确认顺序并报告原因，重启沿用成功保存的顺序；侧栏Surface背景从窗口顶部延伸到底部，四周8且与右侧按钮外边距统一，16圆角；列表内边距6、搜索框28；展开/收起共用头像槽和滚动状态，侧栏不常驻整行新建",
       "design_pages": [
-        "02 工作台 / 终端与底部文件"
+        "02 工作台 / 终端与底部文件",
+        "03 连接 / 服务器连接菜单",
+        "03 连接 / 本次线路菜单",
+        "03 连接 / 新建 SSH 中转",
+        "02 工作台 / 本次线路会话",
+        "02 工作台 / 本次直连会话",
+        "02 工作台 / 本次跳板会话",
+        "02 工作台 / 连接分组与拖动",
+        "02 工作台 / 连接列表加载中",
+        "02 工作台 / 本次 SOCKS5 会话"
       ]
     },
     {
       "id": "terminal",
       "name": "终端与会话组",
-      "host": "画布卡片 / 局部标签组 / 顶栏标签聚合",
+      "host": "画布卡片 / 分栏 / 顶栏标签聚合",
       "entry": "双击服务器或新建终端",
-      "actions": "Ghostty交互；终端、文件、命令、状态统一标签选择/关闭/排序；四向拆分、跨组移动、合并；空组自动收起；卡片标题拖动聚合，终端标题打开下方文件及右侧 / 下方新终端，连接中即占位",
+      "actions": "Ghostty交互；终端、文件、命令、状态统一通过窗口顶部标签选择/关闭/排序；四向拆分、跨组移动、合并；空组自动收起；卡片标题拖动聚合，终端标题打开下方文件及右侧 / 下方新终端，连接中即占位，占位卡片连接时按钮为「取消连接」、失败后为「重试连接 / 关闭此标签」；键盘新建终端标签（macOS Cmd+T，Windows / Linux Ctrl+Shift+T），视图菜单「上一个 / 下一个标签」（macOS Cmd+Option+← / →，其他 Ctrl+Shift+Tab / Ctrl+Tab）按顶部顺序循环，只激活不改布局；模态提示或其他窗口获得焦点时不切换",
       "states": "排队、连接中、取消、失败重试、断开、主机指纹变化",
-      "source": "internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/connection_pending.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go",
-      "limits": "分组不是多个独立工具实例；不提供批量广播",
+      "source": "internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/terminal_colors.go; internal/desktop/app.go; internal/desktop/connection_pending.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_tab_width.go; internal/desktop/workspace_drag.go; internal/desktop/chrome.go",
+      "limits": "分组不是多个独立工具实例；不提供批量广播；终端标题高32，正文左右内边距16、上下2，收紧标题字形到首行命令的视觉空白；分栏内部仅显示当前视图标题和操作，不显示选项卡；顶部标签最宽210，多标签时先按可用宽度均分（最小72，含关闭按钮）再横向滚动，单标签规则不变",
       "design_pages": [
         "02 工作台 / 终端与底部文件",
         "02 工作台 / 连接中",
@@ -84,8 +95,8 @@
       "entry": "无活动终端",
       "actions": "无服务器引导添加；有服务器未选引导搜索；选定后连接终端",
       "states": "无服务器、未选/过期选择、已选",
-      "source": "internal/desktop/terminal_group_view.go",
-      "limits": "不自动连接；有效性来自完整服务器列表",
+      "source": "internal/desktop/terminal_group_view.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go",
+      "limits": "不自动连接；有效性来自完整服务器列表；无打开视图时不显示示例会话标签；此页为未选服务器且无会话，侧栏无选中项；已有视图的标签不随侧栏选择清空",
       "design_pages": [
         "02 工作台 / 未选择服务器"
       ]
@@ -95,10 +106,10 @@
       "name": "工具面板",
       "host": "底部或右侧标签工具区；可移到主画布，也保留系统窗口",
       "entry": "顶栏单一小窗开关；工具面板自己的布局菜单",
-      "actions": "次要功能收进底部 / 右侧 tab；移到画布、拖回停靠、系统窗口、放大或收起；主画布四向拆分不受工具区停靠方向限制",
-      "states": "隐藏、右侧空间不足回退底部、独立窗",
-      "source": "internal/desktop/filepanes.go; internal/desktop/tool_window.go; internal/desktop/layout.go",
-      "limits": "每类工具一份展示；旧顶部 / 左侧停靠回退底部；右侧窄窗回退底部并保留选择",
+      "actions": "次要功能收进底部 / 右侧 tab；布局菜单用一排图标单选系统窗口、底部或右侧；移到画布、拖回停靠、放大或收起；主画布四向拆分不受工具区停靠方向限制",
+      "states": "隐藏、右侧空间不足回退底部、独立窗；布局菜单高亮当前停靠位置，支持键盘选择与退出",
+      "source": "internal/desktop/filepanes.go; internal/desktop/tool_window.go; internal/desktop/layout.go; internal/desktop/components/panel.go; internal/desktop/components/dock.go; internal/desktop/components/theme.go",
+      "limits": "每类工具一份展示；旧顶部 / 左侧停靠回退底部；右侧窄窗回退底部并保留选择；工具条高36、标签高28，左右留8、标签上下留4；文字标签与右侧操作分组排列；工具标签仅保留命令、文件、服务器状态，不重复提供任务入口",
       "design_pages": [
         "02 工作台 / 终端与底部文件",
         "02 工作台 / 小窗布局菜单",
@@ -115,8 +126,8 @@
       "entry": "终端标题文件图标、右侧文件开关、工具区移到画布",
       "actions": "独立到工作区标签；与终端共用选择、关闭、排序和四向分栏；拖回工具区；保留文件树、来源与选择",
       "states": "选中/未选、返回停靠",
-      "source": "internal/desktop/file_workspace.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go",
-      "limits": "不是新的OS窗口；不复制传输任务",
+      "source": "internal/desktop/file_workspace.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_drag.go; internal/desktop/workspace_canvas.go; internal/desktop/file_toolbar.go; internal/desktop/filepanes.go",
+      "limits": "不是新的OS窗口；不复制传输任务；画布文件标题32、来源/路径/操作行28，上下紧接，不再沿用40/36的两层高度",
       "design_pages": [
         "04 文件 / 文件大标签",
         "02 工作台 / 四个混合分栏",
@@ -127,13 +138,15 @@
       "id": "connection",
       "name": "新建/编辑连接",
       "host": "居中模态弹窗",
-      "entry": "服务器侧栏添加/右键编辑",
-      "actions": "分类常规、加速与代理、终端设置、访问策略；取消、保存/保存并连接",
-      "states": "加载备注、验证错误定位分类、提交中禁改、未保存确认",
-      "source": "internal/desktop/connections.go; internal/desktop/connection_sections.go",
-      "limits": "既有密码保留或明确更换；不包含自动接收指纹",
+      "entry": "顶部左侧＋新建连接（侧栏开关旁）；服务器右键编辑",
+      "actions": "分类常规、加速与代理、终端设置、访问策略；取消或保存连接；保存仅加密落盘，双击服务器才连接",
+      "states": "加载备注、验证错误定位分类、提交中禁改、未保存确认；分类面板、独立表单滚动视口、底部操作固定并右对齐/窄窗换行",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_sections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go; internal/desktop/connection_trust.go; internal/vault/host_trust.go",
+      "limits": "既有密码保留或明确更换；不包含自动接收指纹；分类导航整块浅底、1px细边框、8px圆角和内边距；底部所有操作成组靠右，窄窗可换行；仅调整呈现；弹窗目标尺寸 820×620，随可用窗口收窄，四周至少留 16；保存不解析 DNS、不探测目标或代理、不发起 SSH、不自动激活工具；首次显式连接才按本次线路读取并确认主机指纹",
       "design_pages": [
-        "03 连接 / 常规与密码"
+        "03 连接 / 常规与密码",
+        "03 连接 / 常规与密码 · 窄窗",
+        "03 连接 / 编辑连接 · 保留凭据"
       ]
     },
     {
@@ -141,13 +154,18 @@
       "name": "常规与登录身份",
       "host": "连接弹窗分类",
       "entry": "新建/编辑连接→常规",
-      "actions": "名称、地址、端口、可创建分组、用户名、认证方式、备注；私钥文件选择与检查",
-      "states": "密码/私钥/agent/PKCS#11分支；保留/更换已有凭据；备注读取失败重试/部分保存",
-      "source": "internal/desktop/connections.go; internal/desktop/connection_options.go",
-      "limits": "FIDO2/sk通过agent；未实现keyboard-interactive/MFA；实际设备仍需验收",
+      "actions": "名称、地址、端口、可创建分组、用户名、认证方式、备注；粘贴私钥或选择文件；SmallSSH 密钥可在表单新建并复制公钥；macOS 直接读取系统 PIV 智能卡，也可选已安装的 YubiKey YKCS11、OpenSC 或其他驱动",
+      "states": "密码/私钥/agent/PKCS#11分支；PKCS#11读取中按钮变为「停止读取」，网络页路径实测中变为「停止测量」，都不关闭表单；主按钮只在读取身份/保存/连接时显示忙碌；保留/更换已有凭据；备注读取失败重试/部分保存",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_options.go; internal/desktop/identities.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
+      "limits": "FIDO2/sk通过agent；未实现keyboard-interactive/MFA；实际设备仍需验收；分类区复用DialogSidebar整块面板，操作统一靠右",
       "design_pages": [
         "03 连接 / 常规与密码",
-        "03 连接 / 硬件认证"
+        "03 连接 / 已有私钥",
+        "03 连接 / SmallSSH 密钥",
+        "03 连接 / 硬件认证",
+        "03 连接 / 登录方式菜单",
+        "03 连接 / SSH 密钥代理",
+        "03 连接 / 编辑连接 · 保留凭据"
       ]
     },
     {
@@ -155,12 +173,13 @@
       "name": "加速与代理",
       "host": "连接弹窗分类",
       "entry": "连接→加速与代理",
-      "actions": "HTTP/HTTPS CONNECT、SOCKS5代理；已保存SSH中转；握手耗时比较",
-      "states": "无代理、代理凭据、测量中/失败/结果",
-      "source": "internal/desktop/connection_options.go",
-      "limits": "UDP双端加速和SSH压缩未实现；测量不代表吞吐",
+      "actions": "选择默认线路；就地新建并自动选用；编辑所选线路；连接专用 HTTP/HTTPS CONNECT、SOCKS5 或已保存 SSH 跳板机；握手耗时比较",
+      "states": "连接专用/直连、统一引用线路、线路不可用、代理凭据、测量中/失败/结果",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/vault/saved_routes.go; internal/vault/route.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
+      "limits": "连接只保存线路ID；线路修改下次连接生效，活动会话不变；不存在的线路不回退直连；UDP双端加速和SSH压缩未实现；测量不代表吞吐；分类区复用DialogSidebar整块面板，操作统一靠右",
       "design_pages": [
-        "03 连接 / 加速与代理"
+        "03 连接 / 加速与代理",
+        "03 连接 / 加速与代理 · 连接专用"
       ]
     },
     {
@@ -168,12 +187,13 @@
       "name": "终端设置",
       "host": "连接弹窗分类",
       "entry": "连接→终端设置",
-      "actions": "编码、退格序列、SSH保活间隔及无响应阈值",
-      "states": "自动与显式编码、禁用保活、输入验证",
-      "source": "internal/desktop/connection_options.go",
-      "limits": "编码仅转换终端；不改变文件字节",
+      "actions": "编码、退格序列；说明SSH保活的用途、启用/关闭效果；选择探测间隔和无响应等待上限，并显示当前等待秒数",
+      "states": "自动与显式编码；保活默认关闭，等待上限禁用；启用后按实际间隔及倍数显示等待时长；输入验证",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
+      "limits": "编码仅转换终端；不改变文件字节；保活发出小型探测，帮助维持空闲链路并发现无响应；单次探测等待上限为间隔×倍数（默认3），超时断开后需手动重连；关闭不再发送探测，不保证空闲连接不被外部断开；分类区复用DialogSidebar整块面板，操作统一靠右",
       "design_pages": [
-        "03 连接 / 编码与保活"
+        "03 连接 / 编码与保活",
+        "03 连接 / 编码与保活 · 已开启"
       ]
     },
     {
@@ -181,24 +201,24 @@
       "name": "服务器访问策略",
       "host": "连接弹窗分类",
       "entry": "连接→访问策略或服务器菜单AI访问",
-      "actions": "开关AI访问、关键操作保护、保护路径编辑；保护路径用宽幅多行编辑器校验绝对路径，错误保留草稿",
-      "states": "关闭保护二次确认、输入错误",
-      "source": "internal/desktop/connection_policy.go",
-      "limits": "护栏非不可绕过安全边界；这些路径约束 AI 的结构化文件操作，不是任意远端命令的系统沙箱",
+      "actions": "开关AI访问、关键操作保护；在当前访问策略表单直接编辑保护路径，每行一个绝对路径，留空恢复默认；内联校验并随连接一起保存",
+      "states": "原生复选框选中/未选、禁用；关闭保护二次确认；路径错误原处提示并保留草稿，禁止保存；切换分类保留草稿",
+      "source": "internal/desktop/connection_policy.go; internal/desktop/connections.go; internal/desktop/connection_sections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
+      "limits": "护栏非不可绕过安全边界；这些路径约束 AI 的结构化文件操作，不是任意远端命令的系统沙箱；保护路径不使用额外对话框或页面；无效路径在保护或AI访问关闭时也不能保存；分类区复用DialogSidebar整块面板，操作统一靠右",
       "design_pages": [
         "03 连接 / 访问策略",
-        "03 连接 / 保护路径编辑器"
+        "03 连接 / 访问策略 · 路径校验"
       ]
     },
     {
       "id": "host-identity",
       "name": "服务器身份确认",
-      "host": "连接模态弹窗/复核确认",
+      "host": "小号模态Dialog；首次连接提示或复核确认",
       "entry": "首次连接、指纹变化时重新核对",
-      "actions": "显示服务器、公钥算法与指纹；信任并保存或连接",
-      "states": "探测中、拒绝、指纹不匹配、重新核对",
-      "source": "internal/desktop/connections.go",
-      "limits": "不自动信任；不写known_hosts",
+      "actions": "首次连接只读展示登录地址和完整主机指纹；取消或信任指纹并连接；操作成组靠右",
+      "states": "小号确认、首次连接、取消、指纹不匹配、重新核对；实际主窗一次只显示一层身份确认",
+      "source": "internal/desktop/connections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go; internal/desktop/layout.go; internal/desktop/app.go",
+      "limits": "小号Dialog宽480，高度随内容，不固定撑满；大号表单宽820；不自动信任、不写known_hosts；指纹不作为可编辑输入",
       "design_pages": [
         "03 连接 / 核对服务器身份"
       ]
@@ -207,11 +227,11 @@
       "id": "settings",
       "name": "设置",
       "host": "独立原生窗口",
-      "entry": "主窗右上设置或系统菜单",
-      "actions": "固定导航：工作区、安全与解锁、运行与后台、授权中心；关闭",
+      "entry": "主窗右上设置；macOS 应用菜单「设置…」（Cmd+,）；Windows / Linux「安全」菜单「设置…」",
+      "actions": "固定导航：工作区、安全与解锁、SSH 密钥、加速与代理、运行与后台、授权中心；关闭",
       "states": "分类切换、滚动、验证中取消",
       "source": "internal/desktop/settings_window.go; internal/desktop/settings.go",
-      "limits": "实际窗口已有；原型不等于独立公钥向导",
+      "limits": "实际窗口已有；导航200宽、内容最大720并居中；原型不等于独立公钥向导",
       "design_pages": [
         "08 设置 / 工作区"
       ]
@@ -221,8 +241,8 @@
       "name": "工作区设置",
       "host": "设置窗口分类",
       "entry": "设置→工作区",
-      "actions": "语言、侧栏和工具显隐、停靠位置、恢复默认布局",
-      "states": "明暗/语言切换、布局恢复确认相关状态",
+      "actions": "语言、侧栏和工具显隐、停靠位置、画布 / 标签聚合、恢复默认布局",
+      "states": "明暗/语言切换、布局恢复确认相关状态；分段选择的当前项用强调色浅底与强调色文字标出",
       "source": "internal/desktop/settings.go; internal/desktop/settings_language.go",
       "limits": "自定义主题/字体/快捷键设置尚未实现",
       "design_pages": [
@@ -234,10 +254,10 @@
       "name": "安全与解锁",
       "host": "设置窗口分类",
       "entry": "设置→安全与解锁",
-      "actions": "闲置锁定、系统验证启用/停用与重测、主密码确认、本机代理身份与CLI配对",
-      "states": "不可用、验证中、取消、密码错误、系统验证反馈",
-      "source": "internal/desktop/workspace.go; internal/desktop/idle.go; internal/desktop/settings.go",
-      "limits": "设备/平台可用性不同；不等同服务器登录公钥",
+      "actions": "保险库闲置锁定与新CLI会话默认闲置断开分别配置开关和等待时间；快速解锁（默认开）：关闭无需密码并立即清除，开启或立即启用需确认主密码；重新检测、本机代理身份与CLI配对",
+      "states": "不可用、已就绪、下次用主密码解锁后生效、已关闭、验证中、取消、密码错误、系统验证反馈",
+      "source": "internal/desktop/workspace.go; internal/desktop/quick_unlock.go; internal/desktop/idle.go; internal/desktop/settings.go; internal/service/quick_unlock.go",
+      "limits": "设备/平台可用性不同；快速解锁记录只在本机后台内存、绑定桌面程序身份，开机/更新/48小时需主密码；CLI 不使用系统验证；不等同服务器登录公钥",
       "design_pages": [
         "08 设置 / 安全与解锁"
       ]
@@ -247,10 +267,10 @@
       "name": "运行与后台",
       "host": "设置窗口分类",
       "entry": "设置→运行与后台",
-      "actions": "驻留方式、窗口关闭行为、托盘/Dock等系统可用选项",
-      "states": "托盘不可用、后台关闭、平台差异",
-      "source": "internal/desktop/settings_presence.go; internal/desktop/presence.go",
-      "limits": "独立后台架构仍有后续需求，勿等同UDP加速",
+      "actions": "主窗口关闭行为off/application；有工作窗口时显示Dock，驻留时按Dock/菜单栏设置保留入口；相关窗口统一隐藏、恢复仍有效的窗口，迟到创建不弹到桌面",
+      "states": "关窗退出并锁定、统一隐藏相关窗口驻留、前台Dock显示/后台Dock偏好、恢复入口校验、托盘失败回退、关闭或断开的VNC不复活、开发隐藏启动不泄漏窗口",
+      "source": "internal/desktop/settings_presence.go; internal/desktop/presence.go; internal/desktop/presence_visibility.go",
+      "limits": "smallsshd独立进程已存在；当前此设置仅控制GUI驻留，退出GUI仍主动锁定后台；退出GUI后保留授权/明确后台任务的模式尚未接通。开发-background与用户设置不同，详见DESIGN窗口与后台矩阵",
       "design_pages": [
         "08 设置 / 运行与后台"
       ]
@@ -262,7 +282,7 @@
       "entry": "安全与解锁→信任本机代理",
       "actions": "核对/复制公钥指纹；确认替换本机代理配对",
       "states": "首次配对、不同身份、错误",
-      "source": "internal/desktop/workspace.go",
+      "source": "internal/desktop/workspace.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "仅信任本机代理，不授予服务器访问",
       "design_pages": [
         "08 设置 / 本机 CLI 配对确认"
@@ -273,53 +293,100 @@
       "name": "授权中心",
       "host": "设置窗口分类；请求也可独立弹窗",
       "entry": "设置→授权中心；新授权请求通知",
-      "actions": "待处理、活动、历史；按请求审阅与授权",
+      "actions": "待确认、当前授权、审计记录；当前授权分列服务器操作与SSH密钥，分别调整闲置期限和撤销；审计汇总授权、实际执行、系统采样及SSH签名，按应用/类型/结果/时间/内容筛选并导出JSONL或CSV",
       "states": "无请求、多个请求/紧凑选择器、过期、断连",
-      "source": "internal/desktop/approval_center.go; internal/desktop/approval.go",
-      "limits": "认证和票据绑定目标/期限；数据更新不应抢焦点",
+      "source": "internal/desktop/approval_center.go; internal/desktop/approval_active.go; internal/desktop/approval_history.go; internal/desktop/approval_audit_controls.go; internal/auditlog/; internal/broker/identity_audit.go",
+      "limits": "密钥使用授权不授予服务器操作；服务器操作授权不授予外部密钥使用。两类不互相兑换、续期或继承，解锁和主机信任均不等于授权",
       "design_pages": [
         "08 设置 / 授权中心 · 待处理",
         "08 设置 / 授权中心 · 活动",
-        "08 设置 / 授权中心 · 历史"
+        "08 设置 / 授权中心 · 历史",
+        "08 设置 / 授权中心 · 无请求",
+        "08 设置 / 授权中心 · 无有效授权",
+        "08 设置 / 授权中心 · 历史详情"
       ]
     },
     {
       "id": "approval-pending",
-      "name": "待处理授权",
+      "name": "待处理服务器操作授权",
       "host": "授权中心子页/请求弹窗",
-      "entry": "授权中心→待处理，或新请求弹窗",
-      "actions": "核对请求者、服务器、动作/范围、期限，批准或拒绝；必要时系统认证或主密码",
-      "states": "等待、验证、失败、拒绝、取消、目标过期",
-      "source": "internal/desktop/approval_review.go; internal/desktop/approval_auth.go; internal/desktop/approval_notifications.go",
-      "limits": "只读/完整与操作范围不同；不做无确认的全局授权",
+      "entry": "授权中心→待确认，或新请求弹窗",
+      "actions": "核对申请方、服务器、动作、范围、期限及独立显示的配对码；使用系统验证批准或拒绝，亦可展开主密码输入后批准。受控会话可关闭确认中风险文件操作",
+      "states": "等待、无请求、验证、失败、拒绝、取消、目标过期",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_review.go; internal/desktop/approval_auth.go; internal/desktop/approval_notifications.go",
+      "limits": "read/guarded/maintenance/full分别审阅；guarded中风险或未知命令只确认当前操作，高风险拒绝；维护准备只允许固定检查、指定备份来源和APT预览",
       "design_pages": [
-        "08 设置 / 授权中心 · 待处理"
+        "08 设置 / 授权中心 · 待处理",
+        "08 设置 / 服务器操作授权",
+        "08 设置 / 限时受控授权",
+        "08 设置 / 维护准备授权",
+        "08 设置 / 会话内操作确认",
+        "08 设置 / 授权中心 · 无请求",
+        "11 连接与授权评审 / 授权验证 · 样式对照",
+        "11 连接与授权评审 / 独立授权 · 输入主密码",
+        "11 连接与授权评审 / 独立授权 · 主密码框验证中"
+      ]
+    },
+    {
+      "id": "maintenance-approval",
+      "name": "维护准备授权",
+      "host": "原生审批窗口",
+      "entry": "CLI session maintenance 或 SDK maintenance 会话请求",
+      "actions": "核对签名应用ID、服务器、备份来源、期限与配对码；拒绝或允许操作；授权后可调整闲置设置或撤销",
+      "states": "等待、验证、已批准、拒绝、到期、撤销",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_review.go; internal/approval/delegation.go; internal/localipc/identity_darwin.go; cmd/ssh-client/session.go",
+      "limits": "同一活进程、服务器与授权期限；远端修改、任意脚本以及范围外路径一律拒绝",
+      "design_pages": [
+        "08 设置 / 维护准备授权",
+        "11 连接与授权评审 / 独立授权 · 维护准备密码框验证中"
+      ]
+    },
+    {
+      "id": "guarded-operation-review",
+      "name": "限时受控与会话内操作确认",
+      "host": "授权中心或原生审批窗口",
+      "entry": "连续CLI默认guarded；SDK RequestSession指定guarded；中风险子操作进入待处理",
+      "actions": "一次批准主体、服务器、范围与期限；默认逐项确认中风险；关闭文件确认后在开关下显示影响范围；未知命令逐项确认，高风险拒绝；使用系统验证或主密码",
+      "states": "低风险执行、等待确认、同操作已在等待、允许本次、拒绝本次、父授权到期/撤销/断线",
+      "source": "internal/operationrisk/risk.go; internal/approval/delegation.go; internal/approval/approval.go; internal/broker/access.go; internal/client/client.go; cmd/ssh-client/session_exec.go; internal/desktop/approval_review.go",
+      "limits": "仅SmallSSH受控CLI/SDK；未知不等于低风险；命令护栏非远端沙箱；不授予密钥使用权限，不拦截外部SSH/IDE命令",
+      "design_pages": [
+        "08 设置 / 限时受控授权",
+        "08 设置 / 会话内操作确认",
+        "11 连接与授权评审 / 独立授权 · 中风险免确认",
+        "11 连接与授权评审 / 待确认授权 · 中风险免确认",
+        "11 连接与授权评审 / 独立授权 · 本次操作密码框验证中"
       ]
     },
     {
       "id": "approval-active",
-      "name": "活动授权",
+      "name": "当前有效授权",
       "host": "授权中心子页",
-      "entry": "授权中心→活动",
-      "actions": "查看活动会话与授权，撤销",
-      "states": "活动、过期/撤销、无活动授权",
-      "source": "internal/desktop/approval_center.go; internal/desktop/approval.go",
-      "limits": "子授权受父授权范围与期限约束",
+      "entry": "授权中心→当前授权",
+      "actions": "查看应用、目标、范围、固定到期时间、最近使用；实时开关中风险文件操作确认；闲置不撤销或1/5/15/30分钟撤销；立即撤销；查看关联审计；SSH密钥按单个租约撤销",
+      "states": "服务器限时授权、SSH密钥限时授权、单次许可与运行操作、无有效授权、读取失败、修改失败、已到期",
+      "source": "internal/desktop/approval_active.go; internal/approval/grant_policy.go; internal/broker/workspace_write.go; internal/identityagent/agent.go; native/macos/SSHIdentityAuthorization.swift",
+      "limits": "闲置变更不延长固定总期限，不重置最近使用，不恢复过期/撤销授权；服务器授权撤销取消子操作；密钥撤销只停止后续签名，不退出已建立的SSH会话；两类授权不互换",
       "design_pages": [
-        "08 设置 / 授权中心 · 活动"
+        "08 设置 / 授权中心 · 活动",
+        "08 设置 / 授权中心 · 活动免确认",
+        "08 设置 / 授权中心 · 无有效授权",
+        "08 设置 / 授权闲置菜单"
       ]
     },
     {
       "id": "approval-history",
-      "name": "授权历史",
+      "name": "统一审计记录",
       "host": "授权中心子页",
-      "entry": "授权中心→历史",
-      "actions": "筛选、分页、查看审计详情及拒绝原因",
-      "states": "加载中、空、错误、分页结束",
-      "source": "internal/desktop/approval_history.go",
-      "limits": "记录有界摘录，不记录密钥、ticket、输出",
+      "entry": "授权中心→审计记录；当前授权→查看审计",
+      "actions": "按类型、应用、结果、时间、内容及关联ID筛选；授权/完成操作/SSH签名计数及每应用统计；详情显示记录时的确认勾选状态及变更前的值；关联授权仍有效时可调整当前开关；分页；导出筛选范围的全部JSONL或CSV",
+      "states": "加载中、空、错误、分页结束；设置内横向分类、关闭详情时宽窗显示整宽表格，打开时左侧紧凑记录与右侧详情，详情标题固定、内容可独立滚动；窄窗详情在下方；明暗及中英文",
+      "source": "internal/desktop/approval_history.go; internal/desktop/approval_audit_controls.go; internal/auditlog/history.go; internal/auditlog/store.go; internal/auditlog/archives.go; internal/client/history_export.go; internal/broker/audit.go; internal/broker/identity_audit.go; internal/broker/monitor_budget.go; internal/desktop/approval_center.go; internal/desktop/settings.go",
+      "limits": "历史状态只读；实时开关只能修改同一世代的有效授权，另记规则变更；原有记录不可删除；所有者一次性证明绑定完整筛选/分页/原文开关；归档不自动覆盖；记录实际进程实例、映像ID及可观察路径，调用方名称单独标自报；新命令保留32KiB、路径4KiB，旧截短内容不可恢复；普通SSH Agent看不到登录后的命令；JSONL保留原链，筛选导出是子集，非第三方法证保证；布局按记录区实际宽度切换，关闭详情恢复整宽表格",
       "design_pages": [
-        "08 设置 / 授权中心 · 历史"
+        "08 设置 / 授权中心 · 历史",
+        "08 设置 / 审计导出菜单",
+        "08 设置 / 授权中心 · 历史详情"
       ]
     },
     {
@@ -327,10 +394,10 @@
       "name": "文件管理窗格",
       "host": "工具面板/独立工具窗/文件大标签",
       "entry": "工具→文件；选服务器文件或切换来源",
-      "actions": "选择来源、路径与目录树；显示本机文件，一键并排，已有本机窗格则定位；拆分、排列与关闭",
-      "states": "目标目录立即加载；空目录、错误重试；文件名旁与底部显示打开进度、成功或失败",
-      "source": "internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_layout.go; internal/desktop/filebrowser.go",
-      "limits": "最多8窗；状态按来源隔离；不同服务器可浏览但不能直接互传",
+      "actions": "选择来源、路径与目录树；点击名称、大小或修改时间表头切换升降序，窄窗的修改时间排序在更多菜单；显示本机文件，一键并排；同一来源内拖放到文件夹、目录树或「上一级」以移动；远程窗格支持系统文件选择器与 Finder / 资源管理器拖放上传；拆分、排列与关闭",
+      "states": "目标目录立即加载，读取中可「取消读取」或「上一级」，取消后进入同一重试视图；空目录、错误重试；文件名旁与底部显示打开进度、成功或失败；目录树展开/折叠与当前目录高亮；拖动时高亮有效目标，列表下方显示移动进度、结果与冲突；选中文件行高亮，右侧底部状态栏显示计数与已选中项",
+      "source": "internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_sort.go; internal/desktop/file_move.go; internal/desktop/file_upload.go; internal/desktop/file_layout.go; internal/desktop/filebrowser.go; internal/desktop/filetree.go; internal/desktop/components/tree.go; internal/desktop/components/files.go; internal/desktop/components/file_item.go",
+      "limits": "最多8窗；状态按来源隔离；不同服务器可浏览但不能直接互传；树行26、缩进14，树贯通到底；修改时间列（130宽）按列表实际宽度决定：≥380显示，更窄只显示名称/大小；首帧尚未测得宽度时沿用旧规则（放大、工作区文件或独立工具窗显示）；大小列72并右对齐；文件操作行高36，左右内边距8，操作按钮保持28、路径框30",
       "design_pages": [
         "04 文件 / 文件大标签",
         "04 文件 / 本机与服务器",
@@ -342,9 +409,9 @@
       "name": "文件操作与更多菜单",
       "host": "工具栏与目录树原生菜单；文件列表应用内菜单",
       "entry": "文件窗格右上/文件或目录右键",
-      "actions": "上一级、刷新、新建文件/目录、上传、下载、重命名/移动、删除、属性/权限；拆分/关闭/恢复",
+      "actions": "上一级、刷新、新建文件/目录、用系统文件选择器多选上传、下载、重命名/移动、删除、属性/权限；拆分/关闭/恢复",
       "states": "右键切换目标、选中组内保持多选；菜单外点击直接生效；Esc、方向键、Tab/Enter；过期目标失效",
-      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go; internal/desktop/file_context_menu.go",
+      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go; internal/desktop/file_context_menu.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "目录上传与服务器间直接复制未实现；非空目录不能删除；不主动覆盖",
       "design_pages": [
         "04 文件 / 文件大标签",
@@ -359,7 +426,7 @@
       "entry": "文件/目录→属性与权限",
       "actions": "查看类型、所有者/组与rwx位；编辑并保存、读回",
       "states": "加载、只读、过期冲突、部分失败",
-      "source": "internal/desktop/file_properties.go",
+      "source": "internal/desktop/file_properties.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "符号链接/特殊文件只读；Windows本机不提供Unix UID/GID",
       "design_pages": [
         "04 文件 / 文件属性与权限"
@@ -370,12 +437,13 @@
       "name": "上传/下载与拖放确认",
       "host": "文件/目录模态弹窗及系统选择器",
       "entry": "工具栏上传/下载、右键或跨窗拖放",
-      "actions": "核对来源、目标和文件；加入队列；选择本机位置",
-      "states": "本机选择取消、目标冲突、扫描中、不可支持类型",
-      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_download.go; internal/desktop/filebrowser.go",
-      "limits": "支持普通文件上传、递归目录下载；不支持目录上传/远端互传/特殊文件",
+      "actions": "核对来源、目标和文件；加入队列；选择本机位置；上传同名文件可跳过或逐项确认覆盖",
+      "states": "本机选择取消、同名覆盖确认、远端已变化而停止、扫描中、不可支持类型",
+      "source": "internal/desktop/file_toolbar.go; internal/desktop/file_download.go; internal/desktop/filebrowser.go; internal/desktop/file_upload_conflict.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
+      "limits": "支持普通文件上传、递归目录下载；覆盖保留旧副本并绑定原内容摘要；不支持目录上传/远端互传/特殊文件",
       "design_pages": [
-        "04 文件 / 传输目标确认"
+        "04 文件 / 传输目标确认",
+        "04 文件 / 上传覆盖确认"
       ]
     },
     {
@@ -384,26 +452,28 @@
       "host": "独立原生文件窗口",
       "entry": "文件列表打开文本文件",
       "actions": "立即显示读取窗口；列表进度与显示文件窗口按钮；搜索、编辑、保存、另存为、关闭",
-      "states": "读取中、取消/重试；失败原因与下载入口；未保存关闭确认、保存失败/冲突",
+      "states": "读取中与失败分开呈现；取消/重试；失败原因与下载入口；未保存关闭确认、保存失败/冲突",
       "source": "internal/desktop/editor_window.go; internal/desktop/file_open.go; internal/desktop/filebrowser.go",
       "limits": "仅≤4 MiB UTF-8文本；非文本不伪装成文本编辑；真实文件访问不属于离线样例",
       "design_pages": [
         "04 文件 / 独立文件编辑",
         "04 文件 / 文件加载与失败",
-        "04 文件 / 列表右键与打开反馈"
+        "04 文件 / 列表右键与打开反馈",
+        "04 文件 / 文件读取中"
       ]
     },
     {
       "id": "transfer",
       "name": "传输与任务中心",
-      "host": "主窗全局弹层；可出现在工具窗",
-      "entry": "顶栏任务图标",
-      "actions": "排队、进度/速率、暂停、继续/重试；服务器操作任务",
-      "states": "空、等待、运行、失败、完成、扫描目录",
-      "source": "internal/desktop/transfer_activity.go; internal/desktop/workspace.go; internal/desktop/compose_work.go",
-      "limits": "传输不作为dock独立tab；续传包含校验",
+      "host": "全局任务弹层；保留已有任务卡片的定位能力",
+      "entry": "主窗顶栏唯一任务图标，画布与标签聚合模式均可用",
+      "actions": "顶栏唯一任务中心显示进行中/失败数量，面板标题列出进行中 / 已暂停 / 失败数；当前任务/历史记录切换；运行中可暂停或取消，已暂停可继续或取消，失败可重试或移除，「清除失败」一次移除全部失败；已完成记录单条移除和清空；服务器操作行内停止等待、失败记录移除及详情",
+      "states": "默认当前任务、空、等待、运行（百分比）、暂停、失败（红色状态与原因，未传输时不显示空进度）、正在取消、完成历史、清理中/失败、扫描目录；清理后回收元数据目录，运行任务与实际文件保留",
+      "source": "internal/desktop/transfer_activity.go; internal/desktop/workspace_canvas.go; internal/desktop/filepanes.go; internal/desktop/workspace.go; internal/desktop/compose_work.go; internal/transfer/history.go; internal/transfer/transfer.go",
+      "limits": "传输队列只有一份展示；右侧画布图标栏和底部/右侧工具标签不重复提供任务入口；进度更新不自动弹出、不抢占现有工具；续传包含校验；完成记录默认隐藏，重开面板恢复当前任务；关闭面板不中断任务；取消先停止运行再移除，取消或移除未完成下载只删除本任务创建的私有部分文件（.名称.ssh-part-ID）及目录任务标记，已完成文件、上传源及服务器内容不动；上传取消后服务器上的未完成临时文件不会自动删除；清空历史只删已完成元数据，不删文件、服务或审计",
       "design_pages": [
-        "09 工具 / 传输与任务中心"
+        "09 工具 / 传输与任务中心",
+        "09 工具 / 传输历史"
       ]
     },
     {
@@ -411,12 +481,13 @@
       "name": "常用命令",
       "host": "工具面板分类",
       "entry": "工具→命令",
-      "actions": "分组/搜索、选择、新建/编辑/删除、向指定终端填入或发送",
+      "actions": "分组/搜索、选择、新建/编辑/删除、向指定终端填入或发送；空列表直接提供「新建命令」，搜索无结果提供「清除搜索」",
       "states": "空、筛选无结果、加载/错误、会话不可用",
       "source": "internal/desktop/commands.go",
       "limits": "批量执行/跨服务器广播未实现",
       "design_pages": [
-        "05 命令 / 命令列表"
+        "05 命令 / 命令列表",
+        "05 命令 / 命令空态"
       ]
     },
     {
@@ -426,7 +497,7 @@
       "entry": "命令→新建/编辑",
       "actions": "名称、分组、模板、系统变体、参数及历史/发送时询问选项",
       "states": "表单校验、未保存、保存失败",
-      "source": "internal/desktop/commands.go; internal/snippet",
+      "source": "internal/desktop/commands.go; internal/snippet; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "加密保存；完整变量作用域体系未实现",
       "design_pages": [
         "05 命令 / 编辑命令模板"
@@ -439,7 +510,7 @@
       "entry": "命令→运行/双击",
       "actions": "参数/系统、历史选择、完整命令预览；填入终端或发送并执行；本次询问设置",
       "states": "必填/类型错误、会话失效、确认、取消",
-      "source": "internal/desktop/commands_run.go; internal/desktop/commands_history.go",
+      "source": "internal/desktop/commands_run.go; internal/desktop/commands_history.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "选历史/输入Enter不执行；目标关闭不转发",
       "design_pages": [
         "05 命令 / 参数与发送确认"
@@ -451,8 +522,8 @@
       "host": "工具面板分类",
       "entry": "工具→服务器状态",
       "actions": "概览、进程、自启服务、系统信息、Docker、端口",
-      "states": "无会话、采集中、采集失败/过期、断开保留最后值",
-      "source": "internal/desktop/diagnostics.go; internal/desktop/status_resources.go",
+      "states": "无会话、采集中、采集失败/过期、断开保留最后值；Linux / Windows 固定采样，Windows 按实际周期判断延迟；识别临时失败可重试",
+      "source": "internal/desktop/diagnostics.go; internal/desktop/status_resources.go; internal/monitor/windows.go; internal/broker/monitor_platform.go",
       "limits": "只支持Linux现有采样；不新开监控登录",
       "design_pages": [
         "06 状态 / 资源概览"
@@ -463,13 +534,26 @@
       "name": "资源概览与详情",
       "host": "状态分类/详情面板",
       "entry": "服务器状态→概览；点CPU/内存/网络/磁盘",
-      "actions": "趋势时间范围、CPU/内存/网络/磁盘卡片，详情和返回",
-      "states": "无样本、未知、过期、窄布局",
-      "source": "internal/desktop/status_resources.go; internal/desktop/status_chart.go",
-      "limits": "进程CPU为ps平均；GPU未实现",
+      "actions": "六个状态分类、右侧采样反馈及⋯设置菜单；CPU/内存/网络/磁盘卡片，详情和返回",
+      "states": "无样本、未知、过期、窄布局；时间范围仅在更多菜单中选择，分类切换保留范围；Windows 展示真实逐核占用与进程总数，未测计数明确未知",
+      "source": "internal/desktop/status_resources.go; internal/desktop/status_chart.go; internal/desktop/diagnostics.go; internal/desktop/workspace_canvas.go",
+      "limits": "进程CPU为ps平均；GPU未实现；状态内容区顶部内边距4，左右8，缩短外层标签到分类/操作的距离；进入画布卡片时标题32、分类区顶部0，保留左右8；趋势时间范围收进右侧⋯菜单，不常驻显示选择框；范围为1/5/15分钟的图表窗口，实际采样仍每2秒",
       "design_pages": [
         "06 状态 / 资源概览",
         "06 状态 / 资源详情"
+      ]
+    },
+    {
+      "id": "status-menu",
+      "name": "状态更多菜单",
+      "host": "状态分类/详情面板",
+      "entry": "服务器状态分类栏右侧⋯",
+      "actions": "选择1/5/15分钟趋势时间范围；打开显示当前选中项；点击外部关闭",
+      "states": "默认5分钟、选中项、打开与关闭；分类切换不重置",
+      "source": "internal/desktop/diagnostics.go; internal/desktop/status_chart.go",
+      "limits": "复用原生菜单，不新开Dialog；仅调整图表时间窗口，不修改2秒采样间隔；SmallPen菜单为默认5分钟示意，选项只演示关闭菜单，真实选择由原生UI测试核验",
+      "design_pages": [
+        "06 状态 / 状态更多菜单"
       ]
     },
     {
@@ -491,7 +575,7 @@
       "host": "服务器状态子页",
       "entry": "服务器状态→自启服务",
       "actions": "搜索、排序，systemd启停/重启和自启开关",
-      "states": "无服务、非systemd回退、确认、操作失败",
+      "states": "无服务、非systemd回退、确认、执行中可「停止等待」（服务器可能仍完成该操作）、操作失败；结果提示可关闭",
       "source": "internal/desktop/diagnostics.go; internal/desktop/server_management.go",
       "limits": "OpenRC/SysV为自启清单回退",
       "design_pages": [
@@ -503,10 +587,10 @@
       "name": "系统信息",
       "host": "服务器状态子页",
       "entry": "服务器状态→系统信息",
-      "actions": "系统/硬件、各核、网络接口/地址、磁盘与I/O",
+      "actions": "系统/内核/架构/运行时间与服务管理器；服务器型号、处理器、逻辑核心、内存与Swap",
       "states": "数据未知、不可用、长文本换行",
       "source": "internal/desktop/status_resources.go",
-      "limits": "非Linux未适配；GPU未实现",
+      "limits": "非Linux未适配；GPU未实现；网卡、磁盘与I/O在相应资源详情中",
       "design_pages": [
         "06 状态 / 系统信息"
       ]
@@ -516,7 +600,7 @@
       "name": "端口",
       "host": "服务器状态子页",
       "entry": "服务器状态→端口",
-      "actions": "非回环监听/当前外部连接切换、TCP/UDP、IPv4/IPv6、端点、进程/PID、搜索排序",
+      "actions": "非回环监听/UDP绑定、本机监听、当前外部连接三种范围；协议、状态、本地/对端地址、进程/PID；搜索排序",
       "states": "工具不可用、部分进程不可见、解析不全、结果截断、无结果",
       "source": "internal/desktop/ports.go; internal/monitor/ports.go",
       "limits": "非回环/通配不等于公网可达；不推断连接发起方",
@@ -598,7 +682,7 @@
       "entry": "Compose项目→更新",
       "actions": "确认服务器及已发现服务、计划核对、下载、复核与重建；查看任务",
       "states": "成员变化、来源不完整禁用、分阶段失败/取消",
-      "source": "internal/desktop/compose_work.go",
+      "source": "internal/desktop/compose_work.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "不承诺自动回滚，不扩大到未选容器",
       "design_pages": [
         "07 Docker / Compose 更新确认"
@@ -606,15 +690,24 @@
     },
     {
       "id": "tunnels",
-      "name": "SSH隧道",
+      "name": "端口转发",
       "host": "模态弹窗",
-      "entry": "服务器右键→SSH隧道",
-      "actions": "本地、远程、动态SOCKS5；监听/目标；启动和停止活动隧道",
-      "states": "输入无效、启动中、失败、运行/停止",
-      "source": "internal/desktop/tunnels.go",
-      "limits": "仅回环TCP；无UDP/BIND；远端实际绑定受sshd配置约束",
+      "entry": "右上角 ⇄ 左键查看列表，右键快捷新建与停止；列表 → 新建服务；服务器右键 → 新建端口转发",
+      "actions": "三张小图分别选择访问远端服务、让服务器访问本机服务、把服务器当代理。直接在路径节点编辑地址和端口，连线上的加号选择线路或从已保存服务器新建 SSH 中转。线路节点上的关闭按钮移除中转并恢复本次直连。选本机已有 SOCKS5 才显示代理地址；访问远端服务可在图下选择启动后打开网页。服务就绪后显示实际入口并支持复制、停止。使用原有线路和主机指纹核对",
+      "states": "空列表、新建、三种方向、地址和端口草稿保留、线路、自动打开网页、逐跳身份确认、准备、运行、停止、失败和浏览器重试",
+      "source": "internal/desktop/tunnels.go; internal/desktop/tunnel_setup.go; internal/desktop/tunnel_activity.go; internal/desktop/connection_trust_plan.go; internal/broker/live_routes.go",
+      "limits": "请求回环监听，远程入口在服务器本机使用，实际绑定受 sshd 配置约束。默认只启动 TCP 转发，打开网页为本地转发的可选项。关闭准备页面不会延迟弹浏览器。通过跳板打开 SSH 终端沿用连接线路菜单",
       "design_pages": [
-        "09 工具 / SSH 隧道"
+        "09 工具 / SSH 隧道",
+        "09 工具 / SSH 隧道 · 远程转发",
+        "09 工具 / SSH 隧道 · SOCKS5",
+        "09 工具 / SSH 隧道 · 上游代理",
+        "02 工作台 / 运行中的 SSH 代理",
+        "09 工具 / 运行中的 SSH 代理",
+        "09 工具 / 访问服务器网页",
+        "09 工具 / 网页服务已就绪",
+        "09 工具 / 服务列表",
+        "09 工具 / 中转与服务 · 空闲菜单"
       ]
     },
     {
@@ -624,7 +717,7 @@
       "entry": "服务器右键→备注",
       "actions": "查看和编辑服务器备注",
       "states": "读取中、失败重试、保存中、冲突/未保存确认",
-      "source": "internal/desktop/server_notes.go",
+      "source": "internal/desktop/server_notes.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go",
       "limits": "备注与登录凭据分离；不推断服务器实时信息",
       "design_pages": [
         "09 工具 / 服务器备注"
@@ -661,12 +754,96 @@
       "name": "终端增强与其他连接",
       "host": "待实现",
       "entry": "需求：终端工具/连接类型",
-      "actions": "计划tmux会话、串口、远程桌面及更完整变量体系",
+      "actions": "计划tmux会话、串口、RDP远程桌面及更完整变量体系",
       "states": "待实现",
       "source": "docs/REQUIREMENTS.md §tmux、串口、剪贴板与连接恢复",
-      "limits": "不要把现有PTY、SSH保活或参数历史误称上述功能",
+      "limits": "不要把现有PTY、SSH保活或参数历史误称上述功能；命令末尾回车选择仍未提供",
       "design_pages": [
         "10 待实现 / 终端增强与完整变量"
+      ]
+    },
+    {
+      "id": "settings-routes",
+      "name": "加速与代理线路库",
+      "host": "设置窗口分类",
+      "entry": "设置→加速与代理",
+      "actions": "提前保存与复用命名线路；支持SS、Snell、VLESS/REALITY、AnyTLS、Hy2出站，以及传统代理/SSH中转；连接按ID引用",
+      "states": "空列表、已保存、引用计数、在用禁删、删除确认、保存失败",
+      "source": "internal/desktop/settings.go; internal/desktop/saved_routes.go; internal/vault/saved_routes.go; internal/broker/workspace.go; internal/broker/workspace_write.go",
+      "limits": "所有者专用读写；密码只在加密保险库保存，列表不返回明文；下次连接用最新配置，已有流保持快照；最多128条",
+      "design_pages": [
+        "08 设置 / 加速与代理",
+        "08 设置 / 删除线路确认"
+      ]
+    },
+    {
+      "id": "route-editor",
+      "name": "新建 / 编辑共享线路",
+      "host": "当前主窗或设置窗内的模态对话框",
+      "entry": "连接→新建并选用线路/编辑所选线路；设置→加速与代理→新建/编辑",
+      "actions": "命名；粘贴分享链接或单节点/节点数组/含outbounds的整份JSON，解析并选择出站节点；重新导入；传统代理或SSH中转；保存/取消；从连接新建成功自动选用；Snell v6 保留 mode / reuse，旧v5 TCP兼容不变",
+      "states": "导入输入、节点选择、脱敏预览、编辑保留凭据、重新导入、校验失败、传统代理、中转、保存中、取消、Snell v6 导入预览",
+      "source": "internal/desktop/saved_routes.go; internal/client/workspace.go; internal/protocol/workspace.go; internal/vault/saved_routes.go; internal/desktop/saved_route_import.go; internal/proxyconfig; internal/netroute/embedded.go",
+      "limits": "复用当前窗口模态容器，不启动额外OS窗口；输入与保存交互以Go实现为准；SmallPen仅静态示例/链接；仅导入所支持的出站字段，整份JSON不执行全局配置；64KiB输入/128节点；凭据不回填；SSR与订阅URL不在范围内",
+      "design_pages": [
+        "03 连接 / 新建线路",
+        "03 连接 / 编辑线路",
+        "03 连接 / 编辑中转线路",
+        "03 连接 / 导入节点预览",
+        "03 连接 / 选择导入节点",
+        "03 连接 / 编辑导入线路",
+        "03 连接 / 重新导入节点",
+        "03 连接 / Snell v6 导入预览"
+      ]
+    },
+    {
+      "id": "vnc",
+      "name": "VNC 远程桌面（noVNC）",
+      "host": "主窗口工作区标签 / 全屏",
+      "entry": "服务器右键 → VNC 远程桌面…",
+      "actions": "连接/登录/按键仅保留必要字段、选项与操作；同一行填写服务器地址及右侧窄端口框（默认5900），直连/SSH；按需登录并保存/清除密码；右侧40px工具栏显示全部图标；只有高度不足才显示⋯并收纳放不下的原控件，放大后全部移回且隐藏⋯；按键弹出层用Ctrl/Alt/Shift/Win按住按钮及Esc/Tab/CtrlAltDel直发，更多按键折叠、粘贴到远端及复制到本机双图标、短提示、重连/断开、原连接全屏",
+      "states": "连接中、认证、保存成功/失败、自动填入、错误密码重输；按键弹出/收起、远端复制更新内部缓存、显式原生剪贴板访问，无浏览器Paste二次确认、只读、断开、关闭/锁定、全屏退出；右侧栏展开/自适应收纳、菜单与按键互斥、Escape/外侧关闭；修饰键按住/松开，失焦/只读/断开/重连/隐藏页面清除；足够空间无⋯、全部8操作直显；不足才出现⋯，放大时收起菜单并移回控件",
+      "source": "internal/desktop/vnc.go; internal/desktop/vnc_workspace.go; internal/vncview/credentials.go; internal/vncview/web/viewer.js; internal/vncview/web/clipboard.js; internal/vault/vnc.go; internal/broker/workspace.go; internal/vncview/fullscreen.go; internal/vncview/clipboard.go; internal/vncview/web/index.html; internal/vncview/web/viewer.css; internal/vncview/browser_test.go",
+      "limits": "最多8个桌面；密码绑定连接/主机端口/方式并加密保存，不在公开摘要或URL；远端剪贴板事件驱动，不自动读写系统剪贴板；64KiB/Unicode协商限制；不含RDP或远端服务安装",
+      "design_pages": [
+        "09 工具 / VNC 远程桌面连接",
+        "09 工具 / VNC 登录",
+        "09 工具 / VNC 远程桌面",
+        "09 工具 / VNC 经SSH连接",
+        "09 工具 / VNC 按键面板",
+        "09 工具 / VNC 剪贴板",
+        "09 工具 / VNC 全屏",
+        "09 工具 / VNC 更多操作",
+        "09 工具 / VNC 工具栏收纳"
+      ]
+    },
+    {
+      "id": "key-use-authorization",
+      "name": "密钥使用授权",
+      "host": "macOS 原生签名验证与待处理窗口",
+      "entry": "标准 SSH Agent 或 SmallSSH 密钥登录",
+      "actions": "单次系统验证；并发两项起集中审阅同组；成功后发系统通知，通知可选择1/5分钟、1/24小时并重新验证；设置可结束限时授权",
+      "states": "单次、批量、验证取消、客户端断开、限时授权、到期与后台锁定",
+      "source": "native/macos/SSHIdentity.swift; native/macos/SSHIdentityAuthorization.swift; internal/identityagent/; internal/broker/identities.go",
+      "limits": "P-256 Secure Enclave；限时授权按密钥生效，不限申请程序/目标；未知用途不组批；仅控制签名，不授予远程操作；系统通知外观由macOS决定",
+      "design_pages": [
+        "08 设置 / 密钥使用授权",
+        "08 设置 / 密钥签名通知",
+        "11 连接与授权评审 / SSH 密钥 · 仅当前指纹确认",
+        "11 连接与授权评审 / SSH 密钥 · 等待指纹"
+      ]
+    },
+    {
+      "id": "ssh-identities",
+      "name": "SSH 密钥",
+      "host": "设置窗口分类",
+      "entry": "设置→SSH 密钥",
+      "actions": "生成P-256密钥；选择系统验证/仅当前指纹/无需验证；复制公钥、明确确认删除、限时授权、查看待处理、结束授权、配置通知、复制SSH_AUTH_SOCK；连接表单引用SmallSSH密钥指纹",
+      "states": "空列表、加载、硬件不可用、创建、删除确认、取消、通知拒绝",
+      "source": "internal/desktop/identities.go; internal/client/identities.go; internal/broker/identities.go; native/macos/SSHIdentity.swift",
+      "limits": "私钥不离开安全隔区；公钥部署向导未实现；临时签名使用登录钥匙串保管opaque表示，正式配置使用DP Keychain；真实硬件/通知未自动验收",
+      "design_pages": [
+        "08 设置 / SSH 密钥"
       ]
     }
   ],
@@ -716,37 +893,49 @@
     {
       "name": "03 连接 / 常规与密码",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "dialog",
       "file": "smallssh.smallpen/pages/03 连接/常规与密码.html"
+    },
+    {
+      "name": "03 连接 / 已有私钥",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/03 连接/已有私钥.html"
+    },
+    {
+      "name": "03 连接 / SmallSSH 密钥",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/03 连接/SmallSSH 密钥.html"
     },
     {
       "name": "03 连接 / 硬件认证",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "connection-dialog-state",
       "file": "smallssh.smallpen/pages/03 连接/硬件认证.html"
     },
     {
       "name": "03 连接 / 加速与代理",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "connection-dialog-state",
       "file": "smallssh.smallpen/pages/03 连接/加速与代理.html"
     },
     {
       "name": "03 连接 / 编码与保活",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "connection-dialog-state",
       "file": "smallssh.smallpen/pages/03 连接/编码与保活.html"
     },
     {
       "name": "03 连接 / 访问策略",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "connection-dialog-state",
       "file": "smallssh.smallpen/pages/03 连接/访问策略.html"
     },
     {
       "name": "03 连接 / 核对服务器身份",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "modal",
       "file": "smallssh.smallpen/pages/03 连接/核对服务器身份.html"
     },
     {
@@ -878,37 +1067,37 @@
     {
       "name": "08 设置 / 工作区",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "settings-window",
       "file": "smallssh.smallpen/pages/08 设置/工作区.html"
     },
     {
       "name": "08 设置 / 安全与解锁",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "settings-window",
       "file": "smallssh.smallpen/pages/08 设置/安全与解锁.html"
     },
     {
       "name": "08 设置 / 运行与后台",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "settings-window",
       "file": "smallssh.smallpen/pages/08 设置/运行与后台.html"
     },
     {
       "name": "08 设置 / 授权中心 · 待处理",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "settings-window",
       "file": "smallssh.smallpen/pages/08 设置/授权中心 · 待处理.html"
     },
     {
       "name": "08 设置 / 授权中心 · 活动",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "settings-window",
       "file": "smallssh.smallpen/pages/08 设置/授权中心 · 活动.html"
     },
     {
       "name": "08 设置 / 授权中心 · 历史",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "settings-window",
       "file": "smallssh.smallpen/pages/08 设置/授权中心 · 历史.html"
     },
     {
@@ -932,7 +1121,7 @@
     {
       "name": "09 工具 / 传输与任务中心",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
+      "presentation": "global-popover",
       "file": "smallssh.smallpen/pages/09 工具/传输与任务中心.html"
     },
     {
@@ -999,13 +1188,26 @@
       "name": "01 访问 / 系统验证解锁",
       "status": "source-mapped",
       "presentation": "tabs-or-window",
-      "file": "smallssh.smallpen/pages/01 访问/系统验证解锁.html"
+      "file": "smallssh.smallpen/pages/01 访问/系统验证解锁.html",
+      "actions": "点指纹验证；点使用主密码展开输入",
+      "source": "internal/desktop/locked.go; internal/desktop/auth_surface.go"
+    },
+    {
+      "name": "01 访问 / 系统验证进行中",
+      "status": "source-mapped",
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/01 访问/系统验证进行中.html",
+      "entry": "保险库解锁→点系统验证",
+      "actions": "取消验证并留在锁定页，或使用主密码",
+      "source": "internal/desktop/locked.go; internal/desktop/unlock_auth.go"
     },
     {
       "name": "01 访问 / 系统验证密码回退",
       "status": "source-mapped",
       "presentation": "tabs-or-window",
-      "file": "smallssh.smallpen/pages/01 访问/系统验证密码回退.html"
+      "file": "smallssh.smallpen/pages/01 访问/系统验证密码回退.html",
+      "entry": "使用主密码，或系统验证不可用时进入",
+      "source": "internal/desktop/locked.go; internal/desktop/unlock_auth.go"
     },
     {
       "name": "02 工作台 / 小窗布局菜单",
@@ -1038,10 +1240,10 @@
       "file": "smallssh.smallpen/pages/02 工作台/工具停靠底部.html"
     },
     {
-      "name": "03 连接 / 保护路径编辑器",
+      "name": "03 连接 / 访问策略 · 路径校验",
       "status": "source-mapped",
-      "presentation": "tabs-or-window",
-      "file": "smallssh.smallpen/pages/03 连接/保护路径编辑器.html"
+      "presentation": "inline-validation-state",
+      "file": "smallssh.smallpen/pages/03 连接/访问策略 · 路径校验.html"
     },
     {
       "name": "02 工作台 / 画布与功能开关",
@@ -1066,16 +1268,1559 @@
       "status": "source-mapped",
       "presentation": "tabs-or-window",
       "file": "smallssh.smallpen/pages/04 文件/列表右键与打开反馈.html"
+    },
+    {
+      "name": "04 文件 / 文件读取中",
+      "status": "source-mapped",
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/04 文件/文件读取中.html"
+    },
+    {
+      "name": "08 设置 / 加速与代理",
+      "status": "source-mapped",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/08 设置/加速与代理.html"
+    },
+    {
+      "name": "08 设置 / 删除线路确认",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/08 设置/删除线路确认.html"
+    },
+    {
+      "name": "03 连接 / 新建线路",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/新建线路.html"
+    },
+    {
+      "name": "03 连接 / 编辑线路",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/编辑线路.html"
+    },
+    {
+      "name": "03 连接 / 加速与代理 · 连接专用",
+      "status": "source-mapped",
+      "presentation": "connection-dialog-state",
+      "file": "smallssh.smallpen/pages/03 连接/加速与代理 · 连接专用.html"
+    },
+    {
+      "name": "03 连接 / 编辑中转线路",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/编辑中转线路.html"
+    },
+    {
+      "name": "06 状态 / 状态更多菜单",
+      "status": "source-mapped",
+      "presentation": "overlay",
+      "file": "smallssh.smallpen/pages/06 状态/状态更多菜单.html"
+    },
+    {
+      "name": "03 连接 / 导入节点预览",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/导入节点预览.html"
+    },
+    {
+      "name": "03 连接 / 选择导入节点",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/选择导入节点.html"
+    },
+    {
+      "name": "03 连接 / 编辑导入线路",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/编辑导入线路.html"
+    },
+    {
+      "name": "03 连接 / 重新导入节点",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/重新导入节点.html"
+    },
+    {
+      "name": "09 工具 / VNC 远程桌面连接",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 远程桌面连接.html"
+    },
+    {
+      "name": "09 工具 / VNC 远程桌面",
+      "status": "source-mapped",
+      "presentation": "workspace-tab",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 远程桌面.html"
+    },
+    {
+      "name": "09 工具 / VNC 登录",
+      "status": "source-mapped",
+      "presentation": "webview-dialog",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 登录.html"
+    },
+    {
+      "name": "09 工具 / 传输历史",
+      "status": "source-mapped",
+      "presentation": "global-popover",
+      "file": "smallssh.smallpen/pages/09 工具/传输历史.html"
+    },
+    {
+      "name": "03 连接 / Snell v6 导入预览",
+      "status": "source-mapped",
+      "presentation": "modal",
+      "file": "smallssh.smallpen/pages/03 连接/Snell v6 导入预览.html"
+    },
+    {
+      "name": "03 连接 / 服务器连接菜单",
+      "status": "source-mapped",
+      "presentation": "context-menu",
+      "file": "smallssh.smallpen/pages/03 连接/服务器连接菜单.html"
+    },
+    {
+      "name": "03 连接 / 本次线路菜单",
+      "status": "source-mapped",
+      "presentation": "context-menu",
+      "file": "smallssh.smallpen/pages/03 连接/本次线路菜单.html"
+    },
+    {
+      "name": "03 连接 / 新建 SSH 中转",
+      "status": "source-mapped",
+      "presentation": "context-menu",
+      "file": "smallssh.smallpen/pages/03 连接/新建 SSH 中转.html"
+    },
+    {
+      "name": "02 工作台 / 本次线路会话",
+      "status": "source-mapped",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/02 工作台/本次线路会话.html"
+    },
+    {
+      "name": "02 工作台 / 本次直连会话",
+      "status": "source-mapped",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/02 工作台/本次直连会话.html"
+    },
+    {
+      "name": "02 工作台 / 本次跳板会话",
+      "status": "source-mapped",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/02 工作台/本次跳板会话.html"
+    },
+    {
+      "name": "09 工具 / VNC 经SSH连接",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 经SSH连接.html"
+    },
+    {
+      "name": "09 工具 / VNC 按键面板",
+      "status": "source-mapped",
+      "presentation": "webview-panel",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 按键面板.html"
+    },
+    {
+      "name": "09 工具 / VNC 剪贴板",
+      "status": "source-mapped",
+      "presentation": "webview-panel",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 剪贴板.html"
+    },
+    {
+      "name": "09 工具 / VNC 全屏",
+      "status": "source-mapped",
+      "presentation": "native-window",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 全屏.html"
+    },
+    {
+      "name": "08 设置 / 服务器操作授权",
+      "status": "source-mapped",
+      "presentation": "native-window",
+      "file": "smallssh.smallpen/pages/08 设置/服务器操作授权.html",
+      "states": "共享授权验证底栏的待验证状态",
+      "actions": "使用主密码、系统验证或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "08 设置 / 限时受控授权",
+      "status": "source-mapped",
+      "presentation": "native-window",
+      "file": "smallssh.smallpen/pages/08 设置/限时受控授权.html",
+      "states": "共享授权验证底栏的待验证状态",
+      "actions": "使用主密码、系统验证或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "08 设置 / 维护准备授权",
+      "status": "source-mapped",
+      "presentation": "native-window",
+      "file": "smallssh.smallpen/pages/08 设置/维护准备授权.html",
+      "states": "共享授权验证底栏的待验证状态",
+      "actions": "使用主密码、系统验证或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "08 设置 / 会话内操作确认",
+      "status": "source-mapped",
+      "presentation": "native-window",
+      "file": "smallssh.smallpen/pages/08 设置/会话内操作确认.html",
+      "states": "共享授权验证底栏的待验证状态",
+      "actions": "使用主密码、系统验证或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "08 设置 / 密钥使用授权",
+      "status": "source-mapped",
+      "presentation": "native-pending-window",
+      "file": "smallssh.smallpen/pages/08 设置/密钥使用授权.html"
+    },
+    {
+      "name": "09 工具 / VNC 更多操作",
+      "status": "source-mapped",
+      "presentation": "webview-popover",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 更多操作.html"
+    },
+    {
+      "name": "09 工具 / VNC 工具栏收纳",
+      "status": "source-mapped",
+      "presentation": "workspace-tab-compact",
+      "file": "smallssh.smallpen/pages/09 工具/VNC 工具栏收纳.html"
+    },
+    {
+      "name": "08 设置 / SSH 密钥",
+      "status": "source-mapped",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/08 设置/SSH 密钥.html"
+    },
+    {
+      "name": "08 设置 / 密钥签名通知",
+      "status": "source-mapped",
+      "presentation": "system-notification-illustration",
+      "file": "smallssh.smallpen/pages/08 设置/密钥签名通知.html"
+    },
+    {
+      "name": "09 工具 / SSH 隧道 · 远程转发",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/SSH 隧道 · 远程转发.html"
+    },
+    {
+      "name": "09 工具 / SSH 隧道 · SOCKS5",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/SSH 隧道 · SOCKS5.html"
+    },
+    {
+      "name": "05 命令 / 命令空态",
+      "status": "source-mapped",
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/05 命令/命令空态.html"
+    },
+    {
+      "name": "02 工作台 / 本次 SOCKS5 会话",
+      "status": "source-mapped",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/02 工作台/本次 SOCKS5 会话.html"
+    },
+    {
+      "name": "02 工作台 / 运行中的 SSH 代理",
+      "status": "source-mapped",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/02 工作台/运行中的 SSH 代理.html"
+    },
+    {
+      "name": "09 工具 / 运行中的 SSH 代理",
+      "status": "source-mapped",
+      "presentation": "context-menu",
+      "file": "smallssh.smallpen/pages/09 工具/运行中的 SSH 代理.html"
+    },
+    {
+      "name": "09 工具 / SSH 隧道 · 上游代理",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/SSH 隧道 · 上游代理.html"
+    },
+    {
+      "name": "09 工具 / 访问服务器网页",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/访问服务器网页.html"
+    },
+    {
+      "name": "09 工具 / 网页服务已就绪",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/网页服务已就绪.html"
+    },
+    {
+      "name": "09 工具 / 服务列表",
+      "status": "source-mapped",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/09 工具/服务列表.html"
+    },
+    {
+      "name": "09 工具 / 中转与服务 · 空闲菜单",
+      "status": "source-mapped",
+      "presentation": "context-menu",
+      "file": "smallssh.smallpen/pages/09 工具/中转与服务 · 空闲菜单.html"
+    },
+    {
+      "name": "03 连接 / 常规与密码 · 窄窗",
+      "status": "source-mapped",
+      "presentation": "connection-dialog-state",
+      "file": "smallssh.smallpen/pages/03 连接/常规与密码 · 窄窗.html"
+    },
+    {
+      "name": "03 连接 / 编辑连接 · 保留凭据",
+      "status": "source-mapped",
+      "presentation": "connection-dialog-state",
+      "file": "smallssh.smallpen/pages/03 连接/编辑连接 · 保留凭据.html"
+    },
+    {
+      "name": "03 连接 / 登录方式菜单",
+      "status": "source-mapped",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/03 连接/登录方式菜单.html"
+    },
+    {
+      "name": "03 连接 / SSH 密钥代理",
+      "status": "source-mapped",
+      "presentation": "connection-dialog-state",
+      "file": "smallssh.smallpen/pages/03 连接/SSH 密钥代理.html"
+    },
+    {
+      "name": "03 连接 / 编码与保活 · 已开启",
+      "status": "source-mapped",
+      "presentation": "connection-dialog-state",
+      "file": "smallssh.smallpen/pages/03 连接/编码与保活 · 已开启.html"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 无请求",
+      "status": "source-mapped",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 无请求.html"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 无有效授权",
+      "status": "source-mapped",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 无有效授权.html"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 历史详情",
+      "status": "source-mapped",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 历史详情.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 新建连接",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/新建连接.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规",
+      "states": "服务器密码",
+      "actions": "填写连接与登录信息；保存后返回服务器列表并打开终端",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_options.go; internal/desktop/identities.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 新建连接 · 窄窗",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/新建连接 · 窄窗.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规",
+      "states": "560px 窄窗、服务器密码",
+      "actions": "按同样顺序编辑连接及登录信息；保存或取消",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_options.go; internal/desktop/identities.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 已有私钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/已有私钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规",
+      "states": "已选合成私钥、指纹可见",
+      "actions": "粘贴或选择私钥、填写口令、检查私钥；保存或取消",
+      "source": "internal/desktop/connections.go; internal/desktop/connection_options.go; internal/desktop/identities.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择登录方式",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择登录方式.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "五种登录方式",
+      "actions": "点击切换服务器密码、已有私钥、SmallSSH 密钥、SSH 密钥代理或智能卡",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "已选共用 SOCKS5 线路；尚未核对指纹",
+      "actions": "切换默认线路、创建并选用、编辑共用线路；查看实际路径与测量条件",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置.html",
+      "source_id": "connection-terminal",
+      "entry": "连接→终端设置",
+      "states": "保活默认关闭，单次探测等待上限禁用",
+      "actions": "查看保活作用；选择探测间隔开启",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 访问策略",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/访问策略.html",
+      "source_id": "connection-policy",
+      "entry": "连接→访问策略或服务器菜单AI访问",
+      "states": "AI 访问与保护已启用",
+      "actions": "切换两个规则；编辑保护路径；保存或取消",
+      "source": "internal/desktop/connection_policy.go; internal/desktop/connections.go; internal/desktop/connection_sections.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 待确认授权",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/待确认授权.html",
+      "source_id": "approval-pending",
+      "entry": "授权中心→待确认，或新请求弹窗",
+      "states": "服务器操作、限时受控、待确认",
+      "actions": "核对服务器、申请方、配对码及范围；调整期限与确认规则；验证并决定",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_review.go; internal/desktop/approval_auth.go; internal/desktop/approval_notifications.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 暂无授权请求",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/暂无授权请求.html",
+      "source_id": "approval-pending",
+      "entry": "授权中心→待确认，或新请求弹窗",
+      "states": "待确认列表为空",
+      "actions": "查看空状态；切换当前授权或审计",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_review.go; internal/desktop/approval_auth.go; internal/desktop/approval_notifications.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 当前授权",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/当前授权.html",
+      "source_id": "approval-active",
+      "entry": "授权中心→当前授权",
+      "states": "服务器会话与密钥授权均有效",
+      "actions": "按类型查看对象、范围及到期时间；调整闲置；打开审计或撤销",
+      "source": "internal/desktop/approval_active.go; internal/approval/grant_policy.go; internal/broker/workspace_write.go; internal/identityagent/agent.go; native/macos/SSHIdentityAuthorization.swift"
+    },
+    {
+      "name": "11 连接与授权评审 / 审计记录",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/审计记录.html",
+      "source_id": "approval-history",
+      "entry": "授权中心→审计记录；当前授权→查看审计",
+      "states": "有记录、详情关闭",
+      "actions": "搜索和筛选；导出或刷新；打开第一条命令记录的详情",
+      "source": "internal/desktop/approval_history.go; internal/desktop/approval_audit_controls.go; internal/auditlog/history.go; internal/auditlog/store.go; internal/auditlog/archives.go; internal/client/history_export.go; internal/broker/audit.go; internal/broker/identity_audit.go; internal/broker/monitor_budget.go; internal/desktop/approval_center.go; internal/desktop/settings.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 审计详情",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/审计详情.html",
+      "source_id": "approval-history",
+      "entry": "授权中心→审计记录；当前授权→查看审计",
+      "states": "执行命令、详情打开、关联授权有效",
+      "actions": "查看命令、结果、规则与来源；查看关联记录；关闭详情恢复表格",
+      "source": "internal/desktop/approval_history.go; internal/desktop/approval_audit_controls.go; internal/auditlog/history.go; internal/auditlog/store.go; internal/auditlog/archives.go; internal/client/history_export.go; internal/broker/audit.go; internal/broker/identity_audit.go; internal/broker/monitor_budget.go; internal/desktop/approval_center.go; internal/desktop/settings.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SmallSSH 密钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SmallSSH 密钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "尚未读取密钥",
+      "actions": "读取密钥或开始生成密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SmallSSH 密钥 · 新建",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SmallSSH 密钥 · 新建.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "正在填写密钥名称和签名验证方式",
+      "actions": "选择签名策略、取消或生成密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SmallSSH 密钥 · 已选公钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SmallSSH 密钥 · 已选公钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "已选择安全隔区密钥",
+      "actions": "读取、选择密钥或复制公钥；可继续新建",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥代理",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥代理.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "尚未读取本机代理身份",
+      "actions": "读取代理的公钥列表",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥代理 · 选择身份",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥代理 · 选择身份.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "已读取公钥列表，尚未指定身份",
+      "actions": "按算法和指纹核对代理身份，或重新读取",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 硬件密钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/硬件密钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "macOS 上尚未选择驱动",
+      "actions": "直接读取系统智能卡，或打开驱动菜单",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 智能卡 · macOS",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/智能卡 · macOS.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "macOS 系统 PIV 密钥已选中",
+      "actions": "更换驱动、读取密钥或更换设备；系统负责 PIN 提示",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · 设备 PIN",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · 设备 PIN.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "使用 OpenSC，已选定设备，PIN 输入已展开",
+      "actions": "填写设备 PIN 并读取可用密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · 已选密钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · 已选密钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "PKCS#11 硬件密钥已选中",
+      "actions": "核对已选密钥；更换设备或驱动",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择硬件驱动",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择硬件驱动.html",
+      "source_id": "connection-general",
+      "entry": "登录方式→硬件密钥→选择驱动",
+      "states": "示例设备安装了 YKCS11 与 OpenSC",
+      "actions": "选择系统智能卡或已安装驱动；文件选择为示意",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · 共用跳板",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · 共用跳板.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "已选共用 SSH 跳板；可测量握手耗时",
+      "actions": "切换线路、编辑跳板或测量握手耗时",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · 直连",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · 直连.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "默认直连；无代理且无跳板",
+      "actions": "切换共用线路；为本连接单独指定网络代理或跳板",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · SOCKS5",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · SOCKS5.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接专用 SOCKS5 代理；示例认证字段",
+      "actions": "选择代理协议；配置地址、可选用户名和密码；查看生效范围",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · HTTP CONNECT",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · HTTP CONNECT.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接专用 HTTP CONNECT 代理；示例认证字段",
+      "actions": "选择代理协议；配置地址、可选用户名和密码；查看生效范围",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · HTTPS CONNECT",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · HTTPS CONNECT.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接专用 HTTPS CONNECT 代理；示例认证字段",
+      "actions": "选择代理协议；配置地址、可选用户名和密码；查看生效范围",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · 专用跳板",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · 专用跳板.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接专用跳板，指纹已核对",
+      "actions": "切换 SSH 跳板或测量握手耗时",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · 握手结果",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · 握手结果.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "模拟直连与 SSH 跳板机握手结果",
+      "actions": "比较握手耗时，按实测选择路径",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择默认线路",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择默认线路.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接线路选择菜单",
+      "actions": "选择列表中的线路或协议",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择网络代理",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择网络代理.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接线路选择菜单",
+      "actions": "选择列表中的线路或协议",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择专用跳板",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择专用跳板.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "连接线路选择菜单",
+      "actions": "选择列表中的线路或协议",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 加速与代理 · 线路库",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/加速与代理 · 线路库.html",
+      "source_id": "settings-routes",
+      "entry": "设置→加速与代理",
+      "states": "含共享 SOCKS5、导入线路、SSH 跳板机与引用计数",
+      "actions": "创建、编辑或删除未使用线路；查看引用数",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 新建线路 · 导入",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/新建线路 · 导入.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "新建共用线路；默认导入代理",
+      "actions": "粘贴链接或 JSON 并解析；切换类型；悬停叹号查看支持的协议",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 导入协议提示",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/导入协议提示.html",
+      "source_id": "route-editor",
+      "entry": "新建线路→导入代理→悬停格式说明旁的叹号",
+      "states": "提示分别列出分享链接和节点 JSON 支持的协议",
+      "actions": "查看协议；移开鼠标关闭提示",
+      "source": "internal/proxyconfig/import.go; internal/proxyconfig/config.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · 选择导入节点",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · 选择导入节点.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "多个节点已解析；待选择",
+      "actions": "查看协议及地址；选用节点或重新粘贴",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · 导入节点",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · 导入节点.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "已导入节点；地址可核对",
+      "actions": "更新线路名称或重新导入节点；保存或取消",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · SSH 跳板机",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · SSH 跳板机.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "已选择共用跳板机",
+      "actions": "选择已保存的跳板并保存线路",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · 编辑代理",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · 编辑代理.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "SOCKS5 代理线路，默认保留已存密码",
+      "actions": "修改线路名称、代理地址与认证；保存线路",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · HTTP CONNECT",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · HTTP CONNECT.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "HTTP CONNECT 代理线路",
+      "actions": "修改线路名称、代理地址与认证；保存线路",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · HTTPS CONNECT",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · HTTPS CONNECT.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "HTTPS CONNECT 代理线路",
+      "actions": "修改线路名称、代理地址与认证；保存线路",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · 更换代理密码",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · 更换代理密码.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "更换或清除共用线路代理密码",
+      "actions": "填写或清除代理密码；保存线路",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · 删除确认",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · 删除确认.html",
+      "source_id": "settings-routes",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "未被任何连接引用的线路，确认删除",
+      "actions": "查看线路并确认或取消删除",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择线路类型",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择线路类型.html",
+      "source_id": "route-editor",
+      "entry": "线路编辑→线路类型",
+      "states": "线路编辑下拉",
+      "actions": "选择对应的模式",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择代理密码处理",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择代理密码处理.html",
+      "source_id": "route-editor",
+      "entry": "线路编辑→已存代理密码",
+      "states": "线路编辑下拉",
+      "actions": "选择对应的模式",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · OpenSC",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · OpenSC.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "OpenSC 驱动已选，等待读取设备",
+      "actions": "读取设备或更换驱动",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · OpenSC · 已读取",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · OpenSC · 已读取.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "OpenSC 已读取设备，尚未选择",
+      "actions": "选择设备后显示 PIN",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · YubiKey",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · YubiKey.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "YubiKey YKCS11 驱动已选，等待读取设备",
+      "actions": "读取设备或更换驱动",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · YubiKey · 已读取",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · YubiKey · 已读取.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "YubiKey YKCS11 已读取设备，尚未选择",
+      "actions": "选择设备后显示 PIN",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · YubiKey PIN",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · YubiKey PIN.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "已选择 YKCS11 设备并展开 PIN",
+      "actions": "填写设备 PIN 并读取可用密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 安全令牌 · YubiKey 密钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/安全令牌 · YubiKey 密钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "已选择 YKCS11 硬件密钥",
+      "actions": "核对已选密钥；更换设备或驱动",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥代理 · 选定密钥",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥代理 · 选定密钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "从代理列表选定一把公钥",
+      "actions": "按算法和指纹核对代理身份，或重新读取",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择代理密钥",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择代理密钥.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "展示公钥名称、算法和指纹",
+      "actions": "按算法和指纹核对代理身份，或重新读取",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SmallSSH 密钥 · 仅当前指纹",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SmallSSH 密钥 · 仅当前指纹.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "新建密钥，签名验证选择「仅当前指纹」",
+      "actions": "选择签名策略、取消或生成密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SmallSSH 密钥 · 无需验证",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SmallSSH 密钥 · 无需验证.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "新建密钥，签名验证选择「无需验证」",
+      "actions": "选择签名策略、取消或生成密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择签名验证",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择签名验证.html",
+      "source_id": "connection-general",
+      "entry": "新建/编辑连接→常规→登录方式",
+      "states": "系统验证、仅当前指纹、无需验证",
+      "actions": "选择签名策略、取消或生成密钥",
+      "source": "internal/desktop/connections.go; internal/desktop/identities.go; internal/desktop/connection_options.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 线路 · SOCKS5",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/线路 · SOCKS5.html",
+      "source_id": "route-editor",
+      "entry": "设置→加速与代理 或 连接→加速与代理",
+      "states": "新建共用 SOCKS5 线路",
+      "actions": "修改线路名称、代理地址与认证；保存线路",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接线路 · 共用握手结果",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接线路 · 共用握手结果.html",
+      "source_id": "connection-network",
+      "entry": "新建/编辑连接→加速与代理",
+      "states": "共用跳板与直连的握手结果",
+      "actions": "比较握手耗时，按实测选择路径",
+      "source": "internal/desktop/connection_options.go; internal/desktop/saved_routes.go; internal/desktop/saved_route_import.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接已保存",
+      "status": "review-candidate",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接已保存.html",
+      "source_id": "connection",
+      "entry": "新建连接→保存连接",
+      "states": "保存成功，尚未拨号",
+      "actions": "双击已保存服务器；编辑连接",
+      "source": "internal/desktop/connections.go; internal/desktop/layout.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 正在连接",
+      "status": "review-candidate",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/正在连接.html",
+      "source_id": "terminal",
+      "entry": "核对服务器指纹后，或已有信任的连接重试",
+      "states": "等待 SSH 连接",
+      "actions": "取消连接；完成后打开终端",
+      "source": "internal/desktop/connection_pending.go; internal/desktop/terminal_group_view.go; internal/desktop/connection_trust_plan.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 已进入终端",
+      "status": "review-candidate",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/已进入终端.html",
+      "source_id": "terminal",
+      "entry": "连接成功→终端标签",
+      "states": "已打开 SSH 终端，显示合成命令回显",
+      "actions": "查看当前终端",
+      "source": "internal/desktop/connection_pending.go; internal/desktop/terminal_group_view.go; internal/desktop/connection_trust_plan.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接未完成 · 超时",
+      "status": "review-candidate",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接未完成 · 超时.html",
+      "source_id": "terminal",
+      "entry": "已连接过的服务器→打开终端",
+      "states": "连接超时，保留当前标签",
+      "actions": "在同一标签重试或关闭",
+      "source": "internal/desktop/connection_pending.go; internal/desktop/terminal_group_view.go; internal/desktop/connection_trust_plan.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接未完成 · 指纹变化",
+      "status": "review-candidate",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接未完成 · 指纹变化.html",
+      "source_id": "terminal",
+      "entry": "已信任服务器→打开终端",
+      "states": "主机指纹不匹配",
+      "actions": "重新核对服务器身份，或关闭终端标签",
+      "source": "internal/desktop/connection_pending.go; internal/desktop/terminal_group_view.go; internal/desktop/connection_trust_plan.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 连接已取消",
+      "status": "review-candidate",
+      "presentation": "workspace",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/连接已取消.html",
+      "source_id": "terminal",
+      "entry": "首次连接→取消核对",
+      "states": "核对取消，未登录服务器",
+      "actions": "重试时重新核对指纹，或关闭此标签",
+      "source": "internal/desktop/connection_pending.go; internal/desktop/terminal_group_view.go; internal/desktop/connection_trust_plan.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 首次连接 · 核对指纹",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/首次连接 · 核对指纹.html",
+      "source_id": "host-identity",
+      "entry": "连接已保存→打开终端",
+      "states": "首次连接，等待确认完整指纹",
+      "actions": "核对后信任并连接；取消则不登录",
+      "source": "internal/desktop/connections.go; internal/desktop/layout.go; internal/desktop/connection_trust.go; internal/desktop/connection_trust_plan.go; internal/desktop/connection_pending.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 服务器指纹已变化",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/服务器指纹已变化.html",
+      "source_id": "host-identity",
+      "entry": "连接未完成→重新核对服务器身份",
+      "states": "旧指纹和新指纹并列可比；未登录",
+      "actions": "取消或明确替换指纹后在当前标签重试",
+      "source": "internal/desktop/connections.go; internal/desktop/layout.go; internal/desktop/connection_trust.go; internal/desktop/connection_trust_plan.go; internal/desktop/connection_pending.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 编辑连接 · 保留凭据",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/编辑连接 · 保留凭据.html",
+      "source_id": "connection-general",
+      "entry": "已保存的连接→编辑",
+      "states": "保持已存凭据，密码字段隐藏",
+      "actions": "保存其他更改或勾选更换登录凭据",
+      "source": "internal/desktop/connections.go; internal/desktop/layout.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 编辑连接 · 更换凭据",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/编辑连接 · 更换凭据.html",
+      "source_id": "connection-general",
+      "entry": "已保存的连接→编辑",
+      "states": "启用更换，显示新密码字段",
+      "actions": "保存新密码或取消更换",
+      "source": "internal/desktop/connections.go; internal/desktop/layout.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 保活 15 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 保活 15 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "15 秒探测间隔，单次等待 45 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 保活 30 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 保活 30 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "30 秒探测间隔，单次等待 90 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭；选择等待上限",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 保活 60 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 保活 60 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "60 秒探测间隔，单次等待 180 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 保活 120 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 保活 120 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "120 秒探测间隔，单次等待 360 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 保活 300 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 保活 300 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "300 秒探测间隔，单次等待 900 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 等待 30 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 等待 30 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "30 秒探测间隔，单次等待 30 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭；选择等待上限",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 终端设置 · 等待 150 秒",
+      "status": "review-candidate",
+      "presentation": "dialog",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/终端设置 · 等待 150 秒.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→SSH 保活",
+      "states": "30 秒探测间隔，单次等待 150 秒",
+      "actions": "查看发送频率与超时；选择保活间隔或关闭；选择等待上限",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择保活探测间隔",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择保活探测间隔.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→探测间隔",
+      "states": "下拉选项",
+      "actions": "选择任一项目，返回已应用该示例值的页面",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 选择保活等待上限",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/选择保活等待上限.html",
+      "source_id": "connection-terminal",
+      "entry": "终端设置→单次探测等待上限",
+      "states": "下拉选项",
+      "actions": "选择任一项目，返回已应用该示例值的页面",
+      "source": "internal/desktop/connection_options.go; internal/connectcfg/options.go; internal/sshconn/ssh.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 服务器操作",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 服务器操作.html",
+      "source_id": "approval-pending",
+      "entry": "独立审批窗口",
+      "states": "限时受控授权，系统验证与主密码入口可见",
+      "actions": "核对目标、有效期与配对码；点最右侧指纹直接发起验证，也可用主密码或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 验证失败",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 验证失败.html",
+      "source_id": "approval-pending",
+      "entry": "独立审批窗口",
+      "states": "系统暂时无法完成验证；自动展开保险库主密码，仍可通过指纹重试",
+      "actions": "输入主密码、点密码框右端的系统入口直接验证，或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html; internal/desktop/components/secret_input.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 主密码",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 主密码.html",
+      "source_id": "approval-pending",
+      "entry": "独立授权 · 输入主密码 → 已录入密码",
+      "states": "输入已掩码，允许按钮可用",
+      "actions": "允许、拒绝，或点密码框右端图标直接开始系统验证",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html; internal/desktop/components/secret_input.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 维护准备",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 维护准备.html",
+      "source_id": "maintenance-approval",
+      "entry": "独立审批窗口→维护准备授权",
+      "states": "限定维护准备权限；单独标注后续操作需要授权",
+      "actions": "核对备份路径、有效期和配对码；指纹入口可进入验证中",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 本次操作",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 本次操作.html",
+      "source_id": "guarded-operation-review",
+      "entry": "限时会话触发需要确认的操作",
+      "states": "单次重命名，继承目标服务器和授权路径",
+      "actions": "核对本次操作后允许或拒绝；指纹入口可进入验证中",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 暂无有效授权",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/暂无有效授权.html",
+      "source_id": "approval-active",
+      "entry": "授权中心→当前授权",
+      "states": "服务器和 SSH 密钥两个授权列表均为空",
+      "actions": "刷新授权或切换审计记录",
+      "source": "internal/desktop/approval_center.go; internal/desktop/approval_active.go; internal/desktop/approval_history.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 审计记录 · 授权到期",
+      "status": "review-candidate",
+      "presentation": "settings-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/审计记录 · 授权到期.html",
+      "source_id": "approval-history",
+      "entry": "授权中心→审计记录",
+      "states": "已到期的会话显示在记录，当前授权已移除",
+      "actions": "核对操作与结果，返回当前授权",
+      "source": "internal/desktop/approval_center.go; internal/desktop/approval_active.go; internal/desktop/approval_history.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 授权验证 · 样式对照",
+      "status": "review-candidate",
+      "presentation": "component-review",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/授权验证 · 样式对照.html",
+      "source_id": "approval-pending",
+      "entry": "连接与授权 · 优化评审 → 授权验证样式",
+      "states": "等待决定、等待指纹、SmallSSH 主密码、macOS 登录密码系统窗口示意",
+      "actions": "打开 SSH 密钥或服务器审批示例；点击主密码框右端图标演示切换验证",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 输入主密码",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 输入主密码.html",
+      "source_id": "approval-pending",
+      "entry": "独立审批 → 使用主密码",
+      "states": "主密码输入框获得焦点、还未录入、允许按钮不可用",
+      "actions": "输入主密码、点密码框右端的系统入口直接验证，或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; docs/design/smallssh.smallpen/components/授权验证底栏.html; internal/desktop/components/secret_input.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 主密码框验证中",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 主密码框验证中.html",
+      "source_id": "approval-pending",
+      "entry": "独立授权的主密码框 → 点右端指纹",
+      "states": "清空密码，指纹入口在输入框右端显示等待，允许不可用",
+      "actions": "使用指纹完成验证，或直接拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/components/secret_input.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 维护准备密码框验证中",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 维护准备密码框验证中.html",
+      "source_id": "maintenance-approval",
+      "entry": "维护准备的主密码框 → 点右端指纹",
+      "states": "清空密码，指纹入口在输入框右端显示等待，允许不可用",
+      "actions": "使用指纹完成验证，或直接拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/components/secret_input.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 本次操作密码框验证中",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 本次操作密码框验证中.html",
+      "source_id": "guarded-operation-review",
+      "entry": "本次操作的主密码框 → 点右端指纹",
+      "states": "清空密码，指纹入口在输入框右端显示等待，允许不可用",
+      "actions": "使用指纹完成验证，或直接拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/components/secret_input.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 仅当前指纹确认",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 仅当前指纹确认.html",
+      "source_id": "key-use-authorization",
+      "entry": "授权验证样式 → 打开 SSH 密钥审批",
+      "states": "采用仅当前指纹的密钥，等待核对单条请求",
+      "actions": "查看指纹，点指纹开始验证，或拒绝",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 等待指纹",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 等待指纹.html",
+      "source_id": "key-use-authorization",
+      "entry": "仅当前指纹确认 → 点指纹",
+      "states": "原位指纹图标显示等待状态，范围仅本次请求",
+      "actions": "在原型中点等待图标模拟指纹验证成功，或拒绝",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥使用授权",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥使用授权.html",
+      "source_id": "key-use-authorization",
+      "entry": "收到多条待验证的同组密钥使用请求",
+      "states": "请求来源、密钥、账号及两个待处理请求集中显示",
+      "actions": "查看完整指纹；确认单个请求，或确认组内的两个请求",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; internal/desktop/identities.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 系统验证",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 系统验证.html",
+      "source_id": "key-use-authorization",
+      "entry": "SSH 密钥使用授权→确认这 2 个请求",
+      "states": "核对本组两项，底栏提供拒绝与 macOS 验证",
+      "actions": "核对指纹；交给 macOS 验证并确认本组，或拒绝",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; internal/desktop/identities.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 单次验证",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 单次验证.html",
+      "source_id": "key-use-authorization",
+      "entry": "SSH 密钥使用授权→确认这条",
+      "states": "核对一项请求，底栏提供拒绝与 macOS 验证",
+      "actions": "核对指纹；交给 macOS 验证并确认本次，或拒绝",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; internal/desktop/identities.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 正在验证",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 正在验证.html",
+      "source_id": "approval-pending",
+      "entry": "独立审批窗口→Touch ID 验证",
+      "states": "Touch ID 正在验证；原位置显示系统绘制的指纹",
+      "actions": "继续验证、明确拒绝申请、改用主密码；Esc 停止验证并保留申请",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 维护准备验证中",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 维护准备验证中.html",
+      "source_id": "maintenance-approval",
+      "entry": "独立审批窗口→Touch ID 验证",
+      "states": "Touch ID 正在验证；原位置显示系统绘制的指纹",
+      "actions": "继续验证、拒绝申请，或改用主密码",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 本次操作验证中",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 本次操作验证中.html",
+      "source_id": "guarded-operation-review",
+      "entry": "独立审批窗口→Touch ID 验证",
+      "states": "Touch ID 正在验证；原位置显示系统绘制的指纹",
+      "actions": "继续验证、拒绝申请，或改用主密码",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 仅主密码",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 仅主密码.html",
+      "source_id": "approval-pending",
+      "entry": "独立审批窗口→当前设备的系统验证未启用或不可用",
+      "states": "保险库主密码验证；系统验证入口依设备可用性隐藏",
+      "actions": "用保险库主密码批准或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; native/macos/EmbeddedBiometric.swift; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 主机未知",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 主机未知.html",
+      "source_id": "key-use-authorization",
+      "entry": "仅一条密钥使用请求，主机身份未随请求提供",
+      "states": "显示调用应用、账号、本机密钥指纹及未知主机状态",
+      "actions": "使用系统验证确认本次，或拒绝",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; internal/desktop/identities.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 指纹详情",
+      "status": "review-candidate",
+      "presentation": "popover",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 指纹详情.html",
+      "source_id": "key-use-authorization",
+      "entry": "SSH 密钥使用授权或确认窗口→查看指纹",
+      "states": "可核对本机 SSH 密钥和请求所提供的主机指纹",
+      "actions": "查看并关闭浮层",
+      "source": "native/macos/SSHIdentityViews.swift; native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; internal/desktop/identities.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 使用通知",
+      "status": "review-candidate",
+      "presentation": "system-notification-example",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 使用通知.html",
+      "source_id": "key-use-authorization",
+      "entry": "签名成功且系统通知已启用",
+      "states": "成功通知内容示意，显示调用应用、密钥及指纹",
+      "actions": "查看本次用钥结果",
+      "source": "native/macos/SSHIdentity.swift; internal/identityagent/protocol.go; internal/desktop/identities.go"
+    },
+    {
+      "name": "11 连接与授权评审 / SSH 密钥 · 请求被拒绝",
+      "status": "review-candidate",
+      "presentation": "prototype-outcome",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/SSH 密钥 · 请求被拒绝.html",
+      "source_id": "key-use-authorization",
+      "entry": "SSH 密钥系统验证→拒绝",
+      "states": "原型展示本次所选请求的拒绝结果；实际结果返回调用方",
+      "actions": "查看拒绝结果",
+      "source": "native/macos/SSHIdentity.swift; internal/identityagent/protocol.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 跨平台认证",
+      "status": "review-candidate",
+      "presentation": "component-review",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/跨平台认证.html",
+      "source_id": "approval-pending",
+      "entry": "连接与授权 · 优化评审 → 跨平台认证",
+      "states": "同一审批底栏展示 macOS、Windows Hello、Linux 指纹与仅主密码状态",
+      "actions": "对照系统入口和拒绝的位置，打开授权验证样式",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; internal/desktop/auth_surface.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 维护准备主密码",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 维护准备主密码.html",
+      "source_id": "maintenance-approval",
+      "entry": "维护准备→使用主密码",
+      "states": "显示保险库主密码输入，保留原申请的范围、期限和配对码",
+      "actions": "输入主密码、点密码框右端的系统入口直接验证，或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; docs/design/smallssh.smallpen/components/授权验证底栏.html; internal/desktop/components/secret_input.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 本次操作主密码",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 本次操作主密码.html",
+      "source_id": "guarded-operation-review",
+      "entry": "本次操作确认→使用主密码",
+      "states": "显示保险库主密码输入，保留原申请的命令或路径和单次授权范围",
+      "actions": "输入主密码、点密码框右端的系统入口直接验证，或拒绝",
+      "source": "internal/desktop/approval.go; internal/desktop/approval_auth.go; docs/design/smallssh.smallpen/components/授权验证底栏.html; internal/desktop/components/secret_input.go"
+    },
+    {
+      "name": "11 连接与授权评审 / 独立授权 · 中风险免确认",
+      "status": "review-candidate",
+      "presentation": "window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/独立授权 · 中风险免确认.html",
+      "source_id": "guarded-operation-review",
+      "entry": "服务器操作授权→关闭确认中风险文件操作",
+      "states": "在关闭的开关下显示免确认的适用范围",
+      "actions": "查看说明，或重新开启确认",
+      "source": "internal/desktop/approval.go; internal/operationrisk/risk.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "11 连接与授权评审 / 待确认授权 · 中风险免确认",
+      "status": "review-candidate",
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/11 连接与授权评审/待确认授权 · 中风险免确认.html",
+      "source_id": "guarded-operation-review",
+      "entry": "授权中心待确认→关闭确认中风险文件操作",
+      "states": "在当前申请的开关下显示免确认的适用范围",
+      "actions": "查看说明，或重新开启确认",
+      "source": "internal/desktop/approval_center.go; internal/desktop/approval.go; docs/design/smallssh.smallpen/components/授权验证底栏.html"
+    },
+    {
+      "name": "08 设置 / 授权中心 · 活动免确认",
+      "status": "source-mapped",
+      "presentation": "tabs-or-window",
+      "file": "smallssh.smallpen/pages/08 设置/授权中心 · 活动免确认.html",
+      "source_id": "approval-active",
+      "entry": "当前授权→关闭确认中风险文件操作",
+      "states": "开关按后台已保存的规则显示，关闭时显示免确认的适用范围",
+      "actions": "查看说明，或重新开启确认",
+      "source": "internal/desktop/approval_active.go; internal/approval/grant_policy.go"
     }
   ],
-  "scope": "source-mapped: 按正式源码核对的页面结构记录；planned: 待实现需求。均不代替功能验收。",
+  "scope": "source-mapped: 按正式源码核对的页面结构记录；planned: 待实现需求。review-candidate: 连接与授权优化评审画板，以现有验收修订 0c74ef5341d04dcf7f257189f61c55521dc1f2986277e66248b20bf0fd685aad 为对照。均不代替功能验收。",
   "design_source": {
     "package": "smallssh.smallpen",
     "format": "HTML + tokens.css",
-    "cli": "0.2.0-alpha.1",
+    "cli": "0.2.0",
     "themes": [
       "appearance/light",
       "appearance/dark"
     ]
+  },
+  "visual_review": {
+    "skill": "/Volumes/DevVault/Dev/Projects/QuincyWork/smallraw-skills/skills/ui-design-filipiuk-style/SKILL.md",
+    "scope": "全部 103 个页面（含目录与待实现说明）的桌面视觉复核；保留功能与操作路径",
+    "direction": "紧凑、可靠的 SSH 工作台；少量紫色强调；输入/目标/主操作优先，辅助信息退后",
+    "shared_rules": [
+      "14px 加粗区块标题，13px 记录名，11–12px 辅助信息",
+      "统一明暗焦点、状态与危险确认颜色",
+      "表单和小弹窗按内容收高，长内容滚动，底部操作成组靠右",
+      "重复服务器副标题、无效零计数和常驻实现说明移除；必要解释使用短句或 tooltip"
+    ],
+    "coverage": "自动检查与本机视觉证据见 DESIGN.md / VERIFICATION.md；不等于原生窗口实机验收",
+    "revision": "570844b1a760f8d8773ef6252131fdedff0109f3a8e7de6461a0f68f3a11cde9"
   }
 }

@@ -1,8 +1,15 @@
-<sp-component name="文件行">
-  <div class="flex flex-row items-center gap-space-sm px-space-sm w-[640px] h-row">
-    <p data-name="类型" class="w-[20px] text-muted type-body leading-[20]">◇</p>
-    <p data-name="名称" class="w-full text-text type-body leading-[20]">nginx.conf</p>
-    <p data-name="大小" class="w-[72px] text-muted type-detail leading-[16]">876 B</p>
-    <p data-name="修改时间" class="w-[100px] text-muted type-detail leading-[16]">11月 07日</p>
+<sp-component name="文件行" props="列: 完整 | 紧凑">
+  <div class="flex flex-row items-center w-[640px] h-row">
+    <div data-name="文件名单元格" class="flex flex-row items-center gap-file-name px-space-sm w-full min-w-file-name-min h-row">
+      <p data-name="类型" class="w-tree-disclosure text-muted font-icons text-file-icon leading-[1] text-center"></p>
+      <p data-name="名称" class="w-full text-text type-file-label">nginx.conf</p>
+    </div>
+    <div data-name="大小单元格" class="flex flex-row items-center px-space-sm w-file-size-column h-row">
+      <p data-name="大小" class="w-full text-muted type-file-label text-right">876 B</p>
+    </div>
+    <div data-name="修改时间单元格" class="flex flex-row items-center px-space-sm w-file-modified-column h-row">
+      <p data-name="修改时间" class="w-full text-muted type-file-label">2026-11-07 09:30</p>
+    </div>
   </div>
+  <sp-variant when="列: 紧凑"><div data-name="修改时间单元格" class="hidden"></div></sp-variant>
 </sp-component>

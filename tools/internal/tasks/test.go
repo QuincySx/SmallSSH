@@ -58,21 +58,18 @@ func runTest(args []string) error {
 // run is the pipeline itself: vet, then test, both on the vendored tree so a
 // stray GOFLAGS cannot bypass the patched dependencies.
 func (p *pipeline) run(out *tee, logPath string) error {
+	tags := project.Tags(p.tags)
 	if p.vet {
 		fmt.Fprintf(out, "== go vet -mod=vendor %s\n", p.packages)
 		arguments := []string{"vet", "-mod=vendor"}
-		if p.tags != "" {
-			arguments = append(arguments, "-tags", p.tags)
-		}
+		arguments = append(arguments, "-tags", tags)
 		if e := step(out, "go", append(arguments, p.packages)...); e != nil {
 			fmt.Fprintf(out, "\n静态检查失败：%s\n", logPath)
 			return errors.New("go vet 失败")
 		}
 	}
 	args := []string{"test", "-mod=vendor", "-count=1", "-timeout", p.timeout.String()}
-	if p.tags != "" {
-		args = append(args, "-tags", p.tags)
-	}
+	args = append(args, "-tags", tags, "-ldflags", project.RuntimeLinkFlags)
 	if p.serial {
 		// Several suites assert on timing windows; running packages in parallel
 		// makes those windows depend on what else the machine is doing.
@@ -110,12 +107,11 @@ func openLog(prefix string, race bool) (*tee, string, error) {
 	if race {
 		name += "-race"
 	}
-	logPath := filepath.Join(logDir, name+".log")
-	log, e := os.Create(logPath)
+	log, e := os.CreateTemp(logDir, name+"-*.log")
 	if e != nil {
 		return nil, "", e
 	}
-	return &tee{file: log, stdout: os.Stdout}, logPath, nil
+	return &tee{file: log, stdout: os.Stdout}, log.Name(), nil
 }
 
 // tee writes to the log and the terminal, so the log stays authoritative while

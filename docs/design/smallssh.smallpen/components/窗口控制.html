@@ -1,7 +1,8 @@
-<sp-component name="窗口控制">
-  <div class="flex flex-row items-center gap-[6px] pl-[16px] w-[70px] h-titlebar">
-    <div data-shape="rectangle" data-name="关闭" class="w-[14px] h-[14px] bg-[#ff5f57] rounded-[7px]"></div>
-    <div data-shape="rectangle" data-name="最小化" class="w-[14px] h-[14px] bg-[#febc2e] rounded-[7px]"></div>
-    <div data-shape="rectangle" data-name="全屏" class="w-[14px] h-[14px] bg-[#28c840] rounded-[7px]"></div>
+<sp-component name="窗口控制" props="位置: 标题栏 | 侧栏">
+  <div class="flex flex-row items-center gap-window-control-gap pl-space-lg w-[70px] h-titlebar">
+    <div data-shape="rectangle" data-name="关闭" class="w-[14px] h-[14px] bg-[#ff5f57] rounded-window-control"></div>
+    <div data-shape="rectangle" data-name="最小化" class="w-[14px] h-[14px] bg-[#febc2e] rounded-window-control"></div>
+    <div data-shape="rectangle" data-name="全屏" class="w-[14px] h-[14px] bg-[#28c840] rounded-window-control"></div>
   </div>
+  <sp-variant when="位置: 侧栏" class="pl-space-sm h-control"></sp-variant>
 </sp-component>

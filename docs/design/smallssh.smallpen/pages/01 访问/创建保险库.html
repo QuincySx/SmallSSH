@@ -9,16 +9,16 @@
   <div data-name="原生标题栏" class="flex flex-row w-full h-[48px] bg-canvas">
     <sp-use component="窗口控制" data-name="原生窗口按钮" class="h-[48px]"></sp-use>
   </div>
-  <div data-name="居中解锁区" class="flex flex-col items-center justify-center p-[28px] w-full h-full bg-vaultbackdrop">
-    <div data-name="保险库卡片" class="flex flex-col gap-[20px] p-[26px] w-[392px] bg-vaultsurface border border-border rounded-[16px]">
-      <div data-name="身份标题" class="flex flex-col items-center gap-[10px] w-full">
-        <div data-name="锁标志" class="flex flex-col items-center justify-center w-[40px] h-[40px] bg-accentsoft rounded-[12px]">
-          <p data-name="锁图标" class="text-accent font-[SmallSSH_Icons] text-[22px] leading-[1]"></p>
+  <div data-name="居中解锁区" class="flex flex-col items-center justify-center p-vault-screen w-full h-full bg-vaultbackdrop">
+    <div data-name="保险库卡片" class="flex flex-col gap-vault-section p-vault-card w-[392px] bg-vaultsurface border border-border rounded-panel">
+      <div data-name="身份标题" class="flex flex-col items-center gap-vault-heading w-full">
+        <div data-name="锁标志" class="flex flex-col items-center justify-center w-[40px] h-[40px] bg-accentsoft rounded-vault-icon">
+          <p data-name="锁图标" class="text-accent font-icons text-icon-security leading-[1]"></p>
         </div>
         <p data-name="标题" class="text-text type-vaulttitle">创建本机保险库</p>
         <p data-name="说明" class="w-full text-muted type-body text-center">为这台电脑上的连接资料设置一个主密码。</p>
       </div>
-      <div data-name="认证字段" class="flex flex-col gap-[12px] w-full">
+      <div data-name="认证字段" class="flex flex-col gap-space-md w-full">
         <sp-use component="解锁密码框" props="状态: 焦点" data-name="主密码" class="w-full">
           <p data-name="占位文字">输入主密码</p>
         </sp-use>
@@ -27,7 +27,7 @@
         </sp-use>
         <p data-name="密码说明" class="w-full text-muted type-vaulthint">请使用较长、独立的主密码，用于保护已保存的连接。</p>
       </div>
-      <sp-use component="按钮" data-name="确认解锁" class="w-full h-[38px] opacity-[0.45]">
+      <sp-use component="按钮" data-name="确认解锁" class="w-full h-[38px] opacity-disabled">
         <p data-name="文字">创建保险库</p>
       </sp-use>
     </div>

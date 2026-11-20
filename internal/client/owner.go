@@ -6,14 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
+	"sshclient/internal/protocol"
 	"sshclient/internal/vault"
 	"time"
 )
 
 // Decide requires a fresh owner unlock. No approve-without-proof endpoint exists.
 func (c Client) Decide(ctx context.Context, id string, allow, revoke bool, pass []byte) error {
-	v, e := vault.Read(broker.VaultPath(c.Dir), pass)
+	v, e := vault.Read(vault.Path(c.Dir), pass)
 	if e != nil {
 		return e
 	}
@@ -22,9 +22,9 @@ func (c Client) Decide(ctx context.Context, id string, allow, revoke bool, pass 
 }
 
 func (c Client) DecideWithOwner(ctx context.Context, id string, allow, revoke bool, v OwnerProof) error {
-	r, e := c.CallWithOwner(ctx, broker.Message{Action: "status", ID: id}, v)
+	r, e := c.CallWithOwner(ctx, protocol.Message{Action: "status", ID: id}, v)
 	if e != nil && revoke {
-		r, e = c.CallWithOwner(ctx, broker.Message{Action: "sessionStatus", ID: id}, v)
+		r, e = c.CallWithOwner(ctx, protocol.Message{Action: "sessionStatus", ID: id}, v)
 	}
 	if e != nil {
 		return e
@@ -38,7 +38,7 @@ func (c Client) DecideWithOwner(ctx context.Context, id string, allow, revoke bo
 // Sign the exact generation the owner reviewed. A renewal may keep the same
 // session ID but always has a fresh nonce; never fetch and approve a later one.
 func (c Client) DecideReviewed(ctx context.Context, r approval.Request, allow, revoke bool, pass []byte) error {
-	v, e := vault.Read(broker.VaultPath(c.Dir), pass)
+	v, e := vault.Read(vault.Path(c.Dir), pass)
 	if e != nil {
 		return e
 	}
@@ -54,8 +54,20 @@ func (c Client) DecideReviewedWithOwner(ctx context.Context, r approval.Request,
 // the copy that is signed and to the broker's stored request. Zero keeps the
 // requester's value; revoking ignores it.
 func (c Client) DecideReviewedWithLifetime(ctx context.Context, r approval.Request, allow, revoke bool, lifetimeSeconds, idleSeconds int, v OwnerProof) error {
+	return c.DecideReviewedWithTerms(ctx, r, allow, revoke, lifetimeSeconds, idleSeconds, false, v)
+}
+
+func (c Client) DecideReviewedWithTerms(ctx context.Context, r approval.Request, allow, revoke bool, lifetimeSeconds, idleSeconds int, skipMediumReview bool, v OwnerProof) error {
 	if !HasOwnerProof(v) {
 		return approval.ErrDenied
+	}
+	if skipMediumReview {
+		if !allow || revoke || r.Operation.Kind != "grant" || r.Operation.Grant.Permission != "guarded" {
+			return approval.ErrDenied
+		}
+	}
+	if allow && !revoke && r.Operation.Kind == "grant" {
+		r.Operation.Grant.SkipMediumReview = skipMediumReview
 	}
 	if allow && !revoke && lifetimeSeconds > 0 {
 		if r.Operation.Kind != "grant" {
@@ -86,7 +98,7 @@ func (c Client) DecideReviewedWithLifetime(ctx context.Context, r approval.Reque
 	if e != nil {
 		return e
 	}
-	_, e = c.Call(ctx, broker.Message{Action: action, ID: r.ID, Allow: allow, TTL: lifetimeSeconds, Idle: idleSeconds, Proof: proof})
+	_, e = c.Call(ctx, protocol.Message{Action: action, ID: r.ID, Allow: allow, TTL: lifetimeSeconds, Idle: idleSeconds, SkipMediumReview: skipMediumReview, Proof: proof})
 	return e
 }
 
@@ -96,20 +108,20 @@ func (c Client) PutProfile(ctx context.Context, p vault.Profile, pass []byte) er
 	if e := vault.Validate(p); e != nil {
 		return e
 	}
-	v, e := vault.Read(broker.VaultPath(c.Dir), pass)
+	v, e := vault.Read(vault.Path(c.Dir), pass)
 	if e != nil {
 		return e
 	}
 	defer v.Close()
-	challenge, e := c.Call(ctx, broker.Message{Action: "profileChallenge"})
+	challenge, e := c.Call(ctx, protocol.Message{Action: "profileChallenge"})
 	if e != nil {
 		return e
 	}
-	proof, e := broker.ProfileProof(challenge.ID, p, v.Proof)
+	proof, e := protocol.ProfileProof(challenge.ID, p, v.Proof)
 	if e != nil {
 		return e
 	}
-	_, e = c.Call(ctx, broker.Message{Action: "profilePut", ID: challenge.ID, Profile: &p, Proof: proof})
+	_, e = c.Call(ctx, protocol.Message{Action: "profilePut", ID: challenge.ID, Profile: &p, Proof: proof})
 	return e
 }
 
@@ -166,6 +178,9 @@ func describeOperation(r approval.Request) string {
 				permission = "读写：受服务器策略限制，仅拦截常见破坏性命令；护栏不能替代核对，交互终端、属性与续传写入不开放"
 			}
 		}
+		if o.Grant.Permission == "guarded" {
+			permission = "限时受控：已识别低风险自动执行，中风险或未知命令单独确认，高风险拒绝；不开放交互通道"
+		}
 		if o.Grant.ReadRoot != "" || o.Grant.WriteRoot != "" {
 			readRoot, writeRoot := o.Grant.ReadRoot, o.Grant.WriteRoot
 			if readRoot == "" {
@@ -175,6 +190,15 @@ func describeOperation(r approval.Request) string {
 				writeRoot = "不开放"
 			}
 			permission = fmt.Sprintf("限定目录文件操作；读取根目录：%q；写入根目录：%q；不含命令、终端、状态采样或容器日志", readRoot, writeRoot)
+			if o.Grant.Permission == "guarded" {
+				permission += "；文件变更逐次确认"
+			}
+		}
+		if o.Grant.Permission == approval.MaintenancePermission {
+			permission = "维护准备：固定系统检查、APT 升级预览"
+			if o.Grant.ReadRoot != "" {
+				permission += fmt.Sprintf("、下载或续传备份来源 %q", o.Grant.ReadRoot)
+			}
 		}
 		r.Operation.Kind = "客户端会话"
 		return header + fmt.Sprintf("会话权限: %s\n配对码（与申请端核对）: %s\n最长使用: %s；闲置: %s\n", permission, o.Grant.PairingCode(), time.Duration(o.Grant.LifetimeSeconds)*time.Second, time.Duration(o.Grant.IdleSeconds)*time.Second) + Describe(r)
@@ -197,7 +221,7 @@ func (c Client) PutDetails(ctx context.Context, d vault.Summary, owner OwnerProo
 	if !HasOwnerProof(owner) {
 		return errors.New("保险库已锁定")
 	}
-	challenge, e := c.Call(ctx, broker.Message{Action: "profileChallenge"})
+	challenge, e := c.Call(ctx, protocol.Message{Action: "profileChallenge"})
 	if e != nil {
 		return e
 	}
@@ -206,7 +230,7 @@ func (c Client) PutDetails(ctx context.Context, d vault.Summary, owner OwnerProo
 	if e != nil {
 		return e
 	}
-	_, e = c.Call(ctx, broker.Message{Action: "profileDetails", ID: challenge.ID, Details: &d, Proof: proof})
+	_, e = c.Call(ctx, protocol.Message{Action: "profileDetails", ID: challenge.ID, Details: &d, Proof: proof})
 	return e
 }
 
@@ -214,7 +238,7 @@ func (c Client) DeleteProfile(ctx context.Context, id string, owner OwnerProof) 
 	if !HasOwnerProof(owner) {
 		return errors.New("保险库已锁定")
 	}
-	challenge, e := c.Call(ctx, broker.Message{Action: "profileChallenge"})
+	challenge, e := c.Call(ctx, protocol.Message{Action: "profileChallenge"})
 	if e != nil {
 		return e
 	}
@@ -222,6 +246,6 @@ func (c Client) DeleteProfile(ctx context.Context, id string, owner OwnerProof) 
 	if e != nil {
 		return e
 	}
-	_, e = c.Call(ctx, broker.Message{Action: "profileDelete", ID: challenge.ID, Target: id, Proof: proof})
+	_, e = c.Call(ctx, protocol.Message{Action: "profileDelete", ID: challenge.ID, Target: id, Proof: proof})
 	return e
 }

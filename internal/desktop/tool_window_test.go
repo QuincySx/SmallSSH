@@ -18,18 +18,20 @@ type fakeToolsWindow struct {
 	shown, hidden, closed, invalidations int
 	title                                string
 	focused                              bool
+	visible                              bool
 	onClosed                             func()
 	updates                              []func()
 	options                              mygo.WindowOptions
 }
 
-func (w *fakeToolsWindow) Show()                 { w.shown++; w.focused = true }
-func (w *fakeToolsWindow) Hide()                 { w.hidden++; w.focused = false }
+func (w *fakeToolsWindow) Show()                 { w.shown++; w.focused = true; w.visible = true }
+func (w *fakeToolsWindow) Hide()                 { w.hidden++; w.focused = false; w.visible = false }
 func (w *fakeToolsWindow) Close()                { w.closed++; w.onClosed() }
 func (w *fakeToolsWindow) Update(fn func())      { w.updates = append(w.updates, fn) }
 func (w *fakeToolsWindow) Invalidate()           { w.invalidations++ }
 func (w *fakeToolsWindow) SetTitle(title string) { w.title = title }
 func (w *fakeToolsWindow) IsFocused() bool       { return w.focused }
+func (w *fakeToolsWindow) IsVisible() bool       { return w.visible }
 func (w *fakeToolsWindow) finishPendingUpdates() {
 	for len(w.updates) > 0 {
 		fn := w.updates[0]
@@ -262,21 +264,21 @@ func TestDetachedDialogsAndTransfersHaveOneOwner(t *testing.T) {
 	a.setToolsHidden(false)
 	tools = ui.NewTester(a.detachedToolsView, 960, 720)
 	a.jobs = []transfer.Job{{ID: "sample", Host: "fixture", Remote: "/srv/file", State: "done", Size: 100, Bytes: 100}}
-	if _, found := tools.Find("传输任务"); found {
+	if _, found := tools.Find("任务中心"); found {
 		t.Fatal("local tools duplicated the global task entry")
 	}
-	if err := main.Click("传输任务"); err != nil {
+	if err := main.Click("任务中心"); err != nil {
 		t.Fatal(err)
 	}
 	tools.Frame()
-	if !main.HasText("传输任务面板") || tools.HasText("传输任务面板") {
+	if !main.HasText("任务中心面板") || tools.HasText("任务中心面板") {
 		t.Fatal("global transfer queue rendered in the wrong window")
 	}
-	if err := main.Click("传输任务"); err != nil {
+	if err := main.Click("任务中心"); err != nil {
 		t.Fatal(err)
 	}
 	tools.Frame()
-	if main.HasText("传输任务面板") || tools.HasText("传输任务面板") {
+	if main.HasText("任务中心面板") || tools.HasText("任务中心面板") {
 		t.Fatal("closing the global transfer queue left a duplicate view")
 	}
 }

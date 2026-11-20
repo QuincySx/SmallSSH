@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VNC · SmallSSH</title><link rel="stylesheet" href="viewer.css"><script type="module" src="viewer.js"></script></head>
+<body data-state="connecting">
+<main id="screen" aria-label="远程桌面"></main>
+<aside id="toolbar" aria-label="VNC 工具栏">
+  <span id="connection-indicator" role="img" aria-label="正在连接…" title="正在连接…"></span>
+  <div id="toolbar-primary">
+      <button id="keyboard-toggle" class="icon-button tool" title="远程按键" aria-label="远程按键" aria-controls="keyboard-panel" aria-expanded="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.6M10 8h.6M14 8h.6M18 8h.6M6 12h.6M10 12h.6M14 12h.6M18 12h.6M7 16h10"/></svg><span class="tool-label">远程按键</span></button>
+      <button id="paste-clipboard" class="icon-button tool" title="粘贴到远端" aria-label="粘贴到远端" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M16 4h2a2 2 0 0 1 2 2v2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M11 13h10m-4-4 4 4-4 4"/></svg><span class="tool-label">粘贴到远端</span></button>
+      <button id="copy-clipboard" class="icon-button tool" title="复制远端剪贴板" aria-label="复制远端剪贴板" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><rect x="8" y="2" width="8" height="4" rx="1"/><rect x="12" y="10" width="10" height="12" rx="2"/></svg><span class="tool-label">复制远端剪贴板</span></button>
+      <label id="scale-control" class="icon-toggle tool" title="适应窗口"><input id="scale" type="checkbox" aria-label="适应窗口" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg><span class="tool-label">适应窗口</span></label>
+      <button id="fullscreen" class="icon-button tool" title="切换全屏" aria-label="切换全屏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6" /><path d="m21 3-7 7" /><path d="m3 21 7-7" /><path d="M9 21H3v-6" /></svg><span class="tool-label">切换全屏</span></button>
+      <label id="view-only-control" class="icon-toggle tool" title="只读查看"><input id="view-only" type="checkbox" aria-label="只读查看"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><span class="tool-label">只读查看</span></label>
+      <button id="connect" class="icon-button tool" title="重新连接" aria-label="重新连接"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg><span class="tool-label">重新连接</span></button>
+      <button id="disconnect" class="icon-button tool" title="断开连接" aria-label="断开连接" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg><span class="tool-label">断开连接</span></button>
+  </div>
+  <button id="more-toggle" class="icon-button" title="更多操作" aria-label="更多操作" aria-controls="more-panel" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+</aside>
+<section id="more-panel" class="popover" role="dialog" aria-label="更多操作" hidden>
+  <span id="status" role="status">正在连接…</span>
+  <div id="overflow-actions"></div>
+</section>
+<section id="keyboard-panel" class="popover" role="dialog" aria-label="远程按键" hidden>
+  <div class="popover-title"><strong>发送按键</strong><button id="close-keyboard" class="icon-button" title="收起按键面板" aria-label="收起按键面板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18m0-12 12 12"/></svg></button></div>
+  <div class="key-row" aria-label="修饰键">
+    <button id="mod-ctrl" aria-label="按住 Ctrl" aria-pressed="false">Ctrl</button>
+    <button id="mod-alt" aria-label="按住 Alt" aria-pressed="false">Alt</button>
+    <button id="mod-shift" aria-label="按住 Shift" aria-pressed="false">Shift</button>
+    <button id="mod-super" aria-label="按住 Win / Super" aria-pressed="false">Win</button>
+  </div>
+  <div class="key-row"><button data-key="Escape">Esc</button><button data-key="Tab">Tab</button><button id="keys" disabled>Ctrl Alt Del</button></div>
+  <details id="extra-keys"><summary>更多按键</summary><div id="key-grid" class="key-grid"></div></details>
+</section>
+<div id="notice" role="status" aria-live="polite" hidden></div>
+<section id="credentials" class="overlay" hidden><form id="login"><h2>VNC 登录</h2><label id="username-row" hidden>VNC 用户名<input id="username" autocomplete="username" maxlength="512"></label><label id="password-row" hidden>VNC 密码<input id="password" type="password" autocomplete="off" maxlength="512"></label><label id="target-row" hidden>目标会话<input id="target" autocomplete="off" maxlength="512"></label><label class="remember"><input id="remember-password" type="checkbox" checked>保存 VNC 密码</label><div class="buttons"><button type="button" id="cancel-login">取消</button><button type="submit" class="primary">登录</button></div></form></section>
+<section id="identity" class="overlay" hidden><div class="dialog"><h2>核对 VNC 服务器身份</h2><p>请与服务器管理员核对以下 VNC 公钥指纹。</p><code id="fingerprint"></code><div class="buttons"><button id="cancel-identity">取消</button><button id="trust" class="primary">信任本次连接</button></div></div></section>
+</body></html>

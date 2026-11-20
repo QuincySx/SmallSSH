@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>跨平台认证</title>
+  <link rel="stylesheet" href="../../tokens.css">
+</head>
+<body data-canvas="连接与授权 · 优化评审" data-flow="跨平台认证" class="flex flex-col gap-space-md w-dialog-small h-fit p-space-lg bg-canvas">
+  <p data-name="标题" class="type-native-dialog text-text">跨平台授权验证</p>
+  <div data-name="各平台的认证入口" class="flex flex-col gap-space-sm w-full p-space-md bg-surface border border-border rounded-native-navigation">
+    <div data-name="macOS" class="flex flex-col gap-space-xs w-full">
+      <p data-name="平台" class="type-native-label text-text">macOS</p>
+      <sp-use data-name="授权底栏" component="授权验证底栏" props="切换验证: 有; 系统: Touch ID" class="w-full"></sp-use>
+    </div>
+    <div data-name="macOS 分隔" class="w-full h-review-divider bg-border"></div>
+    <div data-name="Windows" class="flex flex-col gap-space-xs w-full">
+      <p data-name="平台" class="type-native-label text-text">Windows</p>
+      <sp-use data-name="授权底栏" component="授权验证底栏" props="切换验证: 有; 系统: Windows Hello" class="w-full"></sp-use>
+      <p data-name="系统提示" class="type-native-hint text-muted w-full">PIN、人脸或指纹由 Windows Hello 提供。</p>
+    </div>
+    <div data-name="Windows 分隔" class="w-full h-review-divider bg-border"></div>
+    <div data-name="Linux" class="flex flex-col gap-space-xs w-full">
+      <p data-name="平台" class="type-native-label text-text">Linux</p>
+      <sp-use data-name="授权底栏" component="授权验证底栏" props="状态: 等待验证; 切换验证: 有; 系统: Linux 指纹" class="w-full"></sp-use>
+    </div>
+  </div>
+  <div data-name="系统验证不可用" class="flex flex-col gap-space-sm w-full p-space-md bg-surface border border-border rounded-native-navigation">
+    <p data-name="标题" class="type-native-label text-text">审批只需主密码时</p>
+    <sp-use data-name="授权底栏" component="授权验证底栏" props="状态: 输入主密码" class="w-full"></sp-use>
+  </div>
+  <div data-name="按场景退出" class="flex flex-row items-center gap-space-sm w-full">
+    <p data-name="说明" class="type-native-hint text-muted flex-1 min-w-0">保险库解锁时用「取消」。</p>
+    <sp-use data-name="查看验证中的操作" component="按钮" props="样式: 轻量" data-click="11 连接与授权评审/授权验证 · 样式对照">
+      <p data-name="文字">查看各状态</p>
+    </sp-use>
+  </div>
+</body>
+</html>

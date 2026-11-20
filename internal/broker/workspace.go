@@ -30,6 +30,23 @@ func (s *Server) workspaceRead(q Message, channel *callerChannel) (Message, erro
 		return Message{}, errors.New("工作区查询缺失")
 	}
 	switch q.Workspace.Kind {
+	case "ssh-identities":
+		state, err := s.identityState()
+		if err != nil {
+			return Message{}, err
+		}
+		return Message{WorkspaceResult: &protocol.WorkspaceResult{Identities: &state}}, nil
+	case "vnc-settings":
+		if !workspaceIDValid(q.Workspace.HostID) {
+			return Message{}, errors.New("服务器 ID 无效")
+		}
+		settings, err := s.Vault.VNCSettings(q.Workspace.HostID)
+		if err != nil {
+			return Message{}, err
+		}
+		return Message{WorkspaceResult: &protocol.WorkspaceResult{VNC: &settings}}, nil
+	case "route-list":
+		return Message{WorkspaceResult: &protocol.WorkspaceResult{Routes: s.Vault.Routes()}}, nil
 	case workspaceKindSnippetList:
 		return s.workspaceSnippetPage(q.Workspace)
 	case workspaceKindServerNote:

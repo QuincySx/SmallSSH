@@ -1,0 +1,28 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>VNC 远程桌面连接</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col w-[600px] h-fit bg-canvas">
+  <div data-name="模态承载" class="flex flex-col p-dialog-backdrop w-full h-fit">
+    <div data-name="对话框" class="flex flex-col gap-space-md p-space-lg w-[520px] h-fit bg-surface rounded-window-panel">
+      <div data-name="标题栏" class="flex flex-row items-center gap-space-sm w-full">
+        <p data-name="标题" class="w-full text-text type-section">VNC 远程桌面</p>
+        <sp-use component="图标按钮" data-name="关闭确认" data-click="02 工作台/终端与底部文件"><p data-name="图标"></p></sp-use>
+      </div>
+      <div data-name="连接方式" class="flex flex-row items-center gap-space-sm w-full">
+        <p data-name="标签" class="w-vnc-field-label text-text type-body">连接方式</p>
+        <div data-name="选择" data-click="09 工具/VNC 经SSH连接" class="flex flex-row items-center px-field-inline w-full h-field bg-surface border border-border rounded-control"><p data-name="当前值" class="w-full text-text type-control">直接连接 VNC</p><p data-name="箭头" class="text-muted font-icons text-icon-compact"></p></div>
+      </div>
+      <div data-name="服务器地址与端口" class="flex flex-row items-center gap-space-sm w-full">
+        <p data-name="标签" class="w-vnc-field-label text-text type-body">服务器地址</p>
+        <sp-use component="输入框" data-name="VNC 主机地址" class="w-full h-field"><p data-name="值">192.0.2.10</p></sp-use>
+        <p data-name="端口标签" class="text-muted type-control">端口</p>
+        <sp-use component="输入框" data-name="VNC 端口输入" class="w-connection-port h-field"><p data-name="值">5900</p></sp-use>
+      </div>
+      <sp-use component="复选框" props="状态: 未选" data-name="只读查看" class="w-full"><div data-name="勾选框" class="border-muted"></div><p data-name="标签">只读查看</p></sp-use>
+      <sp-use component="按钮" props="样式: 普通" data-name="清除保存登录信息"><p data-name="文字">清除保存的 VNC 登录信息</p></sp-use>
+      <div data-name="底部操作" class="flex flex-row justify-end items-center gap-space-sm w-full">
+        <sp-use component="按钮" props="样式: 普通" data-name="取消" data-click="02 工作台/终端与底部文件"><p data-name="文字">取消</p></sp-use>
+        <sp-use component="按钮" data-name="连接远程桌面" data-click="09 工具/VNC 登录"><p data-name="文字">连接远程桌面</p></sp-use>
+      </div>
+    </div>
+  </div>
+</body></html>

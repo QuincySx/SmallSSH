@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sshclient/internal/client"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type serverManagementUI struct {
 	containerSort, imageSort                               ui.SortOrder
 	busy                                                   bool
 	message                                                string
+	stop                                                   context.CancelFunc // ends the local wait; the server may still finish
 	processChoice                                          ui.Selection[processIdentity]
 	serviceChoice                                          ui.Selection[string]
 	containerChoice                                        ui.Selection[containerIdentity]
@@ -226,7 +228,8 @@ func (a *app) runServerActionWithTimeout(sess *session, title, command string, t
 	state.busy = true
 	state.message = tr(nil, "正在") + title + "…"
 	cli, gen, host := a.client, a.generation, sess.host
-	ctx, cancel := context.WithTimeout(a.operationContext(), timeout)
+	ctx, cancel := context.WithTimeout(client.WithRoute(a.operationContext(), sess.host, sess.target.Route), timeout)
+	state.stop = cancel
 	if sess.term != nil {
 		go func() {
 			select {
@@ -263,11 +266,13 @@ func (a *app) runServerActionWithTimeout(sess *session, title, command string, t
 				info.Docker.Status = "unavailable"
 			}
 		}
+		// Read before the deferred cancel runs: only a user stop counts here.
+		stopped := errors.Is(ctx.Err(), context.Canceled)
 		a.postUI(func() {
 			if gen != a.generation || !a.hasSession(sess) || sess.closed {
 				return
 			}
-			state.busy = false
+			state.busy, state.stop = false, nil
 			if completed {
 				state.message = title + tr(nil, "已执行")
 				if info.Manager != "" && sess.stats != nil {
@@ -279,6 +284,8 @@ func (a *app) runServerActionWithTimeout(sess *session, title, command string, t
 			} else if e != nil {
 				if errors.Is(e, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded {
 					state.message = tr(nil, "操作等待超时，服务器可能仍在处理；请检查状态")
+				} else if stopped {
+					state.message = tr(nil, "已停止等待，服务器可能仍在处理；请检查状态")
 				} else {
 					state.message = e.Error()
 				}
@@ -312,6 +319,9 @@ func (a *app) managementFeedback(c *ui.Context) {
 				ui.Spinner(c).Size(12, 12)
 			}
 			ui.Text(c, reviewText(state.message)).SingleLine().FontSize(11).Grow(1).Tooltip(state.message)
+			if state.busy && state.stop != nil && components.Button(c, tr(c, "停止等待")).Height(22).Tooltip(tr(c, "不再等待结果；已发到服务器的操作可能仍会完成")).Clicked() {
+				state.stop()
+			}
 			if !state.busy && components.IconButton(c, "×", tr(c, "关闭操作结果")).Size(20, 20).Clicked() {
 				state.message = ""
 			}

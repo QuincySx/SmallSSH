@@ -5,18 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"sshclient/internal/accesspolicy"
 	"sshclient/internal/approval"
+	"sshclient/internal/auditlog"
 	"sshclient/internal/broker"
 	"sshclient/internal/client"
 	"sshclient/internal/localipc"
 	"sshclient/internal/testserver"
+	"sshclient/internal/transfer"
 	"sshclient/internal/vault"
 )
 
@@ -75,6 +79,9 @@ func approveCLISession(t *testing.T, ctx context.Context, c client.Client, done 
 				}
 				if r.Peer.PID != os.Getpid() || r.Peer.Instance == "" || r.Peer.CodeID == "" {
 					t.Fatal("missing kernel process instance", r.Peer)
+				}
+				if runtime.GOOS == "darwin" && r.Peer.Bundle == "" {
+					t.Fatal("missing signing identifier", r.Peer)
 				}
 				if err := c.DecideReviewedWithOwner(ctx, r, true, false, c.Owner); err != nil {
 					t.Fatal(err)
@@ -170,6 +177,105 @@ func TestCLIStdioScopedSessionKeepsApprovedRootsInMemory(t *testing.T) {
 	}
 	if result.Request == nil || result.Request.Operation.Grant != parent.Operation.Grant {
 		t.Fatal("approved roots changed in live session")
+	}
+}
+
+func TestCLIMaintenanceUsesOneApprovalForPreviewAndBackupResume(t *testing.T) {
+	c, ctx := sessionFixture(t)
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(dir, "archive.enc")
+	data := []byte("synthetic backup data")
+	if err := os.WriteFile(source, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	remote := testserver.RemotePath(source)
+	local := filepath.Join(dir, "backup.enc")
+	var stdout, notices bytes.Buffer
+	in, writer := io.Pipe()
+	defer writer.Close()
+	done := make(chan error, 1)
+	go func() {
+		_, err := serveWithPermission(ctx, c, "Maintenance fixture", []string{"--read-root", remote, "fixture"}, in, &stdout, &notices, approval.MaintenancePermission)
+		done <- err
+	}()
+	parent := approveCLISession(t, ctx, c, done)
+	if scope := parent.Operation.Grant; scope.Permission != approval.MaintenancePermission || scope.ReadRoot != remote || scope.LifetimeSeconds != 3600 {
+		t.Fatal("wrong maintenance scope", scope)
+	}
+	job, err := transfer.NewWithClient(c).AddDownload("fixture", local, remote, parent.Operation.Endpoint, parent.Operation.HostFingerprint, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	part := filepath.Join(dir, ".backup.enc.ssh-part-"+job.ID)
+	if err := os.WriteFile(part, data[:9], 0600); err != nil {
+		t.Fatal(err)
+	}
+	requests := []sessionInput{
+		{ID: "inspect", Action: "run", Operation: approval.Operation{Kind: "exec", Command: "uname -a"}},
+		{ID: "preview", Action: "preview-upgrade"},
+		{ID: "resume", Action: "resume-backup", TransferID: job.ID},
+		{ID: "copy", Action: "backup", Remote: remote, Local: filepath.Join(dir, "second.enc")},
+		{ID: "install", Action: "run", Operation: approval.Operation{Kind: "exec", Command: "apt-get upgrade -y"}},
+		{ID: "reboot", Action: "run", Operation: approval.Operation{Kind: "exec", Command: "reboot"}},
+		{ID: "other-path", Action: "run", Operation: approval.Operation{Kind: "get", Path: testserver.RemotePath(filepath.Join(dir, "outside.enc"))}},
+		{ID: "override", Action: "run", Operation: approval.Operation{Kind: "upgrade-preview", Command: "apt-get upgrade -y"}},
+	}
+	encoder := json.NewEncoder(writer)
+	for _, request := range requests {
+		if err := encoder.Encode(request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writer.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	decoder := json.NewDecoder(&stdout)
+	for i, request := range requests {
+		var result sessionOutput
+		if err := decoder.Decode(&result); err != nil {
+			t.Fatal(err)
+		}
+		if result.ID != request.ID || (result.Error != "") != (i >= 4) {
+			t.Fatal(request.ID, result.Error)
+		}
+		if i == 1 && !bytes.Contains(result.Stdout, []byte("/usr/bin/apt-get --simulate --no-download upgrade")) {
+			t.Fatal("fixture did not receive the fixed APT command", string(result.Stdout))
+		}
+	}
+	for _, name := range []string{local, filepath.Join(dir, "second.enc")} {
+		if got, err := os.ReadFile(name); err != nil || !bytes.Equal(got, data) {
+			t.Fatal("backup contents", name, got, err)
+		}
+	}
+	page, err := c.History(ctx, auditlog.Query{Limit: 100}, c.Owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requested, delegated, rejected := 0, 0, 0
+	for _, event := range page.Events {
+		if event.Event == "requested" {
+			requested++
+		}
+		if event.ParentID == parent.ID {
+			switch event.Event {
+			case "delegated":
+				delegated++
+			case "denied":
+				rejected++
+			}
+		}
+	}
+	if requested != 1 || delegated != 4 || rejected < 3 {
+		t.Fatal("requests, delegated operations, and refusals", requested, delegated, rejected)
 	}
 }
 

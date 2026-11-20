@@ -111,8 +111,10 @@ func await(ctx context.Context, op uintptr) (int32, error) {
 			var result int32
 			e := method(op, 8, uintptr(unsafe.Pointer(&result)))
 			return result, e
-		case 2, 3:
-			return 0, errors.New("系统认证已取消或失败")
+		case 2: // Windows.Foundation.AsyncStatus.Canceled
+			return 0, context.Canceled
+		case 3: // Windows.Foundation.AsyncStatus.Error
+			return 0, errors.New("系统认证失败")
 		}
 		select {
 		case <-ctx.Done():
@@ -167,6 +169,9 @@ func (b windowsBackend) verify(ctx context.Context, reason string) error {
 	result, e := await(ctx, op)
 	if e != nil {
 		return e
+	}
+	if result == 6 { // UserConsentVerificationResult.Canceled
+		return context.Canceled
 	}
 	if result != 0 {
 		return fmt.Errorf("Windows Hello 未批准（状态 %d）", result)

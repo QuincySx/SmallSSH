@@ -27,18 +27,21 @@ func TestConnectionProbeFailureShowsCauseAndKeepsDraft(t *testing.T) {
 	h.a.form.Password = "isolated draft credential"
 	h.a.port = strconv.Itoa(port)
 	h.ui = ui.NewTester(h.a.view, 1100, 900)
-	h.click("保存并连接")
-	h.wait(func() bool { return h.a.connection.phase == "" })
-	message := h.a.connection.errors["trust"]
-	if !strings.Contains(message, net.JoinHostPort("127.0.0.1", h.a.port)) || !strings.Contains(message, "dial tcp") || !h.ui.HasText(reviewText(message)) {
-		t.Fatal("probe hid its target or network error", message, h.ui.Texts())
+	h.saveOnly()
+	id := h.a.connections[0].ID
+	if h.a.selected != "" || h.fixture.Auths.Load() != 0 {
+		t.Fatal("saving activated a connection")
 	}
-	if h.a.page != 0 || h.a.form.Name != "Local connection" || h.a.form.Host != "127.0.0.1" || h.a.form.User != "fixture" || h.a.form.Password != "isolated draft credential" || h.a.port != strconv.Itoa(port) {
-		t.Fatal("network failure discarded the connection draft")
+	h.a.openShellForHostAfter(id, true, nil)
+	h.wait(func() bool { return len(h.a.sessions) > 0 && h.a.sessions[0].connectionState == "error" })
+	message := h.a.sessions[0].connectionError
+	if !strings.Contains(message, "服务器拒绝连接") {
+		t.Fatal("explicit connect hid network failure", message)
 	}
-	if h.a.connection.identity != nil || h.a.connection.review || len(h.server.Vault.Summaries()) != 0 || h.fixture.Auths.Load() != 0 {
-		t.Fatal("failed probe saved or authenticated a connection")
+	if len(h.server.Vault.Summaries()) != 1 || h.a.prompt.open || h.fixture.Auths.Load() != 0 {
+		t.Fatal("failed connect altered saved configuration or authenticated")
 	}
+
 }
 
 func TestConnectionProbeErrorTextIsBoundedAndEscaped(t *testing.T) {
@@ -59,7 +62,7 @@ func TestConnectionProbeErrorTextIsBoundedAndEscaped(t *testing.T) {
 		if !ok || bounds.H < 12 || bounds.H > 60 {
 			t.Fatal("network error display did not have a bounded readable height", width, bounds)
 		}
-		for _, label := range []string{"取消", "保存并连接"} {
+		for _, label := range []string{"取消", "保存连接"} {
 			bounds, ok := tt.Find(label)
 			if !ok || bounds.H < 30 || bounds.X < 0 || bounds.Y < 0 || bounds.X+bounds.W > float32(width+1) || bounds.Y+bounds.H > 901 {
 				t.Fatal("long network error pushed connection controls out of view", width, label, bounds)

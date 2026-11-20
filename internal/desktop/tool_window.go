@@ -137,7 +137,7 @@ func (a *app) detachTools() {
 				a.status = tr(nil, "无法打开工具窗口")
 			} else {
 				a.toolsWin = w
-				w.Show()
+				a.showPresenceWindow(w)
 			}
 			a.invalidateWindows()
 		}
@@ -149,7 +149,7 @@ func (a *app) detachTools() {
 			create() // Injected headless factory: no OS calls or event loop.
 		}
 	} else {
-		a.toolsWin.Show()
+		a.showPresenceWindow(a.toolsWin)
 	}
 	// Called only by an explicit user action, never during startup or polling.
 	a.contentFocus = false

@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin && !linux
 
 package fileattrs
 
@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func openAttributeHandle(name string) (*os.File, error) {
+func openAttributeHandle(name string) (localAttributeHandle, error) {
 	// Do not follow a link swapped in after Lstat, or block opening a FIFO.
 	fd, err := unix.Open(name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {

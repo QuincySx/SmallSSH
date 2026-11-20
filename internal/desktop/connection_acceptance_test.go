@@ -78,7 +78,7 @@ func newConnectionFlowHarness(t *testing.T) *connectionFlowHarness {
 }
 
 func (h *connectionFlowHarness) resetApp() {
-	h.a = &app{ctx: h.ctx, dir: h.dir, client: client.Client{Dir: h.dir, Owner: h.server.Vault}, online: true, server: h.server, dispatch: func(fn func()) { h.updates <- fn }, groups: map[string]*bool{}}
+	h.a = &app{ctx: h.ctx, dir: h.dir, client: client.Client{Dir: h.dir, Owner: h.server.Vault}, online: true, server: testDesktopSession(h.server), dispatch: func(fn func()) { h.updates <- fn }, groups: map[string]*bool{}}
 	h.ui = ui.NewTester(h.a.connectionView, 820, 1600)
 }
 
@@ -131,16 +131,25 @@ func (h *connectionFlowHarness) selectAuth(label string) {
 	h.click(label)
 }
 
-func (h *connectionFlowHarness) confirmIdentity() {
+func (h *connectionFlowHarness) saveOnly() {
 	h.t.Helper()
 	auths := h.fixture.Auths.Load()
-	h.click(h.a.connectionActionLabel(false))
-	h.idle()
-	if h.a.connection.identity == nil || h.a.connection.identity.Fingerprint != h.fixture.Profile().Fingerprint || h.fixture.Auths.Load() != auths {
-		h.t.Fatal("identity probe sent credentials or returned wrong identity", h.a.connection.errors)
+	h.click("保存连接")
+	h.wait(func() bool { return h.a.page == 1 || h.a.connection.phase == "" })
+	if h.a.page != 1 || h.a.prompt.open || h.fixture.Auths.Load() != auths || len(h.a.sessions) != 0 {
+		h.t.Fatal("saving did not remain local", h.a.connection.errors)
 	}
-	if !h.a.connection.review || !h.ui.HasText("确认服务器身份") || h.ui.HasText("服务器密码输入") || h.ui.HasText("保险库主密码输入") {
-		h.t.Fatal("identity confirmation is not a separate page", h.ui.Texts())
+}
+
+func (h *connectionFlowHarness) confirmIdentity() {
+	h.t.Helper()
+	h.saveOnly()
+	id := h.a.connections[len(h.a.connections)-1].ID
+	h.ui = ui.NewTester(h.a.view, 1100, 900)
+	h.a.openShellForHostAfter(id, true, nil)
+	h.wait(func() bool { return h.a.prompt.open })
+	if h.fixture.Auths.Load() != 0 || !h.ui.HasText(h.fixture.Profile().Fingerprint) {
+		h.t.Fatal("first-use probe authenticated or lost fingerprint")
 	}
 }
 
@@ -204,7 +213,7 @@ func generatedKeyFile(t *testing.T, f *testserver.Server, encrypted bool) (strin
 }
 
 func TestConnectionCredentialsSurviveBrokerRestartAndSourceKeyRemoval(t *testing.T) {
-	for _, kind := range []string{"password", "private-key", "encrypted-private-key"} {
+	for _, kind := range []string{"password", "private-key", "encrypted-private-key", "pasted-private-key", "pasted-encrypted-private-key"} {
 		t.Run(kind, func(t *testing.T) {
 			h := newConnectionFlowHarness(t)
 			h.fillTarget()
@@ -213,13 +222,29 @@ func TestConnectionCredentialsSurviveBrokerRestartAndSourceKeyRemoval(t *testing
 				h.input("服务器密码", h.fixture.Profile().Password)
 			} else {
 				h.selectAuth("已有私钥")
-				keyPath, keyRaw, phrase = generatedKeyFile(t, h.fixture, kind == "encrypted-private-key")
-				if phrase == "" {
+				keyPath, keyRaw, phrase = generatedKeyFile(t, h.fixture, strings.Contains(kind, "encrypted"))
+				pasted := strings.HasPrefix(kind, "pasted-")
+				switch {
+				case pasted:
+					if err := os.Remove(keyPath); err != nil {
+						t.Fatal(err)
+					}
+					keyPath = ""
+					h.ui.SetClipboard(keyRaw)
+					h.click("粘贴私钥")
+					h.idle()
+					if h.a.keyFile != "" || h.ui.HasText("BEGIN OPENSSH PRIVATE KEY") {
+						t.Fatal("pasted private key leaked into the UI or a file field")
+					}
+					h.ui.SetClipboard("")
+				case phrase == "":
 					h.input("私钥文件", keyPath)
 					h.click("检查私钥")
-				} else {
+				default:
 					h.a.keyPicker = func() ([]string, error) { return []string{keyPath}, nil }
 					h.click("选择私钥文件…")
+				}
+				if phrase != "" {
 					h.idle()
 					if !h.ui.HasText("已加密，请填写私钥口令") {
 						t.Fatal("encrypted import did not request passphrase")
@@ -238,10 +263,8 @@ func TestConnectionCredentialsSurviveBrokerRestartAndSourceKeyRemoval(t *testing
 					t.Fatal("import did not validate generated private key")
 				}
 			}
-			h.click("保存后连接")
-			h.confirmIdentity()
+			h.saveOnly()
 			id := h.a.form.ID
-			h.click("信任并保存")
 			h.wait(func() bool { return h.a.page == 1 || h.a.connection.phase == "" })
 			if h.a.page != 1 || h.a.form.Password != "" || h.a.keyFile != "" || h.a.form.KeyPassphrase != "" || h.a.form.PrivateKey != "" {
 				t.Fatal("save failed or retained input secrets", h.a.connection.errors)
@@ -286,6 +309,12 @@ func TestConnectionCredentialsSurviveBrokerRestartAndSourceKeyRemoval(t *testing
 			p := h.stored(id)
 			if p.Name != "重启后修改名称" || (kind == "password" && p.Password != h.fixture.Profile().Password) || (kind != "password" && (p.PrivateKey != keyRaw || p.KeyPassphrase != phrase)) {
 				t.Fatal("editing after reopen changed stored credentials")
+			}
+			if h.fixture.Auths.Load() != 0 {
+				t.Fatal("saving or editing performed SSH authentication")
+			}
+			if err := h.a.client.SaveHostTrust(h.ctx, vault.HostTrustChange{ID: id, Host: p.Host, Port: p.Port, Fingerprint: h.fixture.Profile().Fingerprint}, h.server.Vault); err != nil {
+				t.Fatal(err)
 			}
 			h.assertStoredLogin(id)
 			log, err := os.ReadFile(filepath.Join(h.dir, "audit.jsonl"))
@@ -334,7 +363,7 @@ func TestConnectionFormFooterFitsSmallWindowAndHostCanBeRechecked(t *testing.T) 
 	a := &app{ctx: ctx, online: true, groups: map[string]*bool{}, sidebarWidth: 190, toolsHidden: true}
 	a.newConnection()
 	tt := ui.NewTester(a.view, 1000, 760)
-	for _, label := range []string{"取消", "保存并连接"} {
+	for _, label := range []string{"取消", "保存连接"} {
 		r, ok := tt.Find(label)
 		if !ok || r.X < 0 || r.Y < 0 || r.X+r.W > 1000 || r.Y+r.H > 760 {
 			t.Fatal("form action is outside minimum window", label, r)
@@ -346,7 +375,7 @@ func TestConnectionFormFooterFitsSmallWindowAndHostCanBeRechecked(t *testing.T) 
 	if err := tt.Click("重新核对服务器身份"); err != nil {
 		t.Fatal(err)
 	}
-	if a.form.Fingerprint != "" || a.connection.trustedTarget != "" || !tt.HasText("保存并连接") {
+	if a.form.Fingerprint != "" || a.connection.trustedTarget != "" || !tt.HasText("保存连接") {
 		t.Fatal("recheck silently retained old trust")
 	}
 	if !strings.Contains(connectionError(context.DeadlineExceeded), "超时") {
@@ -373,19 +402,15 @@ func TestConnectionCancellationClosesStalledSSHAndDoesNotRestoreDraft(t *testing
 			h.fillTarget()
 			h.input("端口", port)
 			h.input("服务器密码", "synthetic cancelled input")
-			id := h.a.form.ID
 			if stage == "connect" {
-				// A previously confirmed identity whose SSH server has stopped
-				// responding: save completes, login waits for a banner.
 				h.a.form.Fingerprint = h.fixture.Profile().Fingerprint
 				n, _ := strconv.Atoi(port)
 				h.a.connection.trustedTarget = targetID("127.0.0.1", n)
-				h.ui.Frame()
-				h.click("保存并连接")
-				h.wait(func() bool { return h.a.connection.phase == "connect" })
-			} else {
-				h.click(h.a.connectionActionLabel(false))
 			}
+			h.saveOnly()
+			id := h.a.connections[0].ID
+			h.a.openShellForHostAfter(id, true, nil)
+
 			var c net.Conn
 			select {
 			case c = <-accepted:
@@ -393,14 +418,11 @@ func TestConnectionCancellationClosesStalledSSHAndDoesNotRestoreDraft(t *testing
 			case <-time.After(5 * time.Second):
 				t.Fatal("SSH did not reach stalled endpoint")
 			}
-			button := "取消"
-			if stage == "connect" {
-				button = "取消连接（配置已保存）"
-			}
-			h.click(button)
+			h.a.sessions[0].connectionCancel()
 			if h.a.page != 1 || h.a.form.Password != "" || h.a.ownerPass != "" {
-				t.Fatal("cancel did not return or clear input")
+				t.Fatal("cancel retained input")
 			}
+
 			// Read the harmless client identification banner, then require EOF.
 			c.SetReadDeadline(time.Now().Add(3 * time.Second))
 			if _, err = io.ReadAll(c); err != nil {
@@ -417,8 +439,8 @@ func TestConnectionCancellationClosesStalledSSHAndDoesNotRestoreDraft(t *testing
 			if h.a.page != 0 || h.a.form.ID == id || h.a.form.Password != "" || len(h.a.connection.errors) != 0 {
 				t.Fatal("late operation restored cancelled form")
 			}
-			if stage == "probe" && len(h.server.Vault.Summaries()) != 0 {
-				t.Fatal("cancelled probe saved a connection")
+			if len(h.server.Vault.Summaries()) != 1 {
+				t.Fatal("cancelled connection removed the saved profile")
 			}
 			if stage == "connect" && h.stored(id).ID != id {
 				t.Fatal("cancelling login removed already saved configuration")
@@ -438,9 +460,13 @@ func TestConnectionSidebarCannotNavigateDuringAtomicSave(t *testing.T) {
 	a.connection.phase = "save"
 	tt := ui.NewTester(a.view, 1000, 760)
 	for _, label := range []string{"另一台服务器", "新建连接", "取消"} {
-		if err := tt.Click(label); err != nil {
-			t.Fatal(err)
+		bounds, ok := tt.Find(label)
+		if !ok {
+			t.Fatal("save guard lost navigation target", label)
 		}
+		// A disabled/covered control is intentionally not an input target.
+		tt.Press(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
+		tt.Release(bounds.X+bounds.W/2, bounds.Y+bounds.H/2)
 		if a.page != 0 || a.selected != "" || a.form.Name != "正在保存的连接" || a.form.Password != "temporary secret" {
 			t.Fatal("save was interrupted by navigation", label)
 		}

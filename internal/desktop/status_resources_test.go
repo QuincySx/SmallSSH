@@ -233,6 +233,64 @@ func TestResourceCardsNeverOverlapAndMissingRatesAreUnknown(t *testing.T) {
 	}
 }
 
+func TestStatusRangeChangesThroughOverflowMenu(t *testing.T) {
+	for _, mode := range []string{"bottom", "right", "window"} {
+		t.Run(mode, func(t *testing.T) {
+			a := statusDemo()
+			a.statusRange = ""
+			a.toolsRight, a.terminalWidthShare = mode == "right", 62
+			view := a.view
+			width := 1000
+			if mode == "window" {
+				a.toolsDetached = true
+				view, width = a.detachedToolsView, 640
+			}
+			tt := ui.NewTester(view, width, 760)
+			if _, visible := tt.Find("趋势时间范围"); visible || tt.HasText("5 分钟") {
+				t.Fatal("low-frequency setting is still a persistent control")
+			}
+			if err := tt.Click("服务器状态设置"); err != nil {
+				t.Fatal(err)
+			}
+			for _, label := range []string{"1 分钟", "5 分钟", "15 分钟"} {
+				found := false
+				for _, item := range tt.Menu() {
+					found = found || item == label
+				}
+				if !found {
+					t.Fatal("range missing from overflow menu", label, tt.Menu())
+				}
+			}
+			tt.CloseMenu()
+			if a.statusRange != "" || a.statusWindow() != 5*time.Minute {
+				t.Fatal("opening or dismissing the menu changed the range")
+			}
+			for _, choice := range []struct {
+				label  string
+				window time.Duration
+			}{{"15 分钟", 15 * time.Minute}, {"1 分钟", time.Minute}} {
+				if err := tt.Click("服务器状态设置"); err != nil {
+					t.Fatal(err)
+				}
+				if err := tt.ChooseMenuItem(choice.label); err != nil {
+					t.Fatal(err)
+				}
+				if a.statusWindow() != choice.window {
+					t.Fatal("menu selection did not update the trend window", a.statusRange)
+				}
+			}
+			for _, tab := range []string{"进程", "概览"} {
+				if err := tt.Click(tab); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if a.statusRange != "1 分钟" {
+				t.Fatal("switching categories reset the selected range")
+			}
+		})
+	}
+}
+
 func BenchmarkServerStatusFrames(b *testing.B) {
 	for _, metric := range []string{"overview", "CPU", "网络"} {
 		b.Run(metric, func(b *testing.B) {

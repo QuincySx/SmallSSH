@@ -84,7 +84,7 @@ func TestSettingsCategoryPointerAndKeyboardClearMasterPassword(t *testing.T) {
 	}
 	tt.Key(0, ui.KeyDown)
 	tt.Key(0, ui.KeySpace)
-	if a.settingsSection != settingsSecurity || !tt.HasText("启用 Touch ID") {
+	if a.settingsSection != settingsSecurity || !tt.HasText("立即启用") {
 		t.Fatal("category keyboard navigation did not select security")
 	}
 	tt.Key(0, ui.KeyHome)
@@ -192,14 +192,14 @@ func TestSettingsControlsFitNarrowWindowAndContentScrolls(t *testing.T) {
 	tt.SetSize(1920, 760)
 	container, ok := tt.Find("设置内容容器")
 	viewport, _ = tt.Find("设置内容")
-	if !ok || container.W > 721 || container.W < 719 || math.Abs(float64(container.X+container.W/2-viewport.X-viewport.W/2)) > 1 {
-		t.Fatal("wide settings did not center a readable content column", container, viewport)
+	if !ok || container.W > 721 || container.W < 719 || math.Abs(float64(container.X-viewport.X)) > 1 {
+		t.Fatal("wide settings lost its readable left-aligned content column", container, viewport)
 	}
 	if err := tt.Click("设置分类：安全与解锁"); err != nil {
 		t.Fatal(err)
 	}
 	tt.SetSize(560, 760)
-	for _, label := range []string{"主密码确认设置", "重新检测", "启用 Touch ID"} {
+	for _, label := range []string{"主密码确认设置", "重新检测", "立即启用"} {
 		r, ok := tt.Find(label)
 		if !ok || r.X < 152 || r.X+r.W > 560 || r.H < 36 {
 			t.Fatal("security control clipped at the minimum width", label, r)
@@ -212,9 +212,9 @@ func TestSettingsSecurityRetainsAvailabilityCancellationAndFeedback(t *testing.T
 		available, enabled bool
 		expect             string
 	}{
-		{true, false, "启用 Touch ID"},
-		{true, true, "停用 Touch ID"},
-		{false, true, "停用 Touch ID"},
+		{true, false, "立即启用"},  // on by default, armed by the next password
+		{true, true, "关闭快速解锁"}, // armed: switching off needs no password
+		{false, true, "不可用"},
 		{false, false, "不可用"},
 	} {
 		t.Run(fmt.Sprint(state.available, state.enabled), func(t *testing.T) {
@@ -231,7 +231,7 @@ func TestSettingsSecurityRetainsAvailabilityCancellationAndFeedback(t *testing.T
 				}
 			}
 			_, hasPassword := tt.Find("主密码确认设置")
-			if hasPassword != (state.available || state.enabled) {
+			if hasPassword != (state.available && !state.enabled) {
 				t.Fatal("security settings changed the master-password requirement")
 			}
 			if !state.available && !tt.HasText(a.authStatus.Reason) {
@@ -350,7 +350,7 @@ func TestSettingsCollapsedControlsFitNarrowWindowAndScroll(t *testing.T) {
 		last     string
 	}{
 		{settingsWorkspace, []string{"工作区侧栏设置", "工作区工具设置", "工作区工具停靠位置", "恢复默认布局"}, "恢复默认布局"},
-		{settingsSecurity, []string{"主密码确认设置", "重新检测", "启用 Touch ID"}, "安全设置反馈"},
+		{settingsSecurity, []string{"主密码确认设置", "重新检测", "立即启用"}, "安全设置反馈"},
 	} {
 		t.Run(category.id, func(t *testing.T) {
 			a := &app{
@@ -415,7 +415,7 @@ func TestSettingsCollapsedCategoryPointerAndKeyboardClearPasswordAndCancelAuthen
 	}
 	tt.Key(0, ui.KeyDown)
 	tt.Key(0, ui.KeySpace)
-	if a.settingsSection != settingsSecurity || !tt.HasText("启用 Touch ID") {
+	if a.settingsSection != settingsSecurity || !tt.HasText("立即启用") {
 		t.Fatal("collapsed category lost keyboard access to security")
 	}
 	tt.Key(0, ui.KeyTab)

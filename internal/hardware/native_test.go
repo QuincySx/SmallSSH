@@ -30,6 +30,57 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(m.Run())
 }
+
+func TestMacSystemSmartCardProvider(t *testing.T) {
+	if runtime.GOOS != "darwin" || os.Getenv("SSH_CLIENT_SYSTEM_SMART_CARD_QA") != "1" {
+		t.Skip("opt-in macOS system smart card smoke test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	hash, keys, err := Inspect(ctx, connectcfg.Hardware{Module: connectcfg.MacSmartCard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != "" {
+		t.Fatal("system provider returned a third-party module digest")
+	}
+	w, err := start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	stop := context.AfterFunc(ctx, func() { w.Close() })
+	defer stop()
+	if r, err := w.call(request{Action: "sign"}); err == nil || len(r.Signature) != 0 {
+		t.Fatal("the Go worker accepted signing without a selected card")
+	}
+	t.Logf("system provider enumerated %d usable keys without a PIN", len(keys))
+}
+
+func TestMacSmartCardPublicKeyUsesSSHFingerprint(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := key.PublicKey.ECDH()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := normalizeMacSmartCardKeys([]Key{{Algorithm: "ec", Public: wire.Bytes()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := ssh.NewPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys[0].Algorithm != original.Type() || keys[0].Fingerprint != ssh.FingerprintSHA256(original) {
+		t.Fatal("system smart-card identity differs from the SSH public key")
+	}
+	if _, err := x509.ParsePKIXPublicKey(keys[0].Public); err != nil {
+		t.Fatal(err)
+	}
+}
 func moduleFixture(t *testing.T) connectcfg.Hardware {
 	t.Helper()
 	compiler, e := exec.LookPath("cc")

@@ -43,6 +43,7 @@ func TestLoadingAndDirectoryTransferSnapshotsWithoutWindows(t *testing.T) {
 					}
 				case "file-loading", "file-error":
 					a.installEditor("demo", "/srv/example/settings.conf", "", "")
+					view = a.editorWindowView
 					a.editorRead = &fileReadState{endpoint: "demo", name: a.editPath, loading: true, cancel: func() {}, editor: a.edit}
 					want = "正在读取文件…"
 					if variant == "file-error" {

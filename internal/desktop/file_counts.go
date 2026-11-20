@@ -2,10 +2,10 @@ package desktop
 
 import (
 	"fmt"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 )
 
-func filePaneCounts(files []sshconn.File, selected int) string {
+func filePaneCounts(files []sshdata.File, selected int) string {
 	count, dirs := 0, 0
 	for _, f := range files {
 		if f.Directory {

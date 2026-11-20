@@ -25,6 +25,7 @@ func (a *app) currentDialogHost() dialogHost {
 }
 
 func (a *app) promptForHost(c *ui.Context, host dialogHost) {
+	a.showNextUploadConflict()
 	owner := a.prompt.host
 	if owner == dialogHostMain && a.prompt.detached && a.toolsDetached && !a.toolsHidden {
 		owner = dialogHostTools

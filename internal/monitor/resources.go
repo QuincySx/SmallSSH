@@ -7,15 +7,18 @@ import (
 
 // Counter snapshots stay private; only the derived rates cross the broker wire.
 type CPUUsage struct {
-	Name   string  `json:"name"`
-	Used   float64 `json:"used"`
-	User   float64 `json:"user"`
-	System float64 `json:"system"`
-	Wait   float64 `json:"wait"`
-	Steal  float64 `json:"steal"`
-	Guest  float64 `json:"guest"`
-	Valid  bool    `json:"valid"`
-	ticks  [10]uint64
+	// BasicOnly means this source measures used/user/system but not Linux-only
+	// wait, guest, or steal counters. The zero value preserves older Linux data.
+	BasicOnly bool    `json:"basicOnly,omitempty"`
+	Name      string  `json:"name"`
+	Used      float64 `json:"used"`
+	User      float64 `json:"user"`
+	System    float64 `json:"system"`
+	Wait      float64 `json:"wait"`
+	Steal     float64 `json:"steal"`
+	Guest     float64 `json:"guest"`
+	Valid     bool    `json:"valid"`
+	ticks     [10]uint64
 }
 
 type Network struct {

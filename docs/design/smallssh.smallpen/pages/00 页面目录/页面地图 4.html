@@ -6,12 +6,12 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[1400px] h-[2390px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-full bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="授权中心子页" class="flex flex-col gap-[12px] w-full">
+    <div data-name="授权中心子页" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">授权中心子页</p>
-      <div data-name="approval-active" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="approval-active" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">活动授权</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：授权中心→活动</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：查看活动会话与授权，撤销</p>
@@ -20,88 +20,88 @@
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/approval_center.go; internal/desktop/approval.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 授权中心 · 活动</p>
       </div>
-      <div data-name="approval-history" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="approval-history" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">授权历史</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：授权中心→历史</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：筛选、分页、查看审计详情及拒绝原因</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：加载中、空、错误、分页结束</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：记录有界摘录，不记录密钥、ticket、输出</p>
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/approval_history.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 授权中心 · 历史</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：08 设置 / 授权中心 · 历史、08 设置 / 授权中心 · 历史详情</p>
       </div>
     </div>
-    <div data-name="工具面板/独立工具窗/文件大标签" class="flex flex-col gap-[12px] w-full">
+    <div data-name="工具面板/独立工具窗/文件大标签" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">工具面板/独立工具窗/文件大标签</p>
-      <div data-name="files" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="files" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">文件管理窗格</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：工具→文件；选服务器文件或切换来源</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：本机/已存服务器/跟随终端；路径、目录树、列表、搜索、排序、隐藏项；多窗及拆分</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：加载、空目录、无目标、错误重试、脱机/已断开</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：最多8窗；状态按来源隔离；不同服务器可浏览但不能直接互传</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_workspace.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件大标签、04 文件 / 本机与服务器</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：选择来源、路径与目录树；显示本机文件，一键并排，已有本机窗格则定位；拆分、排列与关闭</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：目标目录立即加载，读取中可「取消读取」或「上一级」，取消后进入同一重试视图；空目录、错误重试；文件名旁与底部显示打开进度、成功或失败；目录树展开/折叠与当前目录高亮；选中文件行高亮，右侧底部状态栏显示计数与已选中项</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：最多8窗；状态按来源隔离；不同服务器可浏览但不能直接互传；树行26、缩进14，树贯通到底；修改时间列（130宽）按列表实际宽度决定：≥380显示，更窄只显示名称/大小；首帧尚未测得宽度时沿用旧规则（放大、工作区文件或独立工具窗显示）；大小列72并右对齐；文件操作行高36，左右内边距8，操作按钮保持28、路径框30</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/filepanes.go; internal/desktop/file_toolbar.go; internal/desktop/file_layout.go; internal/desktop/filebrowser.go; internal/desktop/filetree.go; internal/desktop/components/tree.go; internal/desktop/components/file_item.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件大标签、04 文件 / 本机与服务器、04 文件 / 列表右键与打开反馈</p>
       </div>
     </div>
-    <div data-name="文件工具栏/树或列表右键菜单" class="flex flex-col gap-[12px] w-full">
+    <div data-name="文件工具栏/树或列表右键菜单" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">文件工具栏/树或列表右键菜单</p>
-      <div data-name="file-actions" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="file-actions" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">文件操作与更多菜单</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：文件窗格右上/文件或目录右键</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：上一级、刷新、新建文件/目录、上传、下载、重命名/移动、删除、属性/权限；拆分/关闭/恢复</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：多选、确认、目标冲突、部分失败、权限不足</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：右键切换目标、选中组内保持多选；菜单外点击直接生效；Esc、方向键、Tab/Enter；过期目标失效</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：目录上传与服务器间直接复制未实现；非空目录不能删除；不主动覆盖</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件大标签、04 文件 / 批量删除确认</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_toolbar.go; internal/desktop/file_mutations.go; internal/desktop/filepanes.go; internal/desktop/file_context_menu.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件大标签、04 文件 / 批量删除确认、04 文件 / 列表右键与打开反馈</p>
       </div>
     </div>
-    <div data-name="模态弹窗" class="flex flex-col gap-[12px] w-full">
+    <div data-name="模态弹窗" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">模态弹窗</p>
-      <div data-name="file-properties" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="file-properties" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">权限与属性</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：文件/目录→属性与权限</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：查看类型、所有者/组与rwx位；编辑并保存、读回</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：加载、只读、过期冲突、部分失败</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：符号链接/特殊文件只读；Windows本机不提供Unix UID/GID</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_properties.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_properties.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 文件属性与权限</p>
       </div>
-      <div data-name="command-edit" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="command-edit" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">保存常用命令</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：命令→新建/编辑</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：名称、分组、模板、系统变体、参数及历史/发送时询问选项</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：表单校验、未保存、保存失败</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：加密保存；完整变量作用域体系未实现</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/commands.go; internal/snippet</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/commands.go; internal/snippet; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：05 命令 / 编辑命令模板</p>
       </div>
-      <div data-name="command-run" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="command-run" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">命令运行参数与确认</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：命令→运行/双击</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：参数/系统、历史选择、完整命令预览；填入终端或发送并执行；本次询问设置</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：必填/类型错误、会话失效、确认、取消</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：选历史/输入Enter不执行；目标关闭不转发</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/commands_run.go; internal/desktop/commands_history.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/commands_run.go; internal/desktop/commands_history.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：05 命令 / 参数与发送确认</p>
       </div>
-      <div data-name="tunnels" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="tunnels" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">SSH隧道</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：服务器右键→SSH隧道</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：本地、远程、动态SOCKS5；监听/目标；启动和停止活动隧道</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：本地、远程、动态SOCKS5；监听/目标；启动和停止活动隧道；已停止或失败的隧道记录可移除，失败原因红色显示</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：输入无效、启动中、失败、运行/停止</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：仅回环TCP；无UDP/BIND；远端实际绑定受sshd配置约束</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/tunnels.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/tunnels.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：09 工具 / SSH 隧道</p>
       </div>
     </div>
-    <div data-name="文件/目录模态弹窗及系统选择器" class="flex flex-col gap-[12px] w-full">
+    <div data-name="文件/目录模态弹窗及系统选择器" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">文件/目录模态弹窗及系统选择器</p>
-      <div data-name="file-transfer-confirm" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="file-transfer-confirm" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">上传/下载与拖放确认</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：工具栏上传/下载、右键或跨窗拖放</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：核对来源、目标和文件；加入队列；选择本机位置</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：本机选择取消、目标冲突、扫描中、不可支持类型</p>
         <p data-name="边界" class="w-full text-muted type-detail">边界：支持普通文件上传、递归目录下载；不支持目录上传/远端互传/特殊文件</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_toolbar.go; internal/desktop/file_download.go; internal/desktop/filebrowser.go</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/file_toolbar.go; internal/desktop/file_download.go; internal/desktop/filebrowser.go; internal/desktop/components/dialog.go; internal/desktop/components/button.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：04 文件 / 传输目标确认</p>
       </div>
     </div>

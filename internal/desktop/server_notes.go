@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 	"strconv"
 	"strings"
 	"time"
@@ -75,13 +77,13 @@ func (a *app) openServerNotes(id string) {
 		a.status = tr(nil, "请先选择服务器")
 		return
 	}
-	ctx, cancel := context.WithCancel(a.operationContext())
+	ctx, cancel := context.WithCancel(client.WithRoute(a.operationContext(), target.ID, connectcfg.RouteSelection{}))
 	s := &serverNotesState{target: target, ctx: ctx, cancel: cancel, generation: a.generation, loading: true, detached: a.toolsWindowFocused()}
 	a.serverNotes = s
 	a.loadServerNotes(s, owner, target.ID)
 }
 
-func (a *app) loadServerNotes(s *serverNotesState, owner *vault.Session, targetID string) {
+func (a *app) loadServerNotes(s *serverNotesState, owner client.OwnerProof, targetID string) {
 	cli, windowCtx := a.client, s.ctx
 	s.loadSequence++
 	sequence := s.loadSequence

@@ -75,3 +75,70 @@ func TestDirectoryNavigationImmediatelyShowsLoadingAtDestination(t *testing.T) {
 	}
 	cancelPaneLoads(p)
 }
+
+func TestDirectoryLoadingKeepsTheListKeyboardFocus(t *testing.T) {
+	for _, moved := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		a := &app{ctx: ctx, dispatch: func(func()) {}, directorySlots: make(chan struct{}, 1)}
+		a.directorySlots <- struct{}{} // Hold the listing until the test delivers it.
+		a.ensureFileLayout()
+		p := a.localFilePane
+		b := p.browser()
+		a.applyDirectory(b, true, "/synthetic", []sshconn.File{{Name: "next", Directory: true}, {Name: "deeper", Directory: true}}, b.seq, true)
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Fill().Children(func() {
+				ui.Box(c).Size(80, 24).Shrink(0).Label("其他控件").Focusable()
+				a.fileList(c, p, b)
+			})
+		}, 640, 400)
+		if err := tt.Click("next"); err != nil {
+			t.Fatal(err)
+		}
+		tt.Key(0, ui.KeyEnter)
+		tt.Frame()
+		if b.dir != "/synthetic/next" || !tt.HasText("正在读取文件夹…") {
+			t.Fatal("Enter did not start loading the uncached folder", b.dir, tt.Texts())
+		}
+		if moved {
+			if err := tt.Click("其他控件"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cancelPaneLoads(p)
+		a.applyDirectory(b, true, b.dir, []sshconn.File{{Name: "inner.txt"}}, b.seq, true)
+		tt.Frame()
+		tt.Key(ui.Alt, ui.KeyUp)
+		tt.Frame()
+		if moved && b.dir != "/synthetic/next" {
+			t.Fatal("the loaded list took the focus back from another control", b.dir)
+		}
+		if !moved && b.dir != "/synthetic" {
+			t.Fatal("the list lost its keyboard focus while the folder loaded", b.dir)
+		}
+		cancelPaneLoads(p)
+		cancel()
+	}
+}
+
+func TestDirectoryLoadingPlaceholderKeepsTheParentKey(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a := &app{ctx: ctx, dispatch: func(func()) {}, directorySlots: make(chan struct{}, 1)}
+	a.directorySlots <- struct{}{}
+	a.ensureFileLayout()
+	p := a.localFilePane
+	b := p.browser()
+	a.applyDirectory(b, true, "/synthetic", []sshconn.File{{Name: "slow", Directory: true}}, b.seq, true)
+	tt := ui.NewTester(func(c *ui.Context) { a.fileList(c, p, b) }, 640, 400)
+	if err := tt.Click("slow"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	tt.Key(ui.Alt, ui.KeyUp)
+	tt.Frame()
+	if b.dir != "/synthetic" || !tt.HasText("slow") {
+		t.Fatal("Alt+Up did not leave a folder that is still loading", b.dir, tt.Texts())
+	}
+	cancelPaneLoads(p)
+}

@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
+	"sshclient/internal/localipc"
+	"sshclient/internal/protocol"
 )
 
 var ErrSessionNotExportable = errors.New("会话仅属于当前进程的活连接，不能保存或重新加载；请使用 session serve 重新申请授权")
@@ -23,6 +24,7 @@ var ErrSessionNotExportable = errors.New("会话仅属于当前进程的活连�
 type Delegation struct {
 	ReadRoot, WriteRoot, ParentID, Directory string
 	Ticket, Permission, Host, PublicKey      string
+	Endpoint, HostFingerprint                string
 	state                                    *delegationState
 }
 
@@ -62,7 +64,7 @@ func (c Client) RequestScopedSession(ctx context.Context, host, label, permissio
 	if h == nil {
 		return approval.Request{}, nil, approval.ErrDenied
 	}
-	d := &Delegation{ReadRoot: readRoot, WriteRoot: writeRoot, ParentID: r.ID, Directory: h.dir, Ticket: ticket, Permission: permission, Host: host, PublicKey: scope.PublicKey, state: &delegationState{key: key, control: h, pid: os.Getpid()}}
+	d := &Delegation{ReadRoot: readRoot, WriteRoot: writeRoot, ParentID: r.ID, Directory: h.dir, Ticket: ticket, Permission: permission, Host: host, PublicKey: scope.PublicKey, Endpoint: r.Operation.Endpoint, HostFingerprint: r.Operation.HostFingerprint, state: &delegationState{key: key, control: h, pid: os.Getpid()}}
 	context.AfterFunc(h.ctx, d.Close)
 	go d.monitor()
 	retained = true
@@ -78,7 +80,7 @@ func (d *Delegation) monitor() {
 		case <-control.ctx.Done():
 			return
 		case <-ticker.C:
-			r, err := control.call(control.ctx, broker.Message{Action: "sessionStatus", ID: d.ParentID, Ticket: d.Ticket})
+			r, err := control.call(control.ctx, protocol.Message{Action: "sessionStatus", ID: d.ParentID, Ticket: d.Ticket})
 			if err != nil || r.Request == nil || !(r.Request.Status == "pending" || r.Request.Status == "approved" || r.Request.Status == "expired") {
 				d.Close()
 				return
@@ -128,14 +130,14 @@ func (d *Delegation) sign(message []byte) ([]byte, error) {
 	return ed25519.Sign(state.key, message), nil
 }
 
-func (c Client) CallWithSession(ctx context.Context, q broker.Message, d *Delegation) (broker.Message, error) {
+func (c Client) CallWithSession(ctx context.Context, q protocol.Message, d *Delegation) (protocol.Message, error) {
 	if err := d.Validate(c.Dir); err != nil {
-		return broker.Message{}, err
+		return protocol.Message{}, err
 	}
 	switch q.Action {
 	case "status", "sessionStatus", "withdraw", "delegationChallenge", "delegate", "renewalChallenge", "renewSession":
 	default:
-		return broker.Message{}, approval.ErrDenied
+		return protocol.Message{}, approval.ErrDenied
 	}
 	r, err := d.state.control.call(ctx, q)
 	if q.Action == "withdraw" {
@@ -146,17 +148,23 @@ func (c Client) CallWithSession(ctx context.Context, q broker.Message, d *Delega
 
 func (c Client) RequestDelegated(ctx context.Context, op approval.Operation, ttl time.Duration, d *Delegation) (approval.Request, string, error) {
 	if err := d.Validate(c.Dir); err != nil {
+		if d != nil && d.state != nil && d.state.control != nil && d.state.control.ctx.Err() != nil {
+			err = c.notifyVaultLocked(ctx, err)
+		}
 		return approval.Request{}, "", err
 	}
 	var h *requestChannel
-	var r broker.Message
+	var r protocol.Message
 	var err error
 	for attempt := 0; attempt < 2; attempt++ {
 		h, err = c.openOperation(ctx, d)
 		if err != nil {
+			if errors.Is(err, localipc.ErrBrokerUnavailable) {
+				err = c.notifyVaultLocked(ctx, err)
+			}
 			return approval.Request{}, "", err
 		}
-		r, err = c.CallWithSession(ctx, broker.Message{Action: "delegationChallenge", ID: d.ParentID, Ticket: d.Ticket, Operation: op, TTL: int(min(ttl, 5*time.Minute) / time.Second), Channel: h.binding}, d)
+		r, err = c.CallWithSession(ctx, protocol.Message{Action: "delegationChallenge", ID: d.ParentID, Ticket: d.Ticket, Operation: op, TTL: int(min(ttl, 5*time.Minute) / time.Second), Channel: h.binding}, d)
 		if attempt == 0 && (errors.Is(err, approval.ErrSessionExpired) || errors.Is(err, approval.ErrSessionRenewing)) {
 			h.close()
 			if err = c.renewDelegation(ctx, d, op); err != nil {
@@ -194,7 +202,7 @@ func (c Client) RequestDelegated(ctx context.Context, op approval.Operation, ttl
 	if err != nil {
 		return approval.Request{}, "", err
 	}
-	r, err = c.CallWithSession(ctx, broker.Message{Action: "delegate", ID: challenge.ID, Proof: sig}, d)
+	r, err = c.CallWithSession(ctx, protocol.Message{Action: "delegate", ID: challenge.ID, Proof: sig}, d)
 	if err != nil {
 		return approval.Request{}, "", err
 	}

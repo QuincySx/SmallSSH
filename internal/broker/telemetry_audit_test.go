@@ -21,7 +21,7 @@ import (
 	"sshclient/internal/vault"
 )
 
-func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
+func TestAutomaticTelemetryRecordsActualExecutionsAndKeepsManualRequestsDistinct(t *testing.T) {
 	var counters, inventories, docker, unexpected atomic.Int32
 	fixture := testserver.NewWithExec(t, func(command string) (string, string, int) {
 		switch command {
@@ -33,7 +33,7 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 			return "@@OS\nTest Linux\n@@SERVICE_MANAGER\nsystemd\n@@DOCKER_STATUS\nmissing\n", "", 0
 		case monitor.DockerStatsCommand:
 			docker.Add(1)
-			// A failed background sub-probe must not create audit noise either.
+			// Failed built-in probes are also audit facts, with their exit result.
 			return "", "fixture Docker unavailable", 1
 		default:
 			unexpected.Add(1)
@@ -78,10 +78,6 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 	}
 	defer stream.Close()
 	auditPath := filepath.Join(dir, "audit.jsonl")
-	beforeSamples, err := os.ReadFile(auditPath)
-	if err != nil {
-		t.Fatal(err)
-	}
 	var inventorySeen, dockerFailureSeen bool
 	for samples := 0; samples < 3; {
 		message, err := stream.Receive()
@@ -105,8 +101,8 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(beforeSamples, afterSamples) {
-		t.Fatal("automatic samples or sub-probe failures grew the operation audit")
+	if !bytes.Contains(afterSamples, []byte(`"event":"system_ended"`)) {
+		t.Fatal("actual automatic executions were omitted from audit")
 	}
 	if fixture.Auths.Load() != 1 {
 		t.Fatal("telemetry opened separate SSH connections", fixture.Auths.Load())
@@ -154,6 +150,7 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 	}
 	counts := make(map[string]map[string]int)
 	totalEvents := 0
+	systemStarts, systemEnds, dockerFailures := 0, 0, 0
 	invalidOperationID := ""
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	for {
@@ -161,6 +158,9 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 			Event     string `json:"event"`
 			RequestID string `json:"requestId"`
 			Reason    string `json:"reason"`
+			Kind      string `json:"kind"`
+			Command   string `json:"command"`
+			Outcome   string `json:"outcome"`
 		}
 		if err := decoder.Decode(&event); err != nil {
 			if err == io.EOF {
@@ -169,6 +169,19 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 			t.Fatal("invalid audit event", err)
 		}
 		totalEvents++
+		if event.Event == "system_started" || event.Event == "system_ended" {
+			if event.Kind != "system-probe" || event.Command == "" {
+				t.Fatal("internal execution lost identity or command")
+			}
+			if event.Event == "system_started" {
+				systemStarts++
+			} else {
+				systemEnds++
+				if event.Command == monitor.DockerStatsCommand && event.Outcome == "failed" {
+					dockerFailures++
+				}
+			}
+		}
 		if counts[event.RequestID] == nil {
 			counts[event.RequestID] = make(map[string]int)
 		}
@@ -203,9 +216,9 @@ func TestAutomaticTelemetryDoesNotFloodAudit(t *testing.T) {
 	}
 	// Boundary events, three ordinary request events, their decisions/runs, and
 	// the rejected caller-supplied ServerStatus disguise are expected. This
-	// also catches first-round sub-probes that may finish before beforeSamples.
-	if totalEvents != 13 {
-		t.Error("unexpected per-probe or duplicate audit events", totalEvents)
+	// System execution pairs are counted separately from public authorization.
+	if totalEvents != 13+systemStarts+systemEnds || systemStarts != systemEnds || systemStarts < int(counters.Load()+inventories.Load()+docker.Load())-1 || dockerFailures == 0 {
+		t.Error("system audit lost actual executions, failures or completion", totalEvents, systemStarts, systemEnds, dockerFailures)
 	}
 	if unexpected.Load() != 0 {
 		t.Fatal("test reached a non-fixture command", unexpected.Load())

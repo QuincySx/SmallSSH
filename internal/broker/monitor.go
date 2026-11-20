@@ -10,7 +10,7 @@ import (
 	"sshclient/internal/sshconn"
 )
 
-var errMonitorUnsupported = errors.New("当前服务器未提供 Linux 状态接口，终端仍可正常使用")
+var errMonitorUnsupported = errors.New("当前服务器未提供 Linux 或 Windows 状态接口，终端仍可正常使用")
 var errMonitorRead = errors.New("服务器状态读取未成功")
 
 // Each caller provides its already-authorized SSH transport. A terminal session
@@ -26,14 +26,28 @@ func streamMonitor(parent context.Context, c *sshconn.Client, w *localipc.Wire) 
 func streamMonitorWithExecutor(parent context.Context, execute monitorExecutor, w *localipc.Wire) error {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+	platform := newMonitorPlatform()
 	var previous *monitor.Stats
 	var inventory *monitor.Inventory
-	inventoryResults := make(chan *monitor.Inventory, 1)
+	type inventoryResult struct {
+		info    *monitor.Inventory
+		windows bool
+	}
+	inventoryResults := make(chan inventoryResult, 1)
 	dockerResults := make(chan *monitor.DockerSnapshot, 1)
 	var docker *monitor.DockerSnapshot
 	go func() {
 		for ctx.Err() == nil {
+			if platform.windows.Load() {
+				return
+			}
 			result, err := execute(ctx, monitor.DockerStatsCommand, 4*time.Second)
+			if ctx.Err() != nil {
+				return
+			}
+			if platform.windows.Load() {
+				return
+			}
 			snap := monitor.ParseDockerSnapshot(result.Stdout)
 			if err != nil || result.ExitCode != 0 {
 				snap.Status = "unavailable"
@@ -49,18 +63,27 @@ func streamMonitorWithExecutor(parent context.Context, execute monitorExecutor, 
 			if snap.Status != "ready" {
 				delay = time.Minute
 			}
-			select {
-			case <-ctx.Done():
+			if !platform.delay(ctx, delay, false) {
 				return
-			case <-time.After(delay):
 			}
 		}
 	}()
 	go func() {
 		for ctx.Err() == nil {
+			windows := platform.windows.Load()
+			command, interval := monitor.InventoryCommand, monitorInventoryInterval
+			if windows {
+				command, interval = monitor.WindowsInventoryCommand, monitorWindowsInventoryInterval
+			}
 			started := time.Now().UTC()
-			result, err := execute(ctx, monitor.InventoryCommand, 6*time.Second)
+			result, err := execute(ctx, command, 6*time.Second)
+			if ctx.Err() != nil {
+				return
+			}
 			info := monitor.ParseInventory(result.Stdout)
+			if windows {
+				info = monitor.ParseWindowsInventory(result.Stdout, started)
+			}
 			info.Time = started
 			if err != nil || result.ExitCode != 0 {
 				info.ServiceNote = "系统资料读取不完整；实时资源更新继续"
@@ -70,34 +93,57 @@ func streamMonitorWithExecutor(parent context.Context, execute monitorExecutor, 
 				}
 			}
 			select {
-			case inventoryResults <- &info:
+			case inventoryResults <- inventoryResult{info: &info, windows: windows}:
 			case <-ctx.Done():
 				return
 			}
-			select {
-			case <-ctx.Done():
+			if !platform.delay(ctx, interval, windows) {
 				return
-			case <-time.After(monitorInventoryInterval):
 			}
 		}
 	}()
 	for ctx.Err() == nil {
-		result, err := execute(ctx, monitor.Command, 6*time.Second)
+		windows := platform.windows.Load()
+		command, interval := monitor.Command, monitorCounterInterval
+		if windows {
+			command, interval = monitor.WindowsStatsCommand, monitorWindowsCounterInterval
+		}
+		result, err := execute(ctx, command, 6*time.Second)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
-		if result.ExitCode == 69 {
-			return errMonitorUnsupported
-		}
+		var stats monitor.Stats
 		if result.ExitCode != 0 {
-			return errMonitorRead
+			err = errMonitorRead
+		} else if windows {
+			stats, err = monitor.ParseWindows(result.Stdout, previous)
+		} else {
+			stats, err = monitor.Parse(result.Stdout, previous)
 		}
-		stats, err := monitor.Parse(result.Stdout, previous)
 		if err != nil {
+			if !windows && platform.detectWindows(ctx, execute) {
+				previous, inventory, docker = nil, nil, nil
+				continue
+			}
+			if !windows && result.ExitCode == 69 && platform.knownPOSIX() {
+				return errMonitorUnsupported
+			}
+			if !windows && !platform.knownPOSIX() {
+				if !monitorDelay(ctx, 10*time.Second) {
+					return ctx.Err()
+				}
+				continue
+			}
 			return err
 		}
 		select {
-		case inventory = <-inventoryResults:
+		case update := <-inventoryResults:
+			if update.windows == windows {
+				inventory = update.info
+			}
 		default:
 		}
 		stats.Inventory = inventory
@@ -105,7 +151,9 @@ func streamMonitorWithExecutor(parent context.Context, execute monitorExecutor, 
 		case docker = <-dockerResults:
 		default:
 		}
-		stats.DockerStats = docker
+		if !windows {
+			stats.DockerStats = docker
+		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -113,10 +161,8 @@ func streamMonitorWithExecutor(parent context.Context, execute monitorExecutor, 
 			return err
 		}
 		previous = &stats
-		select {
-		case <-ctx.Done():
+		if !platform.delay(ctx, interval, windows) {
 			return ctx.Err()
-		case <-time.After(monitorCounterInterval):
 		}
 	}
 	return ctx.Err()

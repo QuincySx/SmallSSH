@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/localipc"
+	"sshclient/internal/protocol"
 )
 
 // This registry contains live connections, never credentials that another
@@ -82,15 +82,15 @@ func (h *requestChannel) close() {
 	}
 }
 
-func (h *requestChannel) call(ctx context.Context, q broker.Message) (broker.Message, error) {
+func (h *requestChannel) call(ctx context.Context, q protocol.Message) (protocol.Message, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.callLocked(ctx, q)
 }
 
-func (h *requestChannel) callLocked(ctx context.Context, q broker.Message) (broker.Message, error) {
+func (h *requestChannel) callLocked(ctx context.Context, q protocol.Message) (protocol.Message, error) {
 	if h.taken || h.ctx.Err() != nil {
-		return broker.Message{}, approval.ErrDenied
+		return protocol.Message{}, approval.ErrDenied
 	}
 	stop := context.AfterFunc(ctx, h.close)
 	defer stop()
@@ -102,9 +102,9 @@ func (h *requestChannel) callLocked(ctx context.Context, q broker.Message) (brok
 	defer h.wire.Conn.SetDeadline(time.Time{})
 	if err := h.wire.Send(q); err != nil {
 		h.close()
-		return broker.Message{}, err
+		return protocol.Message{}, err
 	}
-	var r broker.Message
+	var r protocol.Message
 	if err := h.wire.Receive(&r); err != nil {
 		h.close()
 		return r, err
@@ -127,7 +127,7 @@ func (c Client) channel(id, ticket string) *requestChannel {
 	return h
 }
 
-func (h *requestChannel) register(r broker.Message) error {
+func (h *requestChannel) register(r protocol.Message) error {
 	h.registration.Lock()
 	defer h.registration.Unlock()
 	if h.ctx.Err() != nil {
@@ -144,10 +144,13 @@ func (h *requestChannel) register(r broker.Message) error {
 	return nil
 }
 
-func (c Client) request(ctx context.Context, q broker.Message) (broker.Message, error) {
+func (c Client) request(ctx context.Context, q protocol.Message) (protocol.Message, error) {
 	h, err := c.newChannel(ctx)
 	if err != nil {
-		return broker.Message{}, err
+		if q.Action == "request" && errors.Is(err, localipc.ErrBrokerUnavailable) {
+			err = c.notifyVaultLocked(ctx, err)
+		}
+		return protocol.Message{}, err
 	}
 	r, err := h.call(ctx, q)
 	if err == nil {
@@ -166,7 +169,7 @@ func (c Client) openOperation(ctx context.Context, d *Delegation) (*requestChann
 	}
 	stop := context.AfterFunc(d.state.control.ctx, h.close)
 	context.AfterFunc(h.ctx, func() { stop() })
-	r, err := h.call(ctx, broker.Message{Action: "openOperation"})
+	r, err := h.call(ctx, protocol.Message{Action: "openOperation"})
 	if err == nil && (r.Action != "channel" || r.Channel != h.binding) {
 		err = errors.New("代理未确认当前操作连接")
 	}

@@ -35,7 +35,7 @@ func TestWindowChromeCompactKeyboardAndActions(t *testing.T) {
 	tt := ui.NewTester(a.workspaceHeader, 560, 70)
 	tt.SetTitleBar(ui.TitleBar{Height: 54, Left: 80, Right: 60})
 	tt.SetLocale("en")
-	for _, label := range []string{"Settings", "Transfer tasks", "Hide tool panel"} {
+	for _, label := range []string{"Settings", "Activity center", "Hide tool panel"} {
 		r, ok := tt.Find(label)
 		if !ok || r.X < 80 || r.X+r.W > 500 {
 			t.Fatalf("English compact control %s overlaps title bar: %v", label, r)
@@ -48,10 +48,10 @@ func TestWindowChromeCompactKeyboardAndActions(t *testing.T) {
 	if a.currentTerminal() != a.sessions[1] {
 		t.Fatal("keyboard did not select the next terminal")
 	}
-	if err := tt.Click("Transfer tasks"); err != nil || !a.transfersOpen {
+	if err := tt.Click("Activity center"); err != nil || !a.transfersOpen {
 		t.Fatalf("transfer click: %v open=%v", err, a.transfersOpen)
 	}
-	if err := tt.Click("Close Transfer tasks"); err != nil || a.transfersOpen {
+	if err := tt.Click("Close Activity center"); err != nil || a.transfersOpen {
 		t.Fatalf("transfer close: %v open=%v", err, a.transfersOpen)
 	}
 	if err := tt.Click("Hide tool panel"); err != nil || !a.toolsHidden || a.toolsRight {
@@ -70,7 +70,7 @@ func TestWindowChromeKeepsNavigationClear(t *testing.T) {
 			tt := ui.NewTester(a.view, width, 900)
 			bar := ui.TitleBar{Height: 40, Left: 80, Right: 60}
 			tt.SetTitleBar(bar)
-			for _, label := range []string{"收窄连接侧栏", "设置", "传输任务", "隐藏工具面板"} {
+			for _, label := range []string{"收窄连接侧栏", "设置", "任务中心", "隐藏工具面板"} {
 				r, ok := tt.Find(label)
 				if !ok || r.X < bar.Left || r.X+r.W > float32(width)-bar.Right {
 					t.Fatalf("width=%d zoom=%v %s overlaps controls: %v", width, zoom, label, r)

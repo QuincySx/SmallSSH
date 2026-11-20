@@ -85,7 +85,7 @@ func TestAuthenticationPasswordNativeAnchorKeepsButtonAndKeyboard(t *testing.T) 
 	clicks, submissions := 0, 0
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
-			input, action := AuthenticationPasswordWithAnchor(c, &password, "Password", "Touch ID", true, false, true)
+			input, action := AuthenticationPasswordWithAnchor(c, &password, "Password", SystemAuthenticationMethod{Label: "Touch ID"}, true, false, true)
 			bounds = action.Bounds()
 			if action.Clicked() {
 				clicks++
@@ -96,7 +96,7 @@ func TestAuthenticationPasswordNativeAnchorKeepsButtonAndKeyboard(t *testing.T) 
 		})
 	}, 240, 60)
 	tt.Frame()
-	if bounds.W != 42 || bounds.H != 40 || bounds.X < 0 || bounds.X+bounds.W > 240 {
+	if bounds.W != 40 || bounds.H != 40 || bounds.X < 0 || bounds.X+bounds.W > 240 {
 		t.Fatal("native authentication anchor moved outside its button", bounds)
 	}
 	if err := tt.Click("Touch ID"); err != nil {

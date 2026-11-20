@@ -6,29 +6,48 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[560px] h-[420px] bg-canvas">
-  <div data-name="菜单承载" class="flex flex-col items-center justify-center gap-[8px] w-full h-full">
-    <div data-name="布局菜单" class="flex flex-col gap-[8px] p-[12px] w-[300px] bg-surface rounded-panel">
-      <p data-name="标题" class="w-full text-text type-section">工具区布局</p>
-      <div data-name="停靠方向" class="flex flex-row items-center gap-[8px] w-full">
-        <sp-use component="按钮" props="样式: 普通" data-name="底部" data-click="02 工作台/工具停靠底部" class="h-[32px]">
-          <p data-name="文字">底部</p>
-        </sp-use>
-        <sp-use component="按钮" props="样式: 轻量" data-name="右侧" data-click="02 工作台/工具停靠右侧" class="h-[32px]">
-          <p data-name="文字">右侧</p>
-        </sp-use>
-        <sp-use component="按钮" props="样式: 轻量" data-name="系统窗口" class="h-[32px]">
-          <p data-name="文字">系统窗口</p>
-        </sp-use>
+  <div data-name="菜单承载" class="flex flex-col items-center justify-center gap-space-sm w-full h-full">
+    <div data-name="布局菜单" class="flex flex-col py-space-xs w-[256px] h-fit bg-surface rounded-control border border-border">
+      <div data-name="停靠方向" class="flex flex-row items-center gap-space-sm pt-space-xs pb-[6px] px-space-md w-full h-fit">
+        <p data-name="标题" class="w-full text-text type-menu">停靠侧</p>
+        <div data-name="停靠位置" class="flex flex-row items-center gap-space-xs w-fit h-control">
+          <div data-name="系统窗口" class="flex flex-row items-center justify-center w-control h-control rounded-dock-choice">
+            <svg data-name="图标" viewBox="0 0 16 16" class="w-menu-icon h-menu-icon border-[1.133333px] stroke-text">
+              <path d="M 4.666667 2.666667 H 2 v 11.333333 h 11.333333 v -2.666667 M 6 2 h 7.333333 a 0.666667 0.666667 0 0 1 0.666667 0.666667 v 7.333333 a 0.666667 0.666667 0 0 1 -0.666667 0.666667 H 6 a 0.666667 0.666667 0 0 1 -0.666667 -0.666667 V 2.666667 a 0.666667 0.666667 0 0 1 0.666667 -0.666667 Z" />
+            </svg>
+          </div>
+          <div data-name="底部" data-click="02 工作台/工具停靠底部" class="flex flex-row items-center justify-center w-control h-control rounded-dock-choice bg-accentsoft">
+            <svg data-name="图标" viewBox="0 0 16 16" class="w-menu-icon h-menu-icon border-menu-icon stroke-accent">
+              <path d="M 3.333333 2 h 9.333333 a 1.333333 1.333333 0 0 1 1.333333 1.333333 v 9.333333 a 1.333333 1.333333 0 0 1 -1.333333 1.333333 H 3.333333 a 1.333333 1.333333 0 0 1 -1.333333 -1.333333 V 3.333333 a 1.333333 1.333333 0 0 1 1.333333 -1.333333 Z M 2 10 h 12" />
+            </svg>
+          </div>
+          <div data-name="右侧" data-click="02 工作台/工具停靠右侧" class="flex flex-row items-center justify-center w-control h-control rounded-dock-choice">
+            <svg data-name="图标" viewBox="0 0 16 16" class="w-menu-icon h-menu-icon border-menu-icon stroke-text">
+              <path d="M 3.333333 2 h 9.333333 a 1.333333 1.333333 0 0 1 1.333333 1.333333 v 9.333333 a 1.333333 1.333333 0 0 1 -1.333333 1.333333 H 3.333333 a 1.333333 1.333333 0 0 1 -1.333333 -1.333333 V 3.333333 a 1.333333 1.333333 0 0 1 1.333333 -1.333333 Z M 10 2 v 12" />
+            </svg>
+          </div>
+        </div>
       </div>
-      <sp-use component="按钮" props="样式: 轻量" data-name="移到画布" data-click="02 工作台/画布与功能开关" class="h-[32px]">
-        <p data-name="文字">移到画布</p>
-      </sp-use>
-      <sp-use component="按钮" props="样式: 轻量" data-name="放大工具面板" class="h-[32px]">
-        <p data-name="文字">放大工具面板</p>
-      </sp-use>
-      <sp-use component="按钮" props="样式: 轻量" data-name="收起工具面板" class="h-[32px]">
-        <p data-name="文字">收起工具面板</p>
-      </sp-use>
+      <div data-name="分隔线" class="w-full h-[1px] mb-space-xs bg-border"></div>
+      <div data-name="放大工具面板" class="flex flex-row items-center gap-menu-action px-space-md w-full h-menu-item">
+        <svg data-name="图标" viewBox="0 0 16 16" class="w-menu-icon h-menu-icon border-menu-icon stroke-text">
+          <path d="M 10 2 h 4 v 4 m 0 -4 -4.666667 4.666667 M 2 14 l 4.666667 -4.666667 m -0.666667 4.666667 H 2 v -4" />
+        </svg>
+        <p data-name="文字" class="w-full text-text type-menu">放大工具面板</p>
+      </div>
+      <div data-name="移到画布" data-click="02 工作台/画布与功能开关" class="flex flex-row items-center gap-menu-action px-space-md w-full h-menu-item">
+        <svg data-name="图标" viewBox="0 0 16 16" class="w-menu-icon h-menu-icon border-menu-icon stroke-text">
+          <path d="M 10 2 h 4 v 4 m 0 -4 -4.666667 4.666667 M 2 14 l 4.666667 -4.666667 m -0.666667 4.666667 H 2 v -4" />
+        </svg>
+        <p data-name="文字" class="w-full text-text type-menu">移到画布</p>
+      </div>
+      <div data-name="收起工具面板" class="flex flex-row items-center gap-menu-action px-space-md w-full h-menu-item">
+        <svg data-name="图标" viewBox="0 0 16 16" class="w-menu-icon h-menu-icon border-menu-icon stroke-text">
+          <path d="m 12 4 -8 8 M 4 4 l 8 8" />
+        </svg>
+        <p data-name="文字" class="w-full text-text type-menu">收起面板</p>
+        <p data-name="快捷键" class="text-muted type-caption">⌘⇧J</p>
+      </div>
     </div>
   </div>
 </body>

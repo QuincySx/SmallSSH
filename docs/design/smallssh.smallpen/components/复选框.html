@@ -1,0 +1,14 @@
+<sp-component name="复选框" props="状态: 选中 | 未选; 可用: 启用 | 禁用">
+  <div class="flex flex-row items-center gap-space-sm w-[420px]">
+    <div data-name="勾选框" class="flex flex-row items-center justify-center w-checkbox h-checkbox bg-accent rounded-checkbox">
+      <p data-name="对勾" class="w-[14px] font-icons text-icon-compact leading-[1] text-onaccent text-center"></p>
+    </div>
+    <p data-name="标签" class="w-full text-text type-checkbox-label">允许 AI 访问此服务器</p>
+  </div>
+  <sp-variant when="状态: 未选">
+    <div data-name="勾选框" class="bg-canvas border border-checkbox-border">
+      <p data-name="对勾" class="hidden"></p>
+    </div>
+  </sp-variant>
+  <sp-variant when="可用: 禁用" class="opacity-disabled"></sp-variant>
+</sp-component>

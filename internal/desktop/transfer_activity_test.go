@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
@@ -20,10 +21,10 @@ func TestTransferActivityIsExplicitAndPreservesCurrentTool(t *testing.T) {
 	}
 	tt := ui.NewTester(a.view, 1280, 900)
 	term, _ := tt.Find("终端区域")
-	if tt.HasText("传输任务面板") || slices.Contains(tt.Texts(), "传输") || a.transfersOpen {
+	if tt.HasText("任务中心面板") || slices.Contains(tt.Texts(), "传输") || a.transfersOpen {
 		t.Fatal("queue opened itself or remained a tool tab", tt.Texts())
 	}
-	if err := tt.Click("传输任务"); err != nil {
+	if err := tt.Click("任务中心"); err != nil {
 		t.Fatal(err)
 	}
 	if !a.transfersOpen || !tt.HasText("index.html") || a.dock != toolDiagnostics {
@@ -47,14 +48,126 @@ func TestTransferActivityIsExplicitAndPreservesCurrentTool(t *testing.T) {
 	a.toolsHidden = true
 	a.showTool(toolTransfers)
 	tt.Frame()
-	if !a.transfersOpen || !a.toolsHidden || a.dock != toolDiagnostics || !tt.HasText("传输任务面板") {
+	if !a.transfersOpen || !a.toolsHidden || a.dock != toolDiagnostics || !tt.HasText("任务中心面板") {
 		t.Fatal("menu entry exposed or selected a tool panel")
 	}
 	a.sessions = nil // The offline status fixture has no native terminal to close.
 	a.lock()
 	tt.Frame()
-	if a.transfersOpen || tt.HasText("index.html") || tt.HasText("传输任务面板") {
+	if a.transfersOpen || tt.HasText("index.html") || tt.HasText("任务中心面板") {
 		t.Fatal("locked app retained the queue UI")
+	}
+}
+
+func TestCompletedTransferHistoryIsHiddenAndCanBeRemoved(t *testing.T) {
+	a := statusDemo()
+	a.dir = t.TempDir()
+	a.transfers = transfer.New(a.dir)
+	updates := make(chan func(), 8)
+	a.dispatch = func(fn func()) { updates <- fn }
+	for _, state := range []string{"done", "done", "paused", "error"} {
+		j, err := a.transfers.Add("fixture", "download", filepath.Join(t.TempDir(), state), "/srv/"+state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		j.State = state
+		b, _ := json.Marshal(j)
+		if err := os.WriteFile(filepath.Join(a.dir, "transfers", j.ID, "state.json"), b, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if state == "done" {
+			if err := os.WriteFile(j.Local, []byte("retained file"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	a.jobs = a.transfers.List()
+	all := slices.Clone(a.jobs)
+	tt := ui.NewTester(a.view, 1280, 900)
+	if err := tt.Click("任务中心"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.HasText("done") || !tt.HasText("paused") || !tt.HasText("error") {
+		t.Fatal("history is visible or resumable work hidden", tt.Texts())
+	}
+	if err := tt.Click("历史记录"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("done") || tt.HasText("paused") || tt.HasText("error") {
+		t.Fatal("history filter", tt.Texts())
+	}
+	id := a.visibleTransferJobs(true)[0].ID
+	if err := tt.Click("移除记录 " + id); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case update := <-updates:
+		update()
+	case <-time.After(3 * time.Second):
+		t.Fatal("remove stalled")
+	}
+	tt.Frame()
+	if len(a.visibleTransferJobs(true)) != 1 || len(a.jobs) != 3 {
+		t.Fatal("single remove", a.jobs)
+	}
+	if err := tt.Click("清空记录"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case update := <-updates:
+		update()
+	case <-time.After(3 * time.Second):
+		t.Fatal("clear stalled")
+	}
+	tt.Frame()
+	if !tt.HasText("暂无已完成记录") || len(a.jobs) != 2 || len(transfer.New(a.dir).List()) != 2 {
+		t.Fatal("clear did not persist", a.jobs)
+	}
+	for _, j := range all {
+		if j.State == "done" {
+			if b, err := os.ReadFile(j.Local); err != nil || string(b) != "retained file" {
+				t.Fatal("cleared a downloaded file", err)
+			}
+		}
+	}
+	tt.Key(0, ui.KeyEscape)
+	if err := tt.Click("任务中心"); err != nil {
+		t.Fatal(err)
+	}
+	if a.activityHistory[0] != 0 || !tt.HasText("paused") {
+		t.Fatal("reopen did not default to current work")
+	}
+}
+
+func TestServerTaskHistoryClearingKeepsCurrentOperations(t *testing.T) {
+	a := statusDemo()
+	a.dockerJobs = []*dockerJob{{title: "complete", status: "done"}, {title: "running", status: "running"}, {title: "failed", status: "error"}}
+	tt := ui.NewTester(a.view, 1280, 900)
+	if err := tt.Click("任务中心"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("服务器操作"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.HasText("complete") || !tt.HasText("running") || !tt.HasText("failed") {
+		t.Fatal(tt.Texts())
+	}
+	if err := tt.Click("历史记录"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("移除记录 complete"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.dockerJobs) != 2 || !tt.HasText("暂无已完成记录") {
+		t.Fatal("server history removal changed current operations")
+	}
+	a.dockerJobs = append(a.dockerJobs, &dockerJob{title: "another", status: "done"})
+	tt.Frame()
+	if err := tt.Click("清空记录"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.dockerJobs) != 2 {
+		t.Fatal("clear affected running or failed operation")
 	}
 }
 

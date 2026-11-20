@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/desktop/components"
 	"sshclient/internal/sshconn"
+	"sshclient/internal/transfer"
 )
 
 func TestFileInteractionSnapshotsWithoutWindows(t *testing.T) {
@@ -31,7 +32,7 @@ func TestFileInteractionSnapshotsWithoutWindows(t *testing.T) {
 	}
 	for _, dark := range []bool{false, true} {
 		for _, width := range []int{560, 1100} {
-			for _, state := range []string{"dual", "opening", "error", "context", "directory"} {
+			for _, state := range []string{"dual", "opening", "error", "context", "directory", "move", "sorted", "overwrite"} {
 				name := fmt.Sprintf("%s-%d-%t", state, width, dark)
 				t.Run(name, func(t *testing.T) {
 					a := &app{ctx: context.Background(), fileExpanded: true}
@@ -55,9 +56,19 @@ func TestFileInteractionSnapshotsWithoutWindows(t *testing.T) {
 						b.showDirectory(false, "/srv/site/assets")
 						b.loading = map[string]*directoryLoad{b.dir: {ctx: context.Background(), cancel: func() {}}}
 					}
+					if state == "move" {
+						a.online, p.treeHidden = true, true
+					}
+					if state == "overwrite" {
+						a.online = true
+						job := transfer.Job{Host: "web", Local: "/Users/demo/compose.yaml", Remote: "/srv/site/compose.yaml", State: "error"}
+						a.jobs = []transfer.Job{job}
+						a.uploadConflicts = []uploadConflict{{job: job, originalHash: "synthetic digest"}}
+					}
 					tt := ui.NewTester(func(c *ui.Context) {
 						components.ApplyTheme(c, false)
 						ui.Column(c).Fill().Background(c.Theme().Background).Children(func() { a.fileWindows(c, a.fileLayout) })
+						a.promptForHost(c, dialogHostMain)
 					}, width, 520)
 					tt.SetDark(dark)
 					if state == "context" {
@@ -67,6 +78,26 @@ func TestFileInteractionSnapshotsWithoutWindows(t *testing.T) {
 						if _, ok := tt.Find("文件操作菜单"); !ok {
 							t.Fatal("context menu was not visible")
 						}
+					}
+					if state == "move" {
+						source, sourceOK := tt.Find("compose.yaml")
+						target, targetOK := tt.Find("assets")
+						if !sourceOK || !targetOK {
+							t.Fatal("drag source or folder missing")
+						}
+						x, y := source.X+40, source.Y+source.H/2
+						tt.Press(x, y)
+						tt.Move(x+12, y)
+						tt.Move(target.X+140, target.Y+target.H/2)
+					}
+					if state == "sorted" {
+						if err := tt.Click("大小"); err != nil {
+							t.Fatal(err)
+						}
+						tt.Frame()
+					}
+					if state == "overwrite" && !tt.HasText("覆盖远程文件？") {
+						t.Fatal("upload conflict confirmation was not visible")
 					}
 					f, err := os.OpenFile(filepath.Join(dir, name+".png"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 					if err != nil {

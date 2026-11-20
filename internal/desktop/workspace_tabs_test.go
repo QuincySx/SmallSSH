@@ -192,7 +192,7 @@ func TestWorkspaceLayoutMenuMovesTheSelectedToolRatherThanItsSource(t *testing.T
 	a.openWorkspaceTool(toolCommands)
 	tool, source := a.workspaceTools[toolCommands], a.currentTerminal()
 	tt := ui.NewTester(a.view, 1280, 900)
-	if err := tt.Click("终端分栏"); err != nil {
+	if err := rightClickWorkspaceTab(tt, a, workspaceTab{tool: tool}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.ChooseMenuItem("移动当前标签到另一组"); err != nil {
@@ -201,4 +201,54 @@ func TestWorkspaceLayoutMenuMovesTheSelectedToolRatherThanItsSource(t *testing.T
 	if len(a.terminalGroups()) != 2 || tool.group == source.group || source.group.active != source || tool.source != source || len(a.sessions) != 1 {
 		t.Fatal("the layout menu moved the underlying SSH session instead of its peer tool")
 	}
+}
+
+func TestWorkspaceCardsHavePlainHeadersAndOnlyTopTabs(t *testing.T) {
+	for _, canvas := range []bool{false, true} {
+		t.Run(fmt.Sprintf("canvas=%t", canvas), func(t *testing.T) {
+			a := workspaceModelFixture(3)
+			a.toolsHidden, a.workspaceCanvas = true, canvas
+			a.splitExistingTerminal(a.sessions[2])
+			first, peer, other := a.sessions[0], a.sessions[1], a.sessions[2]
+			a.activateTerminal(first, false)
+			owner, layout := first.group, a.terminalLayout
+			tt := ui.NewTester(a.view, 1280, 900)
+			tt.SetTitleBar(ui.TitleBar{Height: 48, Left: 70})
+			for _, source := range []*session{peer, first} {
+				label := "顶部标签：" + source.name
+				if err := tt.Click(label); err != nil {
+					t.Fatal(err)
+				}
+				for _, group := range a.terminalGroups() {
+					if _, ok := tt.Find(fmt.Sprintf("终端栏标题%d", group.id)); ok {
+						t.Fatal("a pane rendered a nested tab strip", group.id)
+					}
+					selected := a.selectedWorkspaceTab(group)
+					if r, ok := tt.Find("画布面板：" + a.workspaceTabTitle(nil, selected)); !ok || r.Y < 48 {
+						t.Fatal("pane lost its plain current-view header", r)
+					}
+				}
+				if first.group != owner || peer.group != owner || owner.active != source || a.activeTerminalGroup != owner || a.terminalLayout != layout || len(a.workspaceTabs(owner)) != 2 {
+					t.Fatal("top navigation moved or lost a retained view")
+				}
+			}
+			if err := tt.Click("关闭标签：" + first.name); err != nil {
+				t.Fatal(err)
+			}
+			if len(a.sessions) != 2 || !slices.Contains(a.sessions, peer) || !slices.Contains(a.sessions, other) || owner.active != peer {
+				t.Fatal("plain-header close discarded a peer view or failed to reveal it")
+			}
+			if _, ok := tt.Find("画布面板：" + peer.name); !ok {
+				t.Fatal("plain header did not follow the remaining view")
+			}
+		})
+	}
+}
+
+func rightClickWorkspaceTab(tt *ui.Tester, a *app, tab workspaceTab) error {
+	label := a.workspaceTabTitle(nil, tab)
+	if _, ok := tt.Find("顶部标签：" + label); ok {
+		label = "顶部标签：" + label
+	}
+	return tt.RightClick(label)
 }

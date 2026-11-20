@@ -280,7 +280,7 @@ func (s *OwnerSession) readLoop(wire *localipc.Wire) {
 	for {
 		var message protocol.ServiceMessage
 		err := wire.Receive(&message)
-		hasSecrets := len(message.UnlockKey) != 0 || len(message.Proof) != 0
+		hasSecrets := len(message.UnlockKey) != 0 || len(message.Proof) != 0 || len(message.QuickUnlock) != 0
 		clearServiceMessageSecrets(&message)
 		if err != nil {
 			s.Close()

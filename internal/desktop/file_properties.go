@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"sshclient/internal/approval"
 	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/desktop/components"
 	"sshclient/internal/fileattrs"
 )
@@ -33,8 +34,8 @@ func (a *app) cancelFileProperties() {
 func (a *app) openFileProperties(p *filePane, name string) {
 	endpoint, b := p.endpoint, p.browser()
 	a.ask(tr(nil, "权限 / 属性"), a.endpointName(endpoint)+" · "+name, "", "", "", tr(nil, "保存"), nil)
-	s := &filePropertiesState{source: &filePane{endpoint: endpoint, states: map[string]*directoryBrowser{endpoint: b}}, path: name}
-	s.ctx, s.cancel = context.WithCancel(a.operationContext())
+	s := &filePropertiesState{source: p.snapshot(), path: name}
+	s.ctx, s.cancel = context.WithCancel(client.WithRoute(a.operationContext(), endpoint, b.route))
 	a.prompt.properties = s
 	a.readFileProperties(s)
 }
@@ -146,7 +147,7 @@ func (a *app) saveFileProperties(s *filePropertiesState) {
 			if !change.SetMode {
 				s.checks = components.PermissionChecks(info.Mode)
 			}
-			a.refreshFileMetadata(s.source.endpoint, s.path, info)
+			a.refreshFileMetadata(s.source.endpoint, s.path, info, s.source.route)
 		}
 		if err != nil {
 			s.error = err.Error()
@@ -186,48 +187,51 @@ func (a *app) filePropertiesView(c *ui.Context) {
 	}
 	readonly := parentDir(s.source.endpoint == localEndpoint, s.path) == s.path || s.info.Type != 0 && os.FileMode(s.info.Type) != os.ModeDir
 	disabled := s.loading || s.saving || !s.info.Valid || readonly
-	components.Dialog(c, &a.prompt.open, components.DialogOptions{Title: tr(c, "权限 / 属性"), Target: reviewText(a.prompt.target), Width: 540, Height: 480,
+	_, windowHeight := c.Size()
+	components.Dialog(c, &a.prompt.open, components.DialogOptions{Title: tr(c, "权限 / 属性"), Target: reviewText(a.prompt.target), Width: 540,
 		Close: func() { a.closeFileProperties(s) }, CloseDisabled: s.saving}, func() {
-		ui.Column(c).FillWidth().Gap(16).Children(func() {
-			if s.loading {
-				ui.Row(c).Gap(8).Children(func() { ui.Spinner(c).Size(14, 14); ui.Text(c, tr(c, "正在读取属性…")).FontSize(12) })
-				return
-			}
-			if s.info.Valid {
-				components.PermissionMatrix(c, &s.checks, disabled)
-				ui.Row(c).FillWidth().Gap(12).Children(func() {
-					for _, field := range []struct {
-						label    string
-						value    *string
-						accounts []fileattrs.Account
-					}{{tr(c, "所属用户"), &s.owner, s.info.Users}, {tr(c, "所属组"), &s.group, s.info.Groups}} {
-						ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
-							ui.Text(c, field.label).FontSize(12)
-							options := make([]string, 0, len(field.accounts))
-							for _, account := range field.accounts {
-								options = append(options, account.Name)
-							}
-							components.EditableChoice(c, field.value, options, field.label, disabled || !s.info.OwnershipKnown).
-								Tooltip(tr(c, "选择账户名称，或输入数字 UID/GID"))
-						})
+		ui.Scroll(c).FillWidth().MaxHeight(max(120, windowHeight-180)).Children(func() {
+			ui.Column(c).FillWidth().Gap(16).Children(func() {
+				if s.loading {
+					ui.Row(c).Gap(8).Children(func() { ui.Spinner(c).Size(14, 14); ui.Text(c, tr(c, "正在读取属性…")).FontSize(12) })
+					return
+				}
+				if s.info.Valid {
+					components.PermissionMatrix(c, &s.checks, disabled)
+					ui.Row(c).FillWidth().Gap(12).Children(func() {
+						for _, field := range []struct {
+							label    string
+							value    *string
+							accounts []fileattrs.Account
+						}{{tr(c, "所属用户"), &s.owner, s.info.Users}, {tr(c, "所属组"), &s.group, s.info.Groups}} {
+							ui.Column(c).Grow(1).MinWidth(0).Gap(6).Children(func() {
+								ui.Text(c, field.label).FontSize(12)
+								options := make([]string, 0, len(field.accounts))
+								for _, account := range field.accounts {
+									options = append(options, account.Name)
+								}
+								components.EditableChoice(c, field.value, options, field.label, disabled || !s.info.OwnershipKnown).
+									Tooltip(tr(c, "选择账户名称，或输入数字 UID/GID"))
+							})
+						}
+					})
+					if s.info.OwnershipKnown {
+						ui.Text(c, fmt.Sprintf("UID %d · GID %d", s.info.UID, s.info.GID)).FontSize(11).TextColor(c.Theme().TextMuted)
 					}
-				})
-				if s.info.OwnershipKnown {
-					ui.Text(c, fmt.Sprintf("UID %d · GID %d", s.info.UID, s.info.GID)).FontSize(11).TextColor(c.Theme().TextMuted)
+					if s.info.Mode&07000 != 0 {
+						ui.Text(c, fmt.Sprintf(tr(c, "特殊权限 %04o · 仅调整读、写、执行位"), s.info.Mode&07000)).FontSize(11).TextColor(c.Theme().TextMuted)
+					}
+					if readonly {
+						ui.Text(c, tr(c, "根目录、符号链接及特殊文件仅查看属性")).FontSize(12).TextColor(c.Theme().TextMuted)
+					}
+					if s.info.Note != "" {
+						ui.Text(c, s.info.Note).FontSize(11).TextColor(c.Theme().TextMuted)
+					}
 				}
-				if s.info.Mode&07000 != 0 {
-					ui.Text(c, fmt.Sprintf(tr(c, "特殊权限 %04o · 仅调整读、写、执行位"), s.info.Mode&07000)).FontSize(11).TextColor(c.Theme().TextMuted)
+				if s.error != "" {
+					ui.Text(c, reviewText(s.error)).FillWidth().FontSize(12).TextColor(c.Theme().Danger).Label(tr(c, "属性错误"))
 				}
-				if readonly {
-					ui.Text(c, tr(c, "根目录、符号链接及特殊文件仅查看属性")).FontSize(12).TextColor(c.Theme().TextMuted)
-				}
-				if s.info.Note != "" {
-					ui.Text(c, s.info.Note).FontSize(11).TextColor(c.Theme().TextMuted)
-				}
-			}
-			if s.error != "" {
-				ui.Text(c, reviewText(s.error)).FillWidth().FontSize(12).TextColor(c.Theme().Danger).Label(tr(c, "属性错误"))
-			}
+			})
 		})
 	}, func() {
 		if s.error != "" && !s.loading && components.Button(c, tr(c, "重新读取")).Disabled(s.saving).Clicked() {
@@ -251,10 +255,11 @@ func (a *app) filePropertiesView(c *ui.Context) {
 	}
 }
 
-func (a *app) refreshFileMetadata(endpoint, name string, info fileattrs.Info) {
+func (a *app) refreshFileMetadata(endpoint, name string, info fileattrs.Info, selectedRoute ...connectcfg.RouteSelection) {
 	local := endpoint == localEndpoint
+	route := a.fileRoute(endpoint, selectedRoute...)
 	for _, p := range a.allFilePanes() {
-		if b := p.states[endpoint]; b != nil {
+		if b := p.states[fileRouteKey(endpoint, route)]; b != nil {
 			dir, base := parentDir(local, name), baseName(local, name)
 			fs := b.cache[dir]
 			for i := range fs {

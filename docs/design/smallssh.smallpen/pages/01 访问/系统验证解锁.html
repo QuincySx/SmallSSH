@@ -9,17 +9,19 @@
   <div data-name="原生标题栏" class="flex flex-row w-full h-[48px] bg-canvas">
     <sp-use component="窗口控制" data-name="原生窗口按钮" class="h-[48px]"></sp-use>
   </div>
-  <div data-name="居中解锁区" class="flex flex-col items-center justify-center p-[28px] w-full h-full bg-vaultbackdrop">
-    <div data-name="保险库卡片" class="flex flex-col gap-[20px] p-[26px] w-[392px] bg-vaultsurface border border-border rounded-[16px]">
-      <div data-name="身份标题" class="flex flex-col items-center gap-[10px] w-full">
-        <div data-name="锁标志" class="flex flex-col items-center justify-center w-[40px] h-[40px] bg-accentsoft rounded-[12px]">
-          <p data-name="锁图标" class="text-accent font-[SmallSSH_Icons] text-[22px] leading-[1]"></p>
+  <div data-name="居中解锁区" class="flex flex-col items-center justify-center p-vault-screen w-full h-full bg-vaultbackdrop">
+    <div data-name="保险库卡片" class="flex flex-col gap-vault-section p-vault-card w-[392px] bg-vaultsurface border border-border rounded-panel">
+      <div data-name="身份标题" class="flex flex-col items-center gap-vault-heading w-full">
+        <div data-name="锁标志" class="flex flex-col items-center justify-center w-[40px] h-[40px] bg-accentsoft rounded-vault-icon">
+          <p data-name="锁图标" class="text-accent font-icons text-icon-security leading-[1]"></p>
         </div>
         <p data-name="标题" class="text-text type-vaulttitle">解锁保险库</p>
       </div>
-      <div data-name="触控 ID" data-click="01 访问/系统验证密码回退" class="flex flex-row items-center w-full h-[38px]">
-        <p data-name="验证方式" class="w-full text-text type-vaultmethod">触控 ID</p>
-        <p data-name="指纹图标" class="text-accent font-[SmallSSH_Icons] text-[22px] leading-[1]"></p>
+      <div data-name="验证方式" class="flex flex-row items-center justify-between w-full h-authentication-action">
+        <div data-name="使用主密码" data-click="01 访问/系统验证密码回退" class="flex flex-row items-center w-fit h-approval-decision px-space-xs">
+          <p data-name="文字" class="type-native-hint text-muted">使用主密码</p>
+        </div>
+        <sp-use data-name="Touch ID 验证" component="系统验证入口" props="样式: 确认" class="shrink-0" data-click="01 访问/系统验证进行中"></sp-use>
       </div>
     </div>
   </div>

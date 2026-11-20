@@ -9,6 +9,11 @@ import (
 	"strconv"
 )
 
+type localAttributeHandle interface {
+	Handle
+	Close() error
+}
+
 func LocalInfo(ctx context.Context, name string) (Info, error) {
 	if err := ctx.Err(); err != nil {
 		return Info{}, err
@@ -61,7 +66,7 @@ func appendAccount(accounts []Account, a Account) []Account {
 	return append(accounts, a)
 }
 
-func SetLocalAttributes(ctx context.Context, name string, change Change) (Info, error) {
+func SetLocalAttributes(ctx context.Context, name string, change Change) (result Info, resultErr error) {
 	if err := ctx.Err(); err != nil {
 		return Info{}, err
 	}
@@ -86,7 +91,7 @@ func SetLocalAttributes(ctx context.Context, name string, change Change) (Info, 
 	if err != nil {
 		return info, err
 	}
-	defer f.Close()
+	defer func() { resultErr = errors.Join(resultErr, f.Close()) }()
 	opened, err := f.Stat()
 	if err != nil {
 		return info, err

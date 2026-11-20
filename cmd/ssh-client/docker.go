@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/term"
 	"sshclient/internal/approval"
-	"sshclient/internal/broker"
 	"sshclient/internal/client"
+	"sshclient/internal/protocol"
 	"sshclient/internal/serverops"
 )
 
@@ -79,7 +79,7 @@ func dockerCommand(ctx context.Context, c client.Client, label string, args []st
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		c.Call(cleanup, broker.Message{Action: "withdraw", ID: r.ID, Ticket: ticket})
+		c.Call(cleanup, protocol.Message{Action: "withdraw", ID: r.ID, Ticket: ticket})
 	}()
 	writeApprovalNotice(os.Stderr, r)
 	if err = c.Wait(ctx, r.ID, ticket); err != nil {

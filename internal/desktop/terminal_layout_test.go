@@ -23,7 +23,7 @@ func terminalSplitFixture(t *testing.T, count int) (*app, []*terminalRecorder) {
 	var recorders []*terminalRecorder
 	for i := range count {
 		recorder := newTerminalRecorder()
-		term, err := terminal.New(terminal.Options{Conn: recorder, ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
+		term, err := terminal.New(terminal.Options{Conn: recorder, Padding: workspaceTerminalPadding(), ClipboardRead: terminal.ClipboardDeny, NoClipboardWrite: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,10 +82,10 @@ func TestTerminalGroupMergeRetainsTabsConnectionsAndSharedTools(t *testing.T) {
 	if len(a.terminalLayout.left.sessions) != 2 || len(a.terminalLayout.right.sessions) != 2 {
 		t.Fatal("editor-style groups did not own separate tab sets")
 	}
-	if err := tt.Click("终端分栏"); err != nil {
+	if err := rightClickWorkspaceTab(tt, a, workspaceTab{session: a.currentTerminal()}); err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"向下拆分", "上下排列", "网格排列"} {
+	for _, forbidden := range []string{"上下排列", "网格排列"} {
 		if slices.Contains(tt.Menu(), forbidden) {
 			t.Fatal("vertical/grid terminal action remains", tt.Menu())
 		}
@@ -139,7 +139,7 @@ func TestTerminalGroupsCloseOnlyChosenSessionAndCollapseEmptyGroup(t *testing.T)
 func TestFailedTerminalSplitLeavesExistingLayoutAndSessionIntact(t *testing.T) {
 	a, recorders := terminalSplitFixture(t, 1)
 	tt := ui.NewTester(a.view, 1000, 760)
-	if err := tt.Click("终端分栏"); err != nil {
+	if err := rightClickWorkspaceTab(tt, a, workspaceTab{session: a.currentTerminal()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tt.ChooseMenuItem("新建终端到另一组"); err != nil {
@@ -192,7 +192,7 @@ func TestNewTerminalSplitAuthenticatesThroughBrokerAndCreatesSeparatePTY(t *test
 	h.wait(func() bool { return readyTerminalCount(h.a) == 1 })
 	first := h.a.sessions[0]
 	h.a.selected = "unrelated-sidebar-server"
-	if err := h.ui.Click("终端分栏"); err != nil {
+	if err := rightClickWorkspaceTab(h.ui, h.a, workspaceTab{session: first}); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.ui.ChooseMenuItem("新建终端到另一组"); err != nil {

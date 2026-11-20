@@ -1,0 +1,8 @@
+<sp-component name="文件表头" props="列: 完整 | 紧凑">
+  <div class="flex flex-row items-center w-[640px] h-row bg-subtle">
+    <div data-name="文件名单元格" class="flex flex-row items-center px-space-sm w-full min-w-file-name-min h-row"><p data-name="名称" class="w-full text-muted type-table-heading">名称</p></div>
+    <div data-name="大小单元格" class="flex flex-row items-center px-space-sm w-file-size-column h-row"><p data-name="大小" class="w-full text-muted type-table-heading text-right">大小</p></div>
+    <div data-name="修改时间单元格" class="flex flex-row items-center px-space-sm w-file-modified-column h-row"><p data-name="修改时间" class="w-full text-muted type-table-heading">修改时间</p></div>
+  </div>
+  <sp-variant when="列: 紧凑"><div data-name="修改时间单元格" class="hidden"></div></sp-variant>
+</sp-component>

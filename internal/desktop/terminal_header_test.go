@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/desktop/components"
 )
 
 func terminalHeaderFixture(t *testing.T, count int) (*app, *ui.Tester) {
@@ -60,7 +61,7 @@ func TestOverflowTerminalTabRevealSettlesAndKeepsCloseVisible(t *testing.T) {
 			t.Fatal("missing selected title", index)
 		}
 		close, ok := tt.Find("关闭标签：" + s.name)
-		if !ok || title.X < 0 || close.X+close.W > 450-30 || close.W < 24 {
+		if !ok || title.X < 0 || close.X+close.W > 450-components.PanelInset || close.W < 24 {
 			t.Fatal("selected tab or close button stayed clipped", index, title, close)
 		}
 		for range 3 {

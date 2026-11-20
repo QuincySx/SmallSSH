@@ -14,59 +14,53 @@ func (a *app) snippetRunDialog(c *ui.Context) {
 	if state == nil {
 		return
 	}
-	height := float32(400)
-	for _, arg := range snippet.ArgsFor(state.command, state.system) {
-		if !arg.SkipPrompt {
-			height += 56
-		}
-	}
-	if len(state.command.Variants) > 0 {
-		height += 50
-	}
+	_, windowHeight := c.Size()
 	components.Dialog(c, &a.prompt.open, components.DialogOptions{
-		Title: tr(c, "发送常用命令"), Width: 680, Height: min(640, height),
+		Title: tr(c, "发送常用命令"), Width: 680,
 	}, func() {
-		ui.Column(c).FillWidth().Gap(14).Children(func() {
-			ui.Column(c).FillWidth().Padding(12).Gap(8).Radius(8).Background(c.Theme().Surface).Border(1, c.Theme().Border).Label(tr(c, "命令模板")).Children(func() {
-				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, reviewText(state.command.Name)).FontSize(15).Bold().Grow(1)
-					if components.Button(c, tr(c, "编辑命令"), components.ButtonOptions{Variant: components.Quiet}).Clicked() {
-						a.prompt = promptState{}
-						a.editSnippet(state.command)
-					}
-				})
-				ui.Text(c, reviewText(snippet.PromptBody(state.command, state.system))).Font("monospace").FontSize(13).FillWidth().Selectable()
-			})
-			if len(state.command.Variants) > 0 {
-				ui.Field(c, tr(c, "系统"), func() {
-					if snippetSystemSelect(c, &state.system, snippet.Options(state.command), tr(c, "执行系统")).FillWidth().Changed() {
-						state.values = nil
-						a.fillSnippetValues(state)
-						state.error = ""
-					}
-				})
-			}
-			for i, arg := range snippet.ArgsFor(state.command, state.system) {
-				if arg.SkipPrompt {
-					continue
-				}
-				if i >= len(state.values) {
-					state.values = append(state.values, arg.Preset)
-				}
-				label := fmt.Sprintf("$%d · %s", i+1, snippetTypeLabel(c, arg.Type))
-				if arg.Name != "" {
-					label = fmt.Sprintf("%s（$%d）", arg.Name, i+1)
-				}
-				ui.Field(c, label, func() {
+		ui.Scroll(c).FillWidth().MaxHeight(max(80, windowHeight-320)).Children(func() {
+			ui.Column(c).FillWidth().Gap(14).Children(func() {
+				ui.Column(c).FillWidth().Padding(12).Gap(8).Radius(8).Background(c.Theme().Surface).Border(1, c.Theme().Border).Label(tr(c, "命令模板")).Children(func() {
 					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-						if ui.TextInput(c, &state.values[i]).Grow(1).MinWidth(80).Height(components.FormHeight).
-							Label(fmt.Sprintf(tr(c, "参数 %d 输入"), i+1)).Changed() {
+						ui.Text(c, reviewText(state.command.Name)).FontSize(15).Bold().Grow(1)
+						if components.Button(c, tr(c, "编辑命令"), components.ButtonOptions{Variant: components.Quiet}).Clicked() {
+							a.prompt = promptState{}
+							a.editSnippet(state.command)
+						}
+					})
+					ui.Text(c, reviewText(snippet.PromptBody(state.command, state.system))).Font("monospace").FontSize(13).FillWidth().Selectable()
+				})
+				if len(state.command.Variants) > 0 {
+					ui.Field(c, tr(c, "系统"), func() {
+						if snippetSystemSelect(c, &state.system, snippet.Options(state.command), tr(c, "执行系统")).FillWidth().Changed() {
+							state.values = nil
+							a.fillSnippetValues(state)
 							state.error = ""
 						}
-						a.snippetHistorySelect(c, state, i, arg)
 					})
-				})
-			}
+				}
+				for i, arg := range snippet.ArgsFor(state.command, state.system) {
+					if arg.SkipPrompt {
+						continue
+					}
+					if i >= len(state.values) {
+						state.values = append(state.values, arg.Preset)
+					}
+					label := fmt.Sprintf("$%d · %s", i+1, snippetTypeLabel(c, arg.Type))
+					if arg.Name != "" {
+						label = fmt.Sprintf("%s（$%d）", arg.Name, i+1)
+					}
+					ui.Field(c, label, func() {
+						ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+							if ui.TextInput(c, &state.values[i]).Grow(1).MinWidth(80).Height(components.FormHeight).
+								Label(fmt.Sprintf(tr(c, "参数 %d 输入"), i+1)).Changed() {
+								state.error = ""
+							}
+							a.snippetHistorySelect(c, state, i, arg)
+						})
+					})
+				}
+			})
 		})
 	}, func() {
 		ui.Column(c).FillWidth().Gap(12).Children(func() {

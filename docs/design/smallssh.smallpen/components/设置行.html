@@ -1,6 +1,31 @@
-<sp-component name="设置行">
+<sp-component name="设置行" props="控件: 值 | 开关 | 选择 | 操作 | 分段; 状态: 开启 | 关闭; 选中: 前项 | 后项">
   <div class="flex flex-row items-center gap-space-md w-[640px] h-[54px]">
-    <p data-name="标签" class="w-full text-text type-body leading-[20]">设置项</p>
-    <p data-name="当前值" class="text-accent type-body leading-[20]">开启</p>
+    <p data-name="标签" class="w-full text-text type-control">设置项</p>
+    <div data-name="值控件" class="flex flex-row items-center w-fit h-control"><p data-name="当前值" class="text-accent type-control">开启</p></div>
+    <div data-name="开关" class="flex flex-row items-center justify-end p-switch-inset w-switch-track h-switch-height bg-accent rounded-switch hidden">
+      <div data-name="滑块" class="w-switch-knob h-switch-knob bg-switch-knob rounded-switch"></div>
+    </div>
+    <div data-name="分段" class="flex flex-row items-center gap-segment-inset p-segment-inset w-fit h-control bg-surface border border-border rounded-control hidden">
+      <div data-name="前项" class="flex flex-row items-center px-space-md w-fit h-full bg-accentsoft rounded-segment"><p data-name="前项文字" class="text-accent type-control">底部</p></div>
+      <div data-name="后项" class="flex flex-row items-center px-space-md w-fit h-full rounded-segment"><p data-name="后项文字" class="text-muted type-control">右侧</p></div>
+    </div>
   </div>
+  <sp-variant when="控件: 开关">
+    <div data-name="值控件" class="hidden"></div>
+    <div data-name="开关" class="shown"></div>
+  </sp-variant>
+  <sp-variant when="控件: 选择"><div data-name="值控件" class="flex flex-row px-space-sm bg-subtle rounded-control"><p data-name="当前值" class="text-text"></p></div></sp-variant>
+  <sp-variant when="控件: 操作"><div data-name="值控件" class="flex flex-row px-space-md bg-subtle rounded-control"><p data-name="当前值" class="text-text"></p></div></sp-variant>
+  <sp-variant when="状态: 关闭"><div data-name="开关" class="flex flex-row justify-start bg-switch-off"></div></sp-variant>
+  <sp-variant when="控件: 选择; 状态: 关闭"><div data-name="值控件" class="opacity-disabled"></div></sp-variant>
+  <sp-variant when="控件: 分段">
+    <div data-name="值控件" class="hidden"></div>
+    <div data-name="分段" class="shown"></div>
+  </sp-variant>
+  <sp-variant when="控件: 分段; 选中: 后项">
+    <div data-name="分段">
+      <div data-name="前项" class="bg-transparent"><p data-name="前项文字" class="text-muted"></p></div>
+      <div data-name="后项" class="bg-accentsoft"><p data-name="后项文字" class="text-accent"></p></div>
+    </div>
+  </sp-variant>
 </sp-component>

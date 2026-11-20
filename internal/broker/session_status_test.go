@@ -85,7 +85,7 @@ func TestTerminalStatusSharesGrantAndTransportAndStopsOnRevoke(t *testing.T) {
 	if runtime.GOOS == "linux" && state != "stats" {
 		t.Fatal("real Linux stats unavailable", state)
 	}
-	if runtime.GOOS != "linux" && !strings.Contains(state, "Linux 状态接口") {
+	if runtime.GOOS != "linux" && !strings.Contains(state, "Linux 或 Windows 状态接口") {
 		t.Fatal("unsupported system status not reported", state)
 	}
 	if fixture.Auths.Load() != 1 {

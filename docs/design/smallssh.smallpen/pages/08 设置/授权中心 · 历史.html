@@ -5,85 +5,129 @@
   <title>授权中心 · 历史</title>
   <link rel="stylesheet" href="../../tokens.css">
 </head>
-<body class="flex flex-col w-[1080px] h-[760px] bg-canvas">
-  <div data-name="设置窗口" class="w-[1080px] h-[760px] bg-canvas">
-    <div data-name="设置导航" class="flex flex-col gap-[4px] pr-[12px] pb-[12px] pl-[12px] left-[8px] top-[8px] w-[200px] h-[744px] bg-surface rounded-[12px]">
-      <div data-name="设置标题" class="flex flex-row items-center gap-[8px] pl-[58px] w-full h-[32px]">
-        <p data-name="标题" class="w-full text-text type-section">设置</p>
+<body class="flex flex-row p-space-sm gap-space-sm bg-canvas w-[1080px] h-[800px]">
+    <div data-name="设置导航" class="flex flex-col w-settings-nav shrink-0 h-full px-space-md pb-space-md bg-surface rounded-window-panel">
+      <div data-name="设置标题" class="flex flex-row items-center gap-space-sm w-full h-control">
+        <p data-name="标题" class="type-section text-text">设置</p>
       </div>
-      <sp-use component="导航项" data-name="工作区" class="w-full">
-        <p data-name="标签">工作区</p>
-        <div data-name="图标">
-          <p data-name="字标">工</p>
+      <div data-name="设置分类" class="flex flex-col w-full gap-0 pt-space-xs">
+        <div data-name="工作区" class="flex flex-row items-center gap-space-sm w-full h-control rounded-control px-native-button-inline" data-click="08 设置/工作区">
+          <p data-name="名称" class="type-native-copy text-text">工作区</p>
         </div>
-      </sp-use>
-      <sp-use component="导航项" data-name="安全与解锁" class="w-full">
-        <p data-name="标签">安全与解锁</p>
-        <div data-name="图标">
-          <p data-name="字标">安</p>
+        <div data-name="安全与解锁" class="flex flex-row items-center gap-space-sm w-full h-control rounded-control px-native-button-inline" data-click="08 设置/安全与解锁">
+          <p data-name="名称" class="type-native-copy text-text">安全与解锁</p>
         </div>
-      </sp-use>
-      <sp-use component="导航项" data-name="运行与后台" class="w-full">
-        <p data-name="标签">运行与后台</p>
-        <div data-name="图标">
-          <p data-name="字标">运</p>
+        <div data-name="SSH 密钥" class="flex flex-row items-center gap-space-sm w-full h-control rounded-control px-native-button-inline" data-click="08 设置/SSH 密钥">
+          <p data-name="名称" class="type-native-copy text-text">SSH 密钥</p>
         </div>
-      </sp-use>
-      <sp-use component="导航项" props="状态: 选中" data-name="授权中心" class="w-full">
-        <p data-name="标签">授权中心</p>
-        <div data-name="图标">
-          <p data-name="字标">授</p>
+        <div data-name="加速与代理" class="flex flex-row items-center gap-space-sm w-full h-control rounded-control px-native-button-inline" data-click="08 设置/加速与代理">
+          <p data-name="名称" class="type-native-copy text-text">加速与代理</p>
         </div>
-      </sp-use>
-    </div>
-    <div data-name="设置内容" class="flex flex-col gap-[8px] pr-[12px] pb-[12px] pl-[12px] left-[216px] top-[8px] w-[856px] h-[744px] bg-surface rounded-[12px]">
-      <div data-name="分类标题" class="flex flex-row items-center gap-[8px] w-full h-[32px]">
-        <p data-name="标题" class="w-full text-text type-section">授权中心</p>
-        <sp-use component="图标按钮" data-name="关闭设置">
-          <p data-name="图标"></p>
-        </sp-use>
-      </div>
-      <div data-name="授权内容" class="flex flex-col gap-[12px] w-full">
-        <div data-name="分类标签" class="flex flex-row items-center gap-[4px] w-full">
-          <sp-use component="按钮" props="样式: 轻量" data-name="待处理">
-            <p data-name="文字">待处理</p>
-          </sp-use>
-          <sp-use component="按钮" props="样式: 轻量" data-name="活动">
-            <p data-name="文字">活动</p>
-          </sp-use>
-          <sp-use component="按钮" props="样式: 普通" data-name="历史">
-            <p data-name="文字">历史</p>
-          </sp-use>
+        <div data-name="运行与后台" class="flex flex-row items-center gap-space-sm w-full h-control rounded-control px-native-button-inline" data-click="08 设置/运行与后台">
+          <p data-name="名称" class="type-native-copy text-text">运行与后台</p>
         </div>
-        <sp-use component="输入框" data-name="输入" class="w-full">
-          <p data-name="值">搜索申请方、服务器或操作</p>
-        </sp-use>
-        <div data-name="数据表" class="flex flex-col gap-[2px] w-full">
-          <div data-name="表头" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
-            <p data-name="列0" class="w-full text-muted type-detail">时间</p>
-            <p data-name="列1" class="w-[110px] text-muted type-detail">操作</p>
-            <p data-name="列2" class="w-[110px] text-muted type-detail">结果</p>
-            <p data-name="列3" class="w-[110px] text-muted type-detail">服务器</p>
-          </div>
-          <div data-name="行0" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
-            <p data-name="列0" class="w-full text-text type-body">09:30</p>
-            <p data-name="列1" class="w-[110px] text-text type-body">exec uname -a</p>
-            <p data-name="列2" class="w-[110px] text-text type-body">完成</p>
-            <p data-name="列3" class="w-[110px] text-text type-body">Web 生产环境</p>
-          </div>
-          <div data-name="行1" class="flex flex-row items-center gap-[8px] px-[8px] w-full h-[32px]">
-            <p data-name="列0" class="w-full text-text type-body">09:28</p>
-            <p data-name="列1" class="w-[110px] text-text type-body">会话批准</p>
-            <p data-name="列2" class="w-[110px] text-text type-body">允许</p>
-            <p data-name="列3" class="w-[110px] text-text type-body">Web 生产环境</p>
-          </div>
+        <div data-name="授权中心" class="flex flex-row items-center gap-space-sm w-full h-control rounded-control px-native-button-inline bg-native-settings-selected" data-click="08 设置/授权中心 · 待处理">
+          <p data-name="名称" class="type-native-copy text-accent">授权中心</p>
         </div>
-        <sp-use component="按钮" props="样式: 普通" data-name="加载更多">
-          <p data-name="文字">加载更多</p>
-        </sp-use>
       </div>
     </div>
-    <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
-  </div>
+    <div data-name="设置内容" class="flex flex-col flex-1 min-w-0 h-full px-space-md pb-space-md gap-space-sm bg-surface rounded-window-panel">
+      <div data-name="设置栏目" class="flex flex-row items-center gap-space-sm w-full h-control">
+        <p data-name="标题" class="flex-1 type-section text-text">授权中心</p>
+        <div data-name="关闭窗口" class="flex flex-row items-center gap-space-sm w-control h-control shrink-0 justify-center">
+          <p data-name="图标" class="w-menu-icon shrink-0 text-center type-native-action-icon text-text"></p>
+        </div>
+      </div>
+      <div data-name="栏目内容" class="flex flex-col flex-1 min-h-0 gap-space-md">
+        <div data-name="授权分类" class="flex flex-row items-center gap-toolbar w-full">
+          <div data-name="待确认" class="flex flex-row items-center gap-space-sm w-fit h-task-tab px-field-inline rounded-control" data-click="08 设置/授权中心 · 待处理">
+            <p data-name="名称" class="type-native-small text-muted">待确认</p>
+          </div>
+          <div data-name="当前授权" class="flex flex-row items-center gap-space-sm w-fit h-task-tab px-field-inline rounded-control" data-click="08 设置/授权中心 · 活动">
+            <p data-name="名称" class="type-native-small text-muted">当前授权</p>
+          </div>
+          <div data-name="审计记录" class="flex flex-row items-center gap-space-sm w-fit h-task-tab px-field-inline rounded-control bg-native-tab-selected" data-click="08 设置/授权中心 · 历史">
+            <p data-name="名称" class="type-native-small text-accent">审计记录</p>
+          </div>
+        </div>
+        <div data-name="审计记录区" class="flex flex-col flex-1 min-h-0 w-full gap-space-md">
+          <div data-name="页面标题" class="flex flex-row items-center gap-space-sm w-full h-control">
+            <p data-name="标题" class="flex-1 type-native-dialog text-text">审计记录</p>
+            <div data-name="记录操作" class="flex flex-row items-center gap-space-sm">
+              <div data-name="导出" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-native-button-inline rounded-control bg-native-quiet" data-click="overlay:08 设置/审计导出菜单; position: bottom-right; relative-to: self; close-outside">
+                <p data-name="文字" class="type-native-copy text-text">导出</p>
+              </div>
+              <div data-name="刷新历史" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-native-button-inline rounded-control bg-native-quiet">
+                <p data-name="文字" class="type-native-copy text-text">刷新历史</p>
+              </div>
+            </div>
+          </div>
+          <div data-name="筛选" class="flex flex-row items-center gap-connection-nav-gap w-full">
+            <div data-name="输入" class="flex flex-row items-center gap-space-sm flex-1 h-control px-field-inline bg-surface border border-border rounded-control">
+              <p data-name="值" class="type-native-copy text-muted flex-1 min-w-0">应用、服务器、命令、指纹</p>
+            </div>
+            <div data-name="全部类型" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-space-sm rounded-control bg-native-quiet">
+              <p data-name="文字" class="type-native-copy text-text">全部类型</p>
+            </div>
+            <div data-name="全部应用" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-space-sm rounded-control bg-native-quiet">
+              <p data-name="文字" class="type-native-copy text-text">全部应用</p>
+            </div>
+            <div data-name="全部结果" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-space-sm rounded-control bg-native-quiet">
+              <p data-name="文字" class="type-native-copy text-text">全部结果</p>
+            </div>
+            <div data-name="全部时间" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-space-sm rounded-control bg-native-quiet">
+              <p data-name="文字" class="type-native-copy text-text">全部时间</p>
+            </div>
+            <div data-name="筛选" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-space-sm rounded-control bg-native-quiet">
+              <p data-name="文字" class="type-native-copy text-text">筛选</p>
+            </div>
+          </div>
+          <p data-name="记录汇总" class="type-native-small text-muted">批准 1 次 · 完成操作 1 次 · SSH 签名 1 次 · 共 3 条记录</p>
+          <div data-name="审计表格" class="flex flex-col w-full gap-0">
+            <div data-name="表头" class="flex flex-row items-center gap-0 h-control w-full pl-field-inline">
+              <p data-name="时间" class="type-native-caption-emphasis text-muted w-[108px]">时间</p>
+              <p data-name="服务器" class="type-native-caption-emphasis text-muted w-[151px]">服务器</p>
+              <p data-name="申请方" class="type-native-caption-emphasis text-muted w-[151px]">申请方</p>
+              <p data-name="操作" class="type-native-caption-emphasis text-muted w-[110px]">操作</p>
+              <p data-name="操作内容" class="type-native-caption-emphasis text-muted w-[160px]">操作内容</p>
+              <p data-name="结果" class="type-native-caption-emphasis text-muted flex-1">结果</p>
+            </div>
+            <div data-name="11-19 13:37:58" class="flex flex-row items-center gap-0 h-control w-full pl-field-inline" data-click="08 设置/授权中心 · 历史详情">
+              <p data-name="时间" class="type-native-hint text-text w-[108px]">11-19 13:37:58</p>
+              <p data-name="服务器" class="type-native-hint text-text w-[151px]">Web 生产环境</p>
+              <p data-name="申请方" class="type-native-hint text-text w-[151px]">Offline QA</p>
+              <p data-name="操作" class="type-native-hint text-text w-[110px]">执行命令</p>
+              <p data-name="操作内容" class="type-native-hint text-text w-[160px]">uname -a</p>
+              <p data-name="结果" class="type-native-hint text-text flex-1">执行成功</p>
+            </div>
+            <div data-name="11-19 13:36:58" class="flex flex-row items-center gap-0 h-control w-full pl-field-inline">
+              <p data-name="时间" class="type-native-hint text-text w-[108px]">11-19 13:36:58</p>
+              <p data-name="服务器" class="type-native-hint text-text w-[151px]">SHA256:abcdefghijklm…</p>
+              <p data-name="申请方" class="type-native-hint text-text w-[151px]">ssh</p>
+              <p data-name="操作" class="type-native-hint text-text w-[110px]">SSH 签名</p>
+              <p data-name="操作内容" class="type-native-hint text-text w-[160px]">SSH 登录签名</p>
+              <p data-name="结果" class="type-native-hint text-text flex-1">签名成功</p>
+            </div>
+            <div data-name="11-19 12:37:58" class="flex flex-row items-center gap-0 h-control w-full pl-field-inline">
+              <p data-name="时间" class="type-native-hint text-text w-[108px]">11-19 12:37:58</p>
+              <p data-name="服务器" class="type-native-hint text-text w-[151px]">Web 生产环境</p>
+              <p data-name="申请方" class="type-native-hint text-text w-[151px]">Offline QA</p>
+              <p data-name="操作" class="type-native-hint text-text w-[110px]">服务器操作会话…</p>
+              <div data-name="操作内容" class="w-[160px] h-control">
+              </div>
+              <p data-name="结果" class="type-native-hint text-text flex-1">已批准</p>
+            </div>
+          </div>
+          <div data-name="记录留白" class="flex-1 w-full">
+          </div>
+          <div data-name="分页" class="flex flex-row items-center gap-space-sm w-full">
+            <p data-name="本页数量" class="flex-1 type-native-hint text-muted">本页 3 条</p>
+            <div data-name="更早记录" class="flex flex-row items-center gap-space-sm w-fit h-control justify-center px-native-button-inline rounded-control bg-native-quiet">
+              <p data-name="文字" class="type-native-copy text-text">更早记录</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 </body>
 </html>

@@ -18,7 +18,13 @@ var transferIdentifier = regexp.MustCompile(`^[A-Za-z0-9_-]{24}$`)
 // Reject irrelevant fields rather than storing attacker-controlled payloads in
 // the queue. The encoded limit also bounds escaping and paginated responses.
 func validateFields(op Operation) error {
+	if err := op.Route.Validate(); err != nil {
+		return err
+	}
 	remaining := op
+	if op.Kind != "grant" {
+		remaining.Route = connectcfg.RouteSelection{}
+	}
 	remaining.Host, remaining.Kind, remaining.Client, remaining.Endpoint, remaining.HostFingerprint = "", "", "", "", ""
 	switch op.Kind {
 	case "tunnel":

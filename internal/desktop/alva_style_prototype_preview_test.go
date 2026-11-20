@@ -5,7 +5,6 @@ package desktop
 // Throwaway visual study: three workbench layouts and four companion screens.
 import (
 	"context"
-	"embed"
 	"fmt"
 	"image/png"
 	"os"
@@ -14,12 +13,10 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/desktop/components"
 	"sshclient/internal/monitor"
 	"sshclient/internal/snippet"
 )
-
-//go:embed testdata/alva-prototype/lucide/*.svg
-var alvaProtoSVGFiles embed.FS
 
 var alvaProtoSVGCache = map[string]*ui.SVG{}
 
@@ -27,11 +24,7 @@ func alvaProtoSVG(name string) *ui.SVG {
 	if icon := alvaProtoSVGCache[name]; icon != nil {
 		return icon
 	}
-	data, err := alvaProtoSVGFiles.ReadFile("testdata/alva-prototype/lucide/" + name + ".svg")
-	if err != nil {
-		panic(err)
-	}
-	icon := ui.MustParseSVG(data)
+	icon := components.LucideIcon(name)
 	alvaProtoSVGCache[name] = icon
 	return icon
 }

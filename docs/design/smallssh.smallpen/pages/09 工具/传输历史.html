@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>传输历史</title>
+<link rel="stylesheet" href="../../tokens.css">
+</head>
+<body class="flex flex-col w-[504px] h-[386px] bg-canvas">
+<div data-name="浮层边界" class="flex flex-col p-space-md w-full h-full">
+<div data-name="任务中心面板" class="flex flex-col p-space-md gap-space-sm w-full h-full bg-canvas border-[1px] border-border rounded-control">
+<div data-name="标题" class="flex flex-row items-center gap-space-sm w-full">
+<p data-name="标题文字" class="text-text type-section">任务中心</p>
+<p data-name="进行中数量" class="w-full text-muted type-detail">1 项进行中</p>
+<sp-use component="图标按钮" data-name="关闭任务中心">
+<p data-name="图标"></p>
+</sp-use>
+</div>
+<div data-name="任务类型" class="flex flex-row gap-space-xs w-full">
+<sp-use component="工具标签" props="状态: 选中; 密度: 紧凑" data-name="传输" class="h-task-tab">
+<p data-name="文字">传输</p>
+</sp-use>
+<sp-use component="工具标签" props="状态: 普通; 密度: 紧凑" data-name="服务器操作" class="h-task-tab">
+<p data-name="文字">服务器操作</p>
+</sp-use>
+</div>
+<div data-name="记录筛选" class="flex flex-row items-center gap-space-sm w-full">
+<sp-use component="工具标签" props="状态: 普通; 密度: 紧凑" data-name="当前任务" data-click="09 工具/传输与任务中心" class="h-task-tab">
+<p data-name="文字">当前任务</p>
+</sp-use>
+<sp-use component="工具标签" props="状态: 选中; 密度: 紧凑" data-name="历史记录" data-click="09 工具/传输历史" class="h-task-tab">
+<p data-name="文字">历史记录</p>
+</sp-use>
+<div data-name="筛选留白" class="w-full h-control">
+</div>
+<sp-use component="按钮" props="样式: 普通" data-name="清空记录">
+<p data-name="文字">清空记录</p>
+</sp-use>
+</div>
+<div data-name="任务列表" class="flex flex-col w-full h-full overflow-hidden">
+<div data-name="任务0" class="flex flex-col gap-space-xs px-field-inline py-space-sm w-full">
+<div data-name="文件名与操作0" class="flex flex-row items-center gap-space-sm w-full">
+<p data-name="文件名0" class="w-full text-text type-body">assets.zip</p>
+<sp-use component="图标按钮" data-name="移除记录0">
+<p data-name="图标"></p>
+</sp-use>
+</div>
+<p data-name="服务器0" class="w-full text-muted type-detail">下载自 演示服务器</p>
+<p data-name="进度文字0" class="w-full text-muted type-detail">已完成 · 8 MiB</p>
+</div>
+<div data-name="任务1" class="flex flex-col gap-space-xs px-field-inline py-space-sm w-full">
+<div data-name="文件名与操作1" class="flex flex-row items-center gap-space-sm w-full">
+<p data-name="文件名1" class="w-full text-text type-body">nginx.conf</p>
+<sp-use component="图标按钮" data-name="移除记录1">
+<p data-name="图标"></p>
+</sp-use>
+</div>
+<p data-name="服务器1" class="w-full text-muted type-detail">下载自 演示服务器</p>
+<p data-name="进度文字1" class="w-full text-muted type-detail">已完成 · 2 KiB</p>
+</div>
+</div>
+</div>
+</div>
+</body>
+</html>

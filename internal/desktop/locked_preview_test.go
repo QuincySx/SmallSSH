@@ -24,10 +24,16 @@ func TestVaultLandingSnapshotsWithoutWindows(t *testing.T) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"light", "dark", "password", "password-dark", "password-only", "create", "error", "busy", "small", "password-small"} {
+	for _, name := range []string{"light", "dark", "password", "password-dark", "password-only", "create", "error", "busy", "small", "password-small", "windows-hello", "linux-fingerprint"} {
 		a := &app{ctx: context.Background(), create: name == "create"}
 		if name != "password-only" {
 			a.authStatus = systemauth.Status{Enabled: true, Available: true, Name: "Touch ID"}
+		}
+		if name == "windows-hello" {
+			a.authStatus.Name = "Windows Hello"
+		}
+		if name == "linux-fingerprint" {
+			a.authStatus.Name = systemauth.LinuxFingerprintName
 		}
 		state := a.ensureUnlockState()
 		if name == "password" || name == "password-dark" || name == "password-small" || name == "error" {
@@ -36,7 +42,7 @@ func TestVaultLandingSnapshotsWithoutWindows(t *testing.T) {
 		if name == "error" {
 			a.unlockError = "主密码不正确，请重新输入。"
 		}
-		if name == "busy" {
+		if name == "busy" || name == "linux-fingerprint" {
 			a.busy, state.busy, state.systemAttempt = true, true, true
 		}
 		width, height := 1280, 900
@@ -44,7 +50,7 @@ func TestVaultLandingSnapshotsWithoutWindows(t *testing.T) {
 			width, height = 1000, 760
 		}
 		tt := ui.NewTester(a.view, width, height)
-		tt.SetDark(name == "dark" || name == "password-dark")
+		tt.SetDark(name == "dark" || name == "password-dark" || name == "linux-fingerprint")
 		path := filepath.Join(dir, "vault-"+name+".png")
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 		if err != nil {

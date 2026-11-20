@@ -78,7 +78,7 @@ func TestHistoryPersistsLegacyAndPageSnapshotAfterAppendAndReopen(t *testing.T) 
 	}
 }
 
-func TestCursorSurvivesRotationAndFailsAfterRetentionEvictsIt(t *testing.T) {
+func TestCursorSurvivesEveryRetainedRotation(t *testing.T) {
 	s, _ := openTest(t)
 	// Records carry a link to the one before them, so measure a linked record
 	// instead of a marshalled event.
@@ -108,8 +108,9 @@ func TestCursorSurvivesRotationAndFailsAfterRetentionEvictsIt(t *testing.T) {
 	for i := 5; i < 10; i++ {
 		appendEvent(t, s, i)
 	}
-	if _, err = s.History(Query{Before: first.Next, Limit: 3}); !errors.Is(err, ErrCursor) {
-		t.Fatal("evicted cursor silently moved to different records", err)
+	retained, err := s.History(Query{Before: first.Next, Limit: 3})
+	if err != nil || len(retained.Events) != 3 || retained.Events[2].RequestID != "0" {
+		t.Fatal("rotation lost earlier audit records", err)
 	}
 }
 
@@ -140,7 +141,7 @@ func TestMalformedOversizedAndTruncatedLinesDoNotHideValidHistory(t *testing.T) 
 	}
 }
 
-func TestRotationAndOversizedLegacyFilesStayBounded(t *testing.T) {
+func TestRotationBoundsNewSegmentsAndPreservesOversizedLegacyEvidence(t *testing.T) {
 	s, path := openTest(t)
 	s.maxBytes = 1024
 	for i := 0; i < 100; i++ {
@@ -166,7 +167,7 @@ func TestRotationAndOversizedLegacyFilesStayBounded(t *testing.T) {
 	defer s.Close()
 	st, _ := os.Stat(path)
 	p, err := s.History(Query{})
-	if err != nil || st.Size() > MaxFileBytes || len(p.Events) < 1 || p.Events[0].RequestID != "999" {
+	if err != nil || st.Size() != int64(len(legacy)) || len(p.Events) < 1 || p.Events[0].RequestID != "999" {
 		t.Fatal(st.Size(), p, err)
 	}
 }

@@ -1,0 +1,23 @@
+<sp-component name="目录树行" props="状态: 普通 | 选中; 展开: 展开 | 折叠 | 叶子">
+  <div class="flex flex-row items-center pl-tree-frame pr-tree-row-end w-[180px] h-row rounded-tree-row">
+    <div data-name="层级缩进" class="w-[0px] h-row"></div>
+    <div data-name="行内容" class="flex flex-row items-center gap-tree-content w-full h-row">
+      <div data-name="展开按钮" class="flex flex-row items-center justify-center w-tree-disclosure h-tree-toggle">
+        <p data-name="展开图标" class="w-full text-muted font-icons text-file-icon leading-[1] text-center"></p>
+      </div>
+      <div data-name="目录名称" class="flex flex-row items-center gap-file-name w-full h-row">
+        <p data-name="文件夹图标" class="w-tree-disclosure text-muted font-icons text-file-icon leading-[1] text-center"></p>
+        <p data-name="名称" class="w-full text-text type-file-label">site</p>
+      </div>
+    </div>
+  </div>
+  <sp-variant when="状态: 选中" class="bg-accentsoft">
+    <div data-name="行内容"><div data-name="目录名称"><p data-name="文件夹图标" class="text-text"></p></div></div>
+  </sp-variant>
+  <sp-variant when="展开: 折叠">
+    <div data-name="行内容"><div data-name="展开按钮"><p data-name="展开图标"></p></div></div>
+  </sp-variant>
+  <sp-variant when="展开: 叶子">
+    <div data-name="行内容"><div data-name="展开按钮"><p data-name="展开图标" class="opacity-0"></p></div></div>
+  </sp-variant>
+</sp-component>

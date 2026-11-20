@@ -6,12 +6,12 @@
   <link rel="stylesheet" href="../../tokens.css">
 </head>
 <body class="flex flex-col w-[1400px] h-[1820px] bg-canvas">
-  <div data-name="目录" class="flex flex-col gap-[8px] p-[24px] w-full h-full bg-surface rounded-panel">
+  <div data-name="目录" class="flex flex-col gap-space-sm p-space-xl w-full h-full bg-surface rounded-panel">
     <p data-name="标题" class="w-full text-text type-title">SmallSSH · 页面与承载地图</p>
     <p data-name="范围" class="w-full text-muted type-body">设计目录，不是 App 内的新页面。以正式源码和需求状态为准。</p>
-    <div data-name="主窗锁定页" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主窗锁定页" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主窗锁定页</p>
-      <div data-name="vault-create" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="vault-create" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">创建本机保险库</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：首次启动且无本机保险库</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：输入并确认主密码；创建保险库</p>
@@ -20,7 +20,7 @@
         <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/locked.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：01 访问 / 创建保险库</p>
       </div>
-      <div data-name="vault-unlock" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="vault-unlock" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">解锁保险库</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：启动已存在的保险库或手动锁定后</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：主密码或已启用系统验证解锁；切换密码方式</p>
@@ -30,51 +30,51 @@
         <p data-name="画布" class="w-full text-accent type-detail">画布：01 访问 / 解锁、01 访问 / 系统验证解锁、01 访问 / 系统验证密码回退</p>
       </div>
     </div>
-    <div data-name="主窗口" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主窗口" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主窗口</p>
-      <div data-name="workspace" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="workspace" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">工作台</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：解锁成功</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：服务器侧栏、顶栏真实终端标签、单一小窗开关（位置在小窗菜单设置）、全局任务、设置；缩放、拖分栏</p>
-        <p data-name="状态" class="w-full text-muted type-detail">状态：空服务器、未选择、已选择无会话、窄窗回退、锁定</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：不等于独立设置或工具窗口</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：默认卡片画布；右侧独立开关文件、命令、状态；任务统一从顶栏全局入口打开；平铺或标签聚合；视图可共享分栏，保持源会话与队列；两种模式均保留顶部工作区选项卡，切换定位对应视图；画布中不合并或重排分栏</p>
+        <p data-name="状态" class="w-full text-muted type-detail">状态：空服务器、未选择、已选择无会话、窄窗回退、锁定；顶部标签选中、跨分栏定位、溢出横向滚动</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不等于独立设置或工具窗口；顶栏高48，常规图标按钮32×32；终端与功能卡片标题高32，单标题左留16、右留12，卡片标题显示当前视图；画布模式不得隐藏顶部选项卡，视图切换仅在窗口顶部；卡片内部不显示选项卡；顶部选中标签底色为6%强调色，活动画布标题底色为3.5%，文字/状态点保留；顶栏首个标签相对主内容左边界内缩8，不向侧栏探出；随侧栏宽度调整，紧凑macOS原生控件区优先；全高侧栏背景与工作区、右侧按钮共用8外边距，宽度共用同一计算规则</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/app.go; internal/desktop/workspace_menu.go; internal/desktop/layout.go; internal/desktop/workspace_canvas.go; internal/desktop/terminal_group_view.go; internal/desktop/components/theme.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件、02 工作台 / 四个混合分栏、02 工作台 / 六个混合分栏、02 工作台 / 画布与功能开关、02 工作台 / 画布与标签混排、02 工作台 / 标签聚合</p>
       </div>
     </div>
-    <div data-name="主窗侧栏/紧凑栏" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主窗侧栏/紧凑栏" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主窗侧栏/紧凑栏</p>
-      <div data-name="server-rail" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="server-rail" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">服务器列表</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：工作台左侧</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：添加、搜索、分组展开；单击选择、双击新终端；右键连接、文件、编辑、AI策略、备注、隧道、删除</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：搜索、分组展开；单击选择，双击或选中后按 Enter 打开新终端（经未保存连接守卫）；方向键 / Home / End 跳过分组标题；右键连接、文件、编辑、AI策略、备注、隧道、删除；新建连接位于顶部左侧，紧邻连接侧栏开关；终端通过服务器操作、菜单或快捷键创建</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：无连接、搜索无结果、折叠、连接中可取消</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：收藏及拖动排序未实现</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/connection_rail.go; internal/desktop/layout.go</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：收藏及拖动排序未实现；侧栏Surface背景从窗口顶部延伸到底部，四周8且与右侧按钮外边距统一，16圆角；列表内边距6、搜索框28；展开/收起共用头像槽和滚动状态，侧栏不常驻整行新建</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/app.go; internal/desktop/connection_rail.go; internal/desktop/layout.go; internal/desktop/workspace_menu.go; internal/desktop/components/sidebar_split.go; internal/desktop/components/theme.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件</p>
       </div>
     </div>
-    <div data-name="主窗顶栏标签+终端面板" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主窗顶栏标签+终端面板" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主窗顶栏标签+终端面板</p>
-      <div data-name="terminal" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="terminal" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">终端与会话组</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：双击服务器或新建终端</p>
-        <p data-name="操作" class="w-full text-text type-detail">操作：终端与独立功能区共用标签；拖动排序、跨组、四向递归拆分与合并</p>
+        <p data-name="操作" class="w-full text-text type-detail">操作：Ghostty交互；终端、文件、命令、状态统一通过窗口顶部标签选择/关闭/排序；四向拆分、跨组移动、合并；空组自动收起；卡片标题拖动聚合，终端标题打开下方文件及右侧 / 下方新终端，连接中即占位，占位卡片连接时按钮为「取消连接」、失败后为「重试连接 / 关闭此标签」；键盘新建终端标签（macOS Cmd+T，Windows / Linux Ctrl+Shift+T），视图菜单「上一个 / 下一个标签」（macOS Cmd+Option+← / →，其他 Ctrl+Shift+Tab / Ctrl+Tab）按顶部顺序循环，只激活不改布局；模态提示或其他窗口获得焦点时不切换</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：排队、连接中、取消、失败重试、断开、主机指纹变化</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：分组不是多个独立工具实例；不提供批量广播</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/connection_pending.go</p>
-        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件、02 工作台 / 连接中、02 工作台 / 连接失败、02 工作台 / 双终端分组</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：分组不是多个独立工具实例；不提供批量广播；终端标题高32，正文左右内边距16、上下2，收紧标题字形到首行命令的视觉空白；分栏内部仅显示当前视图标题和操作，不显示选项卡；顶部标签最宽210，多标签时先按可用宽度均分（最小72，含关闭按钮）再横向滚动，单标签规则不变</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/terminal_group_view.go; internal/desktop/terminal_layout.go; internal/desktop/terminal_colors.go; internal/desktop/app.go; internal/desktop/connection_pending.go; internal/desktop/workspace_tabs.go; internal/desktop/workspace_tab_width.go; internal/desktop/workspace_drag.go; internal/desktop/chrome.go</p>
+        <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 终端与底部文件、02 工作台 / 连接中、02 工作台 / 连接失败、02 工作台 / 双终端分组、02 工作台 / 四个混合分栏、02 工作台 / 六个混合分栏</p>
       </div>
     </div>
-    <div data-name="主窗终端面板" class="flex flex-col gap-[12px] w-full">
+    <div data-name="主窗终端面板" class="flex flex-col gap-space-md w-full">
       <p data-name="标题" class="w-full text-text type-section">主窗终端面板</p>
-      <div data-name="terminal-empty" class="flex flex-col gap-[4px] p-[12px] w-full bg-subtle rounded-control">
+      <div data-name="terminal-empty" class="flex flex-col gap-space-xs p-space-md w-full bg-subtle rounded-control">
         <p data-name="名称" class="w-full text-text type-section">终端空态</p>
         <p data-name="入口" class="w-full text-muted type-detail">入口：无活动终端</p>
         <p data-name="操作" class="w-full text-text type-detail">操作：无服务器引导添加；有服务器未选引导搜索；选定后连接终端</p>
         <p data-name="状态" class="w-full text-muted type-detail">状态：无服务器、未选/过期选择、已选</p>
-        <p data-name="边界" class="w-full text-muted type-detail">边界：不自动连接；有效性来自完整服务器列表</p>
-        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/terminal_group_view.go</p>
+        <p data-name="边界" class="w-full text-muted type-detail">边界：不自动连接；有效性来自完整服务器列表；无打开视图时不显示示例会话标签；此页为未选服务器且无会话，侧栏无选中项；已有视图的标签不随侧栏选择清空</p>
+        <p data-name="源码" class="w-full text-muted type-detail">源码：internal/desktop/terminal_group_view.go; internal/desktop/workspace_menu.go; internal/desktop/workspace_tabs.go</p>
         <p data-name="画布" class="w-full text-accent type-detail">画布：02 工作台 / 未选择服务器</p>
       </div>
     </div>

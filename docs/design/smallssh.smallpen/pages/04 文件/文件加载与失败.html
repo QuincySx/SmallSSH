@@ -1,42 +1,41 @@
 <!doctype html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <title>文件加载与失败</title>
-  <link rel="stylesheet" href="../../tokens.css">
-</head>
-<body class="flex flex-col w-[900px] h-[680px] bg-canvas">
-  <div data-name="文件独立窗口" class="flex flex-col w-full h-full">
-    <div data-name="文件标题栏" class="flex flex-row items-center gap-[8px] pr-[8px] w-full h-titlebar bg-surface">
-      <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
-      <div data-name="文件身份" class="flex flex-col w-full">
-        <p data-name="文件名" class="w-full text-text type-section">nginx.conf</p>
-        <p data-name="来源" class="w-full text-muted type-detail">Web 生产环境 · /etc/nginx</p>
-      </div>
-      <sp-use component="图标按钮" data-name="保存文件">
-        <p data-name="图标"></p>
-      </sp-use>
-      <sp-use component="图标按钮" data-name="更多文件操作">
-        <p data-name="图标"></p>
-      </sp-use>
-      <sp-use component="图标按钮" data-name="关闭文件">
-        <p data-name="图标"></p>
-      </sp-use>
-    </div>
-    <div data-name="加载反馈" class="flex flex-col justify-center gap-[8px] p-[24px] w-full h-full">
-      <p data-name="读取转圈" class="w-[28px] h-[28px] text-accent font-[SmallSSH_Icons] text-[24px]"></p>
-      <p data-name="状态" class="w-full text-text type-section">正在读取文件…</p>
-      <p data-name="来源" class="w-full text-muted type-detail">Web 生产环境 · /etc/nginx/nginx.conf</p>
-      <p data-name="文件范围" class="w-full text-muted type-detail">内置编辑器支持 4 MiB 以内、不含 NUL 的 UTF-8 文本；图片、PDF、压缩包和其他二进制文件请下载后打开。</p>
-      <div data-name="操作" class="flex flex-row gap-[8px] w-full h-[32px]">
-        <sp-use component="按钮" data-name="取消读取">
-          <p data-name="文字">取消读取</p>
+  <head>
+    <meta charset="utf-8">
+    <title>文件加载与失败</title>
+    <link rel="stylesheet" href="../../tokens.css">
+  </head>
+  <body class="flex flex-col w-[900px] h-[680px] bg-canvas">
+    <div data-name="文件独立窗口" class="flex flex-col w-full h-full">
+      <div data-name="文件标题栏" class="flex flex-row items-center gap-space-sm pr-space-sm w-full h-titlebar bg-surface">
+        <sp-use component="窗口控制" data-name="原生窗口按钮"></sp-use>
+        <div data-name="文件身份" class="flex flex-col w-full">
+          <p data-name="文件名" class="w-full text-text type-section">nginx.conf</p>
+          <p data-name="来源" class="w-full text-muted type-detail">Web 生产环境 · /etc/nginx</p>
+        </div>
+        <sp-use component="图标按钮" data-name="保存文件" class="opacity-disabled">
+          <p data-name="图标"></p>
         </sp-use>
-        <sp-use component="按钮" data-name="下载此文件" class="h-fit">
-          <p data-name="文字">下载此文件…</p>
+        <sp-use component="图标按钮" data-name="更多文件操作">
+          <p data-name="图标"></p>
+        </sp-use>
+        <sp-use component="图标按钮" data-name="关闭文件">
+          <p data-name="图标"></p>
         </sp-use>
       </div>
+      <div data-name="加载反馈" class="flex flex-col justify-center gap-space-sm p-space-xl w-full h-full">
+        <p data-name="状态" class="w-full text-danger type-section">读取文件失败</p>
+        <p data-name="来源" class="w-full text-muted type-detail">Web 生产环境 · /etc/nginx/nginx.conf</p>
+        <p data-name="文件范围" class="w-full text-muted type-detail">仅编辑不含 NUL 的 UTF-8 文本，请下载该文件。</p>
+        <div data-name="操作" class="flex flex-row gap-space-sm w-full h-[32px]">
+          <sp-use component="按钮" props="样式: 普通" data-name="重试读取" class="h-control" data-click="04 文件/文件读取中">
+            <p data-name="文字">重试读取</p>
+          </sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="下载此文件" class="h-control">
+            <p data-name="文字">下载此文件…</p>
+          </sp-use>
+        </div>
+      </div>
     </div>
-  </div>
-</body>
+  </body>
 </html>

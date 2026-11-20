@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sshclient/internal/sshdata"
+	"sshclient/internal/sshkey"
 	"strings"
 	"time"
 
@@ -15,19 +17,7 @@ import (
 	"sshclient/internal/vault"
 )
 
-type HostIdentity struct {
-	Host        string `json:"host"`
-	Port        int    `json:"port"`
-	Algorithm   string `json:"algorithm"`
-	Fingerprint string `json:"fingerprint"`
-}
-
-func ValidateTarget(host string, port int) error {
-	if host == "" || len(host) > 255 || strings.ContainsAny(host, "\x00\r\n\t /\\") || port < 1 || port > 65535 {
-		return errors.New("请填写有效的服务器地址和 1–65535 之间的端口")
-	}
-	return nil
-}
+type HostIdentity = sshdata.HostIdentity
 
 // ProbeHost stops during key exchange, before any user authentication. A network
 // observation is a candidate identity; the caller must obtain owner confirmation.
@@ -77,40 +67,7 @@ func ProbeRoute(parent context.Context, host string, port int, network connectcf
 	return identity, nil
 }
 
-type KeyInfo struct {
-	Algorithm   string `json:"algorithm"`
-	Fingerprint string `json:"fingerprint"`
-	Comment     string `json:"comment,omitempty"`
-}
-
-func privateSigner(raw, passphrase string) (ssh.Signer, error) {
-	var signer ssh.Signer
-	var err error
-	if passphrase != "" {
-		signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(raw), []byte(passphrase))
-	} else {
-		signer, err = ssh.ParsePrivateKey([]byte(raw))
-	}
-	if err != nil {
-		var missing *ssh.PassphraseMissingError
-		if errors.As(err, &missing) {
-			return nil, errors.New("这份私钥已加密，请填写私钥口令")
-		}
-		if _, _, _, _, pubErr := ssh.ParseAuthorizedKey([]byte(raw)); pubErr == nil {
-			return nil, errors.New("选择的是公钥，请选择对应的私钥文件")
-		}
-		return nil, errors.New("私钥格式不受支持或私钥口令不正确")
-	}
-	return signer, nil
-}
-
-func InspectPrivateKey(raw, passphrase string) (KeyInfo, error) {
-	signer, err := privateSigner(raw, passphrase)
-	if err != nil {
-		return KeyInfo{}, err
-	}
-	return KeyInfo{Algorithm: signer.PublicKey().Type(), Fingerprint: ssh.FingerprintSHA256(signer.PublicKey())}, nil
-}
+type KeyInfo = sshdata.KeyInfo
 
 // AgentIdentities returns public metadata only. No signing or private key export.
 func AgentIdentities(parent context.Context) ([]KeyInfo, error) {
@@ -151,4 +108,12 @@ func AgentIdentities(parent context.Context) ([]KeyInfo, error) {
 		return nil, errors.New("代理中还没有可使用的密钥")
 	}
 	return out, nil
+}
+
+func ValidateTarget(host string, port int) error { return sshkey.ValidateTarget(host, port) }
+func privateSigner(raw, passphrase string) (ssh.Signer, error) {
+	return sshkey.ParsePrivateKey(raw, passphrase)
+}
+func InspectPrivateKey(raw, passphrase string) (KeyInfo, error) {
+	return sshkey.InspectPrivateKey(raw, passphrase)
 }

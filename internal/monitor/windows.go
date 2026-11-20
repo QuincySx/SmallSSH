@@ -8,6 +8,7 @@ package monitor
 import (
 	"encoding/base64"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -25,19 +26,21 @@ const windowsStatsScript = `$ErrorActionPreference = 'SilentlyContinue'
 '@@HOST'
 [Environment]::MachineName
 '@@CPU'
-$cpu = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor | Where-Object { $_.Name -eq '_Total' }
-if (-not $cpu) { $cpu = Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average }
-if ($cpu.PercentProcessorTime -ne $null) { $cpu.PercentProcessorTime } else { [int]$cpu.Average }
+$processors = @(Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Property Name,PercentProcessorTime,PercentUserTime,PercentPrivilegedTime)
+$cpu = $processors | Where-Object { $_.Name -eq '_Total' } | Select-Object -First 1
+if ($cpu) { "$($cpu.PercentProcessorTime)|$($cpu.PercentUserTime)|$($cpu.PercentPrivilegedTime)" }
 '@@MEM'
 $os = Get-CimInstance Win32_OperatingSystem
 $os.TotalVisibleMemorySize
 $os.FreePhysicalMemory
 $os.TotalVirtualMemorySize
 $os.FreeVirtualMemory
-'@@LOAD'
-(Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
 '@@CORES'
 [Environment]::ProcessorCount
+'@@CORE_USAGE'
+$processors | Where-Object { $_.Name -ne '_Total' } | ForEach-Object {
+  "$($_.Name)|$($_.PercentProcessorTime)|$($_.PercentUserTime)|$($_.PercentPrivilegedTime)"
+}
 '@@UPTIME'
 [int]((Get-Date) - $os.LastBootUpTime).TotalSeconds
 '@@BOOTID'
@@ -46,8 +49,11 @@ $os.FreeVirtualMemory
 Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object {
   if ($_.Size -gt 0) { "$($_.DeviceID)|$($_.FileSystem)|$($_.Size)|$($_.FreeSpace)|$($_.VolumeName)" }
 }
+$processes = @(Get-Process -ErrorAction Stop)
+'@@PROCESS_COUNT'
+$processes.Count
 '@@PROCESS'
-Get-Process | Sort-Object -Property WorkingSet64 -Descending | Select-Object -First 20 | ForEach-Object {
+$processes | Sort-Object -Property WorkingSet64 -Descending | Select-Object -First 20 | ForEach-Object {
   "$($_.Id)|$($_.ProcessName)|$($_.WorkingSet64)|$([int64]$_.CPU)"
 }
 '@@NET'
@@ -108,8 +114,12 @@ var (
 // ParseWindows turns the marker output into the same Stats the desktop already
 // renders. Rates come from the previous sample, as on Linux.
 func ParseWindows(text string, previous *Stats) (Stats, error) {
-	s := Stats{Time: time.Now().UTC()}
+	// Windows does not provide Linux-style runnable-process counts; negative
+	// values distinguish unavailable counters from a measured zero.
+	s := Stats{Time: time.Now().UTC(), CPUDetail: CPUUsage{Name: "cpu", BasicOnly: true}, ProcessCount: -1, RunningProcesses: -1, SampleIntervalSeconds: 10}
 	var memLines []string
+	coreSamples := make(map[int]CPUUsage)
+	coreCount := 0
 	section := ""
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimRight(line, "\r")
@@ -123,19 +133,30 @@ func ParseWindows(text string, previous *Stats) (Stats, error) {
 		f := strings.Split(line, "|")
 		switch section {
 		case "@@CPU":
-			if v, err := strconv.ParseFloat(strings.TrimSpace(line), 64); err == nil {
-				s.CPU = v
-				s.CPUDetail = CPUUsage{Used: v, Valid: true}
+			if usage := windowsCPUUsage("cpu", f); usage.Valid {
+				s.CPU, s.CPUDetail = usage.Used, usage
 			}
 		case "@@MEM":
 			memLines = append(memLines, strings.TrimSpace(line))
-		case "@@LOAD":
-			if v, err := strconv.ParseFloat(strings.TrimSpace(line), 64); err == nil {
-				s.Load = strconv.FormatFloat(v, 'f', 0, 64) + "%"
-			}
 		case "@@CORES":
-			n, _ := strconv.Atoi(strings.TrimSpace(line))
-			s.Cores = make([]CPUUsage, n)
+			n, err := strconv.Atoi(strings.TrimSpace(line))
+			if err != nil || n < 1 || n > 4096 {
+				return s, errors.New("Windows CPU 核心数无效或超过 4096")
+			}
+			coreCount = n
+		case "@@CORE_USAGE":
+			if len(f) != 4 {
+				continue
+			}
+			index, err := strconv.Atoi(f[0])
+			if err != nil || index < 0 || index >= 4096 {
+				continue
+			}
+			coreSamples[index] = windowsCPUUsage("cpu"+strconv.Itoa(index), f[1:])
+		case "@@PROCESS_COUNT":
+			if count, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && count >= 0 {
+				s.ProcessCount = count
+			}
 		case "@@UPTIME":
 			s.Uptime, _ = strconv.ParseFloat(strings.TrimSpace(line), 64)
 		case "@@BOOTID":
@@ -165,23 +186,23 @@ func ParseWindows(text string, previous *Stats) (Stats, error) {
 			}
 		case "@@NET":
 			if len(f) >= 3 {
-				rx, _ := strconv.ParseUint(f[1], 10, 64)
-				tx, _ := strconv.ParseUint(f[2], 10, 64)
+				rx, rxErr := strconv.ParseUint(f[1], 10, 64)
+				tx, txErr := strconv.ParseUint(f[2], 10, 64)
+				if rxErr != nil || txErr != nil {
+					continue
+				}
 				s.RX += rx
 				s.TX += tx
-				n := Network{Name: f[0], RX: rx, TX: tx, Valid: true}
+				n := Network{Name: f[0], RX: rx, TX: tx}
 				if previous != nil {
 					for _, old := range previous.Networks {
 						if old.Name != n.Name {
 							continue
 						}
-						if elapsed := s.Time.Sub(previous.Time).Seconds(); elapsed > 0 {
-							if rx >= old.RX {
-								n.RXRate = float64(rx-old.RX) / elapsed
-							}
-							if tx >= old.TX {
-								n.TXRate = float64(tx-old.TX) / elapsed
-							}
+						if elapsed := s.Time.Sub(previous.Time).Seconds(); elapsed > 0 && rx >= old.RX && tx >= old.TX {
+							n.RXRate = float64(rx-old.RX) / elapsed
+							n.TXRate = float64(tx-old.TX) / elapsed
+							n.Valid = true
 						}
 						break
 					}
@@ -206,15 +227,15 @@ func ParseWindows(text string, previous *Stats) (Stats, error) {
 			}
 		}
 	}
-	if len(s.Cores) == 0 && s.CPUDetail.Used > 0 {
-		s.Cores = []CPUUsage{s.CPUDetail}
-	}
+	// Missing counters remain unavailable instead of repeating aggregate CPU.
+	s.Cores = make([]CPUUsage, coreCount)
 	for i := range s.Cores {
-		s.Cores[i] = CPUUsage{Used: s.CPU, Valid: true}
+		s.Cores[i] = CPUUsage{Name: "cpu" + strconv.Itoa(i), BasicOnly: true}
+		if usage, ok := coreSamples[i]; ok {
+			s.Cores[i] = usage
+		}
 	}
-	s.ProcessCount = len(s.Processes)
-	s.RunningProcesses = len(s.Processes)
-	if s.MemoryTotal == 0 && s.CPU == 0 && len(s.Processes) == 0 {
+	if s.MemoryTotal == 0 && !s.CPUDetail.Valid && len(s.Processes) == 0 {
 		return s, errors.New("未收到有效 Windows 监控数据")
 	}
 	if previous != nil {
@@ -241,6 +262,27 @@ func ParseWindows(text string, previous *Stats) (Stats, error) {
 		}
 	}
 	return s, nil
+}
+
+// windowsCPUUsage accepts measured used/user/privileged counters together.
+func windowsCPUUsage(name string, fields []string) CPUUsage {
+	usage := CPUUsage{Name: name, BasicOnly: true}
+	if len(fields) != 3 {
+		return usage
+	}
+	values := [3]float64{}
+	for i, field := range fields {
+		value, err := strconv.ParseFloat(strings.TrimSpace(field), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return usage
+		}
+		values[i] = min(100, max(0, value))
+	}
+	usage.Used = values[0]
+	usage.User = min(values[1], usage.Used)
+	usage.System = min(values[2], max(0, usage.Used-usage.User))
+	usage.Valid = true
+	return usage
 }
 
 // ParseWindowsInventory fills the system page and the service list.

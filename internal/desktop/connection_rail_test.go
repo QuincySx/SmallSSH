@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"reflect"
@@ -10,7 +11,9 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/internal/broker"
 	"sshclient/internal/desktop/components"
+	"sshclient/internal/protocol"
 	"sshclient/internal/sshconn"
 	"sshclient/internal/vault"
 )
@@ -77,6 +80,20 @@ func TestConnectionRailDoubleClickStartsNewTerminalAndNavigationGuard(t *testing
 	}
 }
 
+func TestConnectionRailEnterKeepsUnsavedConnectionGuard(t *testing.T) {
+	a := fileFollowDemo()
+	a.newConnection()
+	a.form.Name = "keep my unsaved connection"
+	tt := ui.NewTester(a.connectionRail, int(components.RailWidth), 360)
+	if err := tt.Click("连接 B"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyEnter)
+	if !a.prompt.open || a.prompt.title != "放弃未保存的连接？" || a.page != 0 || len(a.sessions) != 2 || a.form.Name != "keep my unsaved connection" {
+		t.Fatal("Enter bypassed the unsaved navigation guard", a.prompt.open, a.page)
+	}
+}
+
 func TestConnectionRailKeepsConnectionContextActions(t *testing.T) {
 	a := fileFollowDemo()
 	cancelled := false
@@ -85,7 +102,7 @@ func TestConnectionRailKeepsConnectionContextActions(t *testing.T) {
 	if err := tt.RightClick("连接 B"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"取消连接", "新建终端标签", "连接终端", "SSH 隧道…", "编辑连接", "AI 访问…", "备注…", "删除连接"}
+	want := []string{"取消连接", "新建终端标签", "终端连接", "新建端口转发…", "VNC 远程桌面…", "编辑连接", "AI 访问…", "备注…", "删除连接"}
 	if !reflect.DeepEqual(tt.Menu(), want) {
 		t.Fatal("compact menu differs from expanded connection actions", tt.Menu())
 	}
@@ -95,7 +112,7 @@ func TestConnectionRailKeepsConnectionContextActions(t *testing.T) {
 	if err := tt.RightClick("连接 B"); err != nil {
 		t.Fatal(err)
 	}
-	if err := tt.ChooseMenuItem("SSH 隧道…"); err != nil || !a.tunnels.open || a.tunnels.host != "b" {
+	if err := tt.ChooseMenuItem("新建端口转发…"); err != nil || !a.tunnels.open || a.tunnels.host != "b" {
 		t.Fatal("tunnel manager did not bind the selected server", err)
 	}
 	a.tunnels.open = false
@@ -151,7 +168,7 @@ func TestConnectionRailGroupOrderPreservesExpandedConnectionOrder(t *testing.T) 
 			got = append(got, row.connection.ID)
 		}
 	}
-	want := []string{"group:a", "a2", "a1", "group:z", "z1", "z2", "group:未分组", "none"}
+	want := []string{"group:z", "z1", "z2", "group:a", "a2", "a1", "group:", "none"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal("rail reordered expanded groups or their connections", got)
 	}
@@ -190,10 +207,17 @@ func TestConnectionRailKeyboardSkipsGroupsAndTraversesVirtualViewport(t *testing
 	if bounds, ok := tt.Find("键盘连接 44"); a.selected != "keyboard-44" || !ok || bounds.H != connectionRailItemHeight {
 		t.Fatal("End did not reach the last virtual connection", a.selected, bounds)
 	}
-	tt.Key(0, ui.KeyEnter)
-	if a.selected != "keyboard-44" || a.status != "" || a.active != 0 || a.contentFocus || a.primaryFilePane.endpoint != "a" || len(a.sessions) != 2 || len(a.connecting) != 0 {
-		t.Fatal("keyboard navigation or Enter connected or changed the workspace")
+	if a.status != "" || a.active != 0 || a.contentFocus || a.primaryFilePane.endpoint != "a" || len(a.sessions) != 2 || len(a.connecting) != 0 {
+		t.Fatal("keyboard navigation connected or changed the workspace")
 	}
+	// Enter opens a new terminal like a double click. Without an unlocked
+	// broker it reaches the normal authorization guard, not an old tab.
+	tt.Key(0, ui.KeyEnter)
+	if a.selected != "keyboard-44" || a.page != 1 || len(a.sessions) != 2 || len(a.connecting) != 0 || !strings.Contains(a.status, "保险库已锁定") {
+		t.Fatal("Enter did not start a new terminal for the selected server", a.selected, a.status)
+	}
+	a.status = ""
+	tt.Key(0, ui.KeyEnd)
 	tt.Key(0, ui.KeyTab)
 	if !tt.Focused("下一控件") {
 		t.Fatal("Tab walked the visible avatars instead of leaving the rail")
@@ -218,7 +242,7 @@ func TestConnectionRailKeyboardSkipsGroupsAndTraversesVirtualViewport(t *testing
 		t.Fatal("regrouping changed selected identity")
 	}
 	tt.Key(0, ui.KeyDown)
-	if a.selected != "keyboard-00" {
+	if a.selected != "keyboard-44" {
 		t.Fatal("navigation used a stale row index after in-place regrouping", a.selected)
 	}
 	refresh := slices.Clone(a.connections)
@@ -255,14 +279,14 @@ func TestConnectionRailModelReusesUnchangedRowsAndRebuildsEditedSnapshots(t *tes
 	}
 	connections[0].Group = "z"
 	regrouped := model.rowsFor(connections, "", nil)
-	if &regrouped[0] == &renamed[0] || regrouped[0].group != "b" || regrouped[2].group != "z" || regrouped[3].connection.ID != "one" {
+	if &regrouped[0] == &renamed[0] || regrouped[0].group != "z" || regrouped[2].group != "b" || regrouped[1].connection.ID != "one" {
 		t.Fatal("in-place group edit did not rebuild ordered rows")
 	}
 
 	refresh := slices.Clone(connections)
 	refresh[0].Host = "192.0.2.10"
 	replaced := model.rowsFor(refresh, "", nil)
-	if &replaced[0] == &regrouped[0] || replaced[3].connection.Host != "192.0.2.10" || model.source[0].Host != "192.0.2.10" {
+	if &replaced[0] == &regrouped[0] || replaced[1].connection.Host != "192.0.2.10" || model.source[0].Host != "192.0.2.10" {
 		t.Fatal("same-length changed refresh retained stale connection identity")
 	}
 	refresh[0].Name = "Changed after refresh"
@@ -309,7 +333,6 @@ func TestConnectionSidebarModeChangesPreserveAvatarGeometryAndScroll(t *testing.
 				break
 			}
 		}
-		beforeCompact := compact
 		compact = !compact
 		tt.Frame()
 		afterPixels := tt.Image()
@@ -319,13 +342,7 @@ func TestConnectionSidebarModeChangesPreserveAvatarGeometryAndScroll(t *testing.
 				t.Fatalf("mode change moved %q: %v -> %v (%v)", label, was, now, ok)
 			}
 			if strings.HasPrefix(label, "稳定连接 ") {
-				beforeAvatarX, afterAvatarX := was.X+10, now.X+10
-				if beforeCompact {
-					beforeAvatarX = was.X + 4
-				}
-				if compact {
-					afterAvatarX = now.X + 4
-				}
+				beforeAvatarX, afterAvatarX := was.X+4, now.X+4
 				if beforeAvatarX != afterAvatarX {
 					t.Fatal("avatar moved between sidebar modes", label, beforeAvatarX, afterAvatarX)
 				}
@@ -336,6 +353,11 @@ func TestConnectionSidebarModeChangesPreserveAvatarGeometryAndScroll(t *testing.
 				// Selection feedback changes from an expanded row to the compact
 				// circle. Its target geometry and selected ID are still checked.
 				if label == selectedLabel {
+					continue
+				}
+				// Partial edge rows can intersect the rounded sidebar mask at a
+				// different horizontal position. Compare complete avatar slots.
+				if was.H < connectionRailItemHeight-.01 || now.H < connectionRailItemHeight-.01 {
 					continue
 				}
 				// Unselected avatars keep exactly the same pixels in their 36px slot.
@@ -479,5 +501,59 @@ func TestConnectionSidebarModelTracksSearchAndInPlaceGroupExpansion(t *testing.T
 	filtered := model.rowsFor(connections, "SECOND", groups)
 	if len(filtered) != 2 || filtered[1].connection.ID != "b" {
 		t.Fatal("shared search did not invalidate cached rows", filtered)
+	}
+}
+
+func TestConnectionRailFirstSnapshotReplacesLoading(t *testing.T) {
+	h := newConnectionFlowHarness(t)
+	a := h.a
+	a.page = 1
+	a.pollWake = make(chan struct{}, 1)
+	p := h.fixture.Profile()
+	p.ID, p.Name = "bridge", "bridge"
+	if err := h.server.Vault.SaveProfile(broker.VaultPath(h.dir), p); err != nil {
+		t.Fatal(err)
+	}
+	a.startUnlockedSession()
+	h.ui = ui.NewTester(a.connectionTree, 230, 400)
+	if _, ok := h.ui.Find("正在加载连接…"); !ok {
+		t.Fatal("first workspace frame did not show the loading state")
+	}
+	epoch := a.epoch.Load()
+	a.applyConnectionSnapshot(epoch, 0, protocol.Message{}, errors.New("temporary local read failure"))
+	h.ui.Frame()
+	if _, ok := h.ui.Find("无法加载连接，正在重试…"); !ok {
+		t.Fatal("failed first read looked like an empty saved list")
+	}
+	go a.poll()
+	h.wait(func() bool { return !a.connectionRailCache.loading })
+	if _, ok := h.ui.Find("bridge"); !ok {
+		t.Fatal("successful retry did not show the saved connection", a.connections)
+	}
+
+	for _, compact := range []bool{false, true} {
+		a.connections, a.hosts = nil, nil
+		a.connectionRailCache.loading = true
+		width := 230
+		if compact {
+			width = int(components.RailWidth)
+		}
+		tt := ui.NewTester(func(c *ui.Context) { a.connectionSidebar(c, compact) }, width, 400)
+		empty := ui.NewTester(a.emptyTerminalGroup, 500, 400)
+		if empty.HasText("添加你的第一台服务器") {
+			t.Fatal("loading showed the empty vault prompt")
+		}
+		if _, ok := tt.Find("正在加载连接…"); !ok {
+			t.Fatal("missing loading skeleton", compact)
+		}
+		a.applyConnectionSnapshot(epoch, 0, protocol.Message{}, nil)
+		tt.Frame()
+		empty.Frame()
+		if !empty.HasText("添加你的第一台服务器") {
+			t.Fatal("the empty vault lost its add-server prompt")
+		}
+		if _, ok := tt.Find("正在加载连接…"); ok {
+			t.Fatal("a genuinely empty vault kept showing loading", compact)
+		}
 	}
 }

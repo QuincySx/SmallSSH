@@ -17,9 +17,18 @@ type FileEntry struct {
 	Loading   bool
 }
 
+// FileListModifiedMinWidth is the least list width that still leaves the
+// name column about 160 DIP beside the 72 DIP size and 130 DIP modified
+// columns.
+const FileListModifiedMinWidth = 380
+
 type FileListOptions struct {
 	Label        string
 	ShowModified bool
+	// Width, when set, receives the list's committed width after layout so
+	// the caller can choose columns for the room it actually has rather
+	// than for the container it happens to be in.
+	Width *float32
 	// Decorate binds context menus, selection, drag/drop and double-clicks to
 	// the actual cell. The caller snapshots its operation target as usual.
 	Decorate func(ui.Element, int, int)
@@ -35,11 +44,11 @@ func FileList(c *ui.Context, state *ui.ListState, count int, entry func(int) Fil
 		return f.Name
 	}
 	state.Label = func(i int) string { return entry(i).Name }
-	columns := []ui.TableColumn{{ID: "name", Title: tr(c, "名称"), MinWidth: 100}, {ID: "size", Title: tr(c, "大小"), Width: 72, Align: ui.End}}
+	columns := []ui.TableColumn{{ID: "name", Title: tr(c, "名称"), MinWidth: 100, Sortable: true}, {ID: "size", Title: tr(c, "大小"), Width: 72, Align: ui.End, Sortable: true}}
 	if o.ShowModified {
-		columns = append(columns, ui.TableColumn{ID: "modified", Title: tr(c, "修改时间"), Width: 130})
+		columns = append(columns, ui.TableColumn{ID: "modified", Title: tr(c, "修改时间"), Width: 130, Sortable: true})
 	}
-	return Table(c, state, columns, count, func(i, col int) {
+	table := Table(c, state, columns, count, func(i, col int) {
 		f := entry(i)
 		selected := state.Selected != nil && *state.Selected == i
 		if selection, ok := state.Selection.(*ui.Selection[string]); ok {
@@ -78,6 +87,17 @@ func FileList(c *ui.Context, state *ui.ListState, count int, entry func(int) Fil
 			o.Decorate(cell, i, col)
 		}
 	}).Fill().Label(o.Label)
+	if o.Width != nil {
+		// Bounds() while building still describes the previous frame, so the
+		// width is observed once layout commits, as the status cards do.
+		table.Draw(func(_ *ui.Painter, r ui.Rect) {
+			if *o.Width != r.W {
+				*o.Width = r.W
+				c.AnimationFrame()
+			}
+		})
+	}
+	return table
 }
 
 func Bytes(n uint64) string {

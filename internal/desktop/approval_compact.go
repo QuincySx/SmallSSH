@@ -10,6 +10,9 @@ import (
 
 func compactApprovalTitle(r approval.Request) string {
 	if r.Operation.Kind == "grant" {
+		if r.Operation.Grant.Permission == approval.MaintenancePermission {
+			return approvalHeading(r)
+		}
 		if r.Renewal {
 			if r.Renewals > 1 {
 				return fmt.Sprintf(tr(nil, "会话已过期，允许续期？（连续第 %d 次）"), r.Renewals)
@@ -74,7 +77,7 @@ func (a *app) compactApprovalReview(c *ui.Context, r approval.Request, lifetimes
 				if permission != compactApprovalTitle(r) {
 					ui.Text(c, permission).FontSize(13).Bold()
 				}
-				if actions != "" && !scoped {
+				if actions != "" && (!scoped || op.Grant.Permission == approval.MaintenancePermission) {
 					ui.Text(c, actions).FillWidth().FontSize(12).TextColor(t.TextMuted)
 				}
 				if caution != "" {

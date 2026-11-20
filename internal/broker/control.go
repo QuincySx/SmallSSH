@@ -16,6 +16,9 @@ import (
 // It has no transport: every deferred unlock completes before the caller writes.
 func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, error) {
 	bucket, peer := channel.bucket, channel.peer
+	recordAuthorityFailure := func(op approval.Operation, parent, reason string, cause error) error {
+		return s.recordAuthorityFailure(op, parent, reason, cause, peer)
+	}
 	if s.auditFault.Load() {
 		switch q.Action {
 		case "request", "ownerRequest", "decide", "delegate", "renewSession", "profileChange", "profilePut", "profileDetails", "profileDelete", "workspaceWrite":
@@ -48,9 +51,9 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			_, parent, _ = s.Approvals.RenewalOperation(q.ID)
 		}
 		if !s.ownsSession(channel, parent) {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), parent, "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), parent, "invalid_authority", approval.ErrDenied)
 		}
-		result, e := s.renewSession(q)
+		result, e := s.renewSession(q, peer)
 		if e != nil {
 			return Message{}, e
 		}
@@ -66,19 +69,19 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 		defer s.ownerMu.Unlock()
 		destination := s.channels[q.Channel]
 		if !s.ownsSession(channel, q.ID) || destination == nil || !destination.operation || len(destination.requests) != 0 || destination.ctx.Err() != nil || !channel.identity.Same(destination.identity) {
-			return Message{}, s.recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", approval.ErrDenied)
 		}
 		p, e := s.Vault.Profile(q.Operation.Host)
 		if e != nil {
-			return Message{}, s.recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e)
+			return Message{}, recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e)
 		}
 		q.Operation.Endpoint = fmt.Sprintf("%s@%s", p.User, net.JoinHostPort(p.Host, fmt.Sprint(p.Port)))
 		q.Operation.HostFingerprint = p.Fingerprint
-		if e = s.checkAutomation(p, q.Operation, q.ID); e != nil {
+		if e = s.checkAutomation(p, q.Operation, q.ID, peer); e != nil {
 			return Message{}, e
 		}
 		if _, e := s.Approvals.GetForTicket(q.ID, q.Ticket); e != nil {
-			return Message{}, s.recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e)
+			return Message{}, recordAuthorityFailure(q.Operation, q.ID, "invalid_authority", e)
 		}
 		challenge, e := s.Approvals.DelegationChallengeForChannel(q.ID, q.Operation, time.Duration(q.TTL)*time.Second, destination.id)
 		if e != nil {
@@ -94,33 +97,40 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 		op, parent, known := s.Approvals.DelegationOperation(q.ID)
 		destination := s.channels[s.Approvals.DelegationChannel(q.ID)]
 		if !known || !s.ownsSession(channel, parent) || destination == nil || !destination.operation || len(destination.requests) != 0 || destination.ctx.Err() != nil || !channel.identity.Same(destination.identity) {
-			return Message{}, s.recordAuthorityFailure(op, parent, "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(op, parent, "invalid_authority", approval.ErrDenied)
 		}
 		r, t, e := s.Approvals.MintDelegated(q.ID, q.Proof)
 		if e != nil {
+			if errors.Is(e, approval.ErrReviewPending) {
+				return Message{}, e
+			}
 			if !known {
 				op = approval.Operation{Kind: "delegate"}
 			}
-			return Message{}, s.recordAuthorityFailure(op, parent, "invalid_authority", e)
+			return Message{}, recordAuthorityFailure(op, parent, "invalid_authority", e)
 		}
 		s.bindRequest(destination, r.ID)
 		destination.parent = channel
 		p, e := s.Vault.Profile(r.Operation.Host)
 		if e == nil {
-			e = s.checkAutomation(p, r.Operation, r.ParentID)
+			e = s.checkAutomation(p, r.Operation, r.ParentID, peer)
 		}
 		if e != nil {
 			s.Approvals.InvalidateAutomationHost(r.Operation.Host)
 			return Message{}, e
 		}
-		if e = s.auditRequest("delegated", &r); e != nil {
+		event := "delegated"
+		if r.Status == "pending" {
+			event = "requested"
+		}
+		if e = s.auditRequest(event, &r, peer); e != nil {
 			s.Approvals.Lock()
 			return Message{}, e
 		}
 		return Message{Request: &r, Ticket: t, Channel: destination.id}, nil
 	case "agentIdentities":
 		if !s.ownerQuery(q, channel) {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
 		keys, e := sshconn.AgentIdentities(channel.ctx)
 		if e != nil {
@@ -135,7 +145,7 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			return ProfileChangeProof(q.ID, *q.ProfileChange, prove)
 		}, q.Proof)
 		if !ok {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
@@ -167,10 +177,10 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			return OwnerRequestProof(q.ID, q.Operation, prove)
 		}, q.Proof)
 		if !ok {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
 		if sessionID != "" && q.Operation.Kind == "grant" {
-			return Message{}, s.recordAuthorityFailure(q.Operation, "", "invalid_operation", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(q.Operation, "", "invalid_operation", approval.ErrDenied)
 		}
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
@@ -204,17 +214,17 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
 		if !s.ownsRequest(channel, q.ID) {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), q.ID, "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), q.ID, "invalid_authority", approval.ErrDenied)
 		}
 		if e := s.Approvals.Withdraw(q.ID, q.Ticket); e != nil {
 			attempt := managementAttempt(q)
 			if r, err := s.Approvals.Get(q.ID); err == nil {
 				attempt.Host = r.Operation.Host
 			}
-			return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", e)
+			return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", e)
 		}
 		if r, e := s.Approvals.Get(q.ID); e == nil {
-			if e = s.auditRequest("withdrawn", &r); e != nil {
+			if e = s.auditRequest("withdrawn", &r, peer); e != nil {
 				return Message{}, e
 			}
 		}
@@ -242,7 +252,7 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			return AuditHistoryProof(q.ID, *q.AuditQuery, prove)
 		}, q.Proof)
 		if !ok {
-			return Message{}, s.recordAuthorityFailure(denied, "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(denied, "", "owner_required", approval.ErrDenied)
 		}
 		page, e := s.audit.history(*q.AuditQuery)
 		if e != nil {
@@ -257,7 +267,7 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			return ProfileProof(q.ID, *q.Profile, prove)
 		}, q.Proof)
 		if !ok {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
@@ -283,7 +293,7 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			return prove(append([]byte("ssh-client/profile-details/v1\x00"+q.ID+"\x00"), b...))
 		}, q.Proof)
 		if !ok {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
@@ -309,7 +319,7 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			return prove([]byte("ssh-client/profile-delete/v1\x00" + q.ID + "\x00" + q.Target))
 		}, q.Proof)
 		if !ok {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
@@ -332,13 +342,13 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 		owner := s.ownerQuery(q, channel)
 		list := s.Vault.Summaries()
 		if !owner {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", approval.ErrDenied)
 		}
-		return Message{Hosts: s.Vault.Names(), Connections: list}, nil
+		return Message{Hosts: s.Vault.Names(), Connections: list, Routes: s.Vault.Routes()}, nil
 	case "pending":
 		page, e := s.pendingPage(q, channel)
 		if e != nil {
-			return Message{}, s.recordAuthorityFailure(managementAttempt(q), "", "owner_required", e)
+			return Message{}, recordAuthorityFailure(managementAttempt(q), "", "owner_required", e)
 		}
 		return page, nil
 	case "workspaceRead":
@@ -349,16 +359,16 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
 		if len(channel.requests) != 0 || channel.operation || channel.identity == nil || channel.identity.Verify() != nil {
-			return Message{}, s.recordAuthorityFailure(q.Operation, "", "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(q.Operation, "", "invalid_authority", approval.ErrDenied)
 		}
 		p, e := s.Vault.Profile(q.Operation.Host)
 		if e != nil {
-			return Message{}, s.recordAuthorityFailure(q.Operation, "", "invalid_authority", e)
+			return Message{}, recordAuthorityFailure(q.Operation, "", "invalid_authority", e)
 		}
 		q.Operation.Endpoint = fmt.Sprintf("%s@%s", p.User, net.JoinHostPort(p.Host, fmt.Sprint(p.Port)))
 		q.Operation.HostFingerprint = p.Fingerprint
 		q.Operation.PathProtection = q.Operation.Kind == "grant" && !p.Policy.Unrestricted
-		if e = s.checkAutomation(p, q.Operation, ""); e != nil {
+		if e = s.checkAutomation(p, q.Operation, "", peer); e != nil {
 			return Message{}, e
 		}
 		r, t, e := s.Approvals.CreateFromPeer(q.Operation, time.Duration(q.TTL)*time.Second, bucket, peer)
@@ -369,7 +379,7 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 		if r.Operation.Kind == "grant" {
 			channel.session = r.ID
 		}
-		if e = s.auditRequest("requested", &r); e != nil {
+		if e = s.auditRequest("requested", &r, peer); e != nil {
 			s.Approvals.Lock()
 			return Message{}, e
 		}
@@ -389,39 +399,39 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			if !ok {
 				attempt := managementAttempt(q)
 				attempt.Host = reviewed.Operation.Host
-				return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
+				return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
 			}
 			if sessionID != "" {
 				managementSession = sessionID
 				if !s.ownerSessionMayDecide(reviewed, sessionID) {
 					attempt := managementAttempt(q)
 					attempt.Host = reviewed.Operation.Host
-					return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
+					return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
 				}
 				var e error
 				proof, e = s.Vault.Proof(payload)
 				if e != nil {
-					return Message{}, s.recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
+					return Message{}, recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
 				}
 			}
 		}
 		s.ownerMu.Lock()
 		defer s.ownerMu.Unlock()
 		if managementSession != "" && (s.ownerLeases[managementSession] == nil || channel.ctx.Err() != nil || s.channels[channel.id] != channel) {
-			return Message{}, s.recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
 		}
-		if e := s.Approvals.DecideWithLifetime(q.ID, q.Allow, q.TTL, q.Idle, proof); e != nil {
+		if e := s.Approvals.DecideWithTerms(q.ID, q.Allow, q.TTL, q.Idle, q.SkipMediumReview, proof); e != nil {
 			attempt := managementAttempt(q)
 			if r, err := s.Approvals.Get(q.ID); err == nil {
 				attempt.Host = r.Operation.Host
 			}
-			return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", e)
+			return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", e)
 		}
 		r, e := s.Approvals.Get(q.ID)
 		if e != nil {
 			return Message{}, e
 		}
-		if e = s.auditRequest(r.Status, &r); e != nil {
+		if e = s.auditRequest(r.Status, &r, peer); e != nil {
 			s.Approvals.Lock()
 			return Message{}, e
 		}
@@ -435,26 +445,26 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			if !ok {
 				attempt := managementAttempt(q)
 				attempt.Host = reviewed.Operation.Host
-				return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
+				return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
 			}
 			if sessionID != "" {
 				managementSession = sessionID
 				if !s.ownerSessionMayDecide(reviewed, sessionID) {
 					attempt := managementAttempt(q)
 					attempt.Host = reviewed.Operation.Host
-					return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
+					return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", approval.ErrDenied)
 				}
 				var e error
 				proof, e = s.Vault.Proof(payload)
 				if e != nil {
-					return Message{}, s.recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
+					return Message{}, recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
 				}
 			}
 		}
 		s.ownerMu.Lock()
 		if managementSession != "" && (s.ownerLeases[managementSession] == nil || channel.ctx.Err() != nil || s.channels[channel.id] != channel) {
 			s.ownerMu.Unlock()
-			return Message{}, s.recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
+			return Message{}, recordAuthorityFailure(reviewed.Operation, q.ID, "invalid_authority", approval.ErrDenied)
 		}
 		revokeErr := s.Approvals.Revoke(q.ID, proof)
 		s.ownerMu.Unlock()
@@ -463,14 +473,14 @@ func (s *Server) controlMessage(q Message, channel *callerChannel) (Message, err
 			if r, err := s.Approvals.Get(q.ID); err == nil {
 				attempt.Host = r.Operation.Host
 			}
-			return Message{}, s.recordAuthorityFailure(attempt, q.ID, "invalid_authority", revokeErr)
+			return Message{}, recordAuthorityFailure(attempt, q.ID, "invalid_authority", revokeErr)
 		}
 		r, e := s.Approvals.Get(q.ID)
 		if e != nil {
 			r, e = s.Approvals.SessionStatus(q.ID)
 		}
 		if e == nil {
-			if e = s.auditRequest("revoked", &r); e != nil {
+			if e = s.auditRequest("revoked", &r, peer); e != nil {
 				return Message{}, e
 			}
 		}
@@ -487,6 +497,9 @@ func errorResponse(err error) Message {
 	}
 	if errors.Is(err, approval.ErrSessionRenewing) {
 		code = "session_renewing"
+	}
+	if errors.Is(err, approval.ErrReviewPending) {
+		code = "operation_review_pending"
 	}
 	if policyDenial(err) {
 		code = "automation_policy"

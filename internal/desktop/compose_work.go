@@ -114,7 +114,7 @@ func (a *app) loadComposePlan(s *dockerDialogState) {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	ctx, cancel := context.WithTimeout(a.operationContext(), 40*time.Second)
+	ctx, cancel := context.WithTimeout(client.WithRoute(a.operationContext(), s.session.host, s.session.target.Route), 40*time.Second)
 	s.ctx, s.cancel = ctx, cancel
 	s.loading, s.error, s.plan = true, "", nil
 	if a.win == nil && a.dispatch == nil {
@@ -290,7 +290,7 @@ func (a *app) startComposeJob(s *dockerDialogState) {
 		return
 	}
 	op := approval.Operation{Host: s.session.host, Endpoint: s.session.target.Endpoint, HostFingerprint: s.session.target.HostFingerprint, Kind: "compose-update", Compose: r}
-	ctx, cancel := context.WithTimeout(a.operationContext(), 12*time.Minute)
+	ctx, cancel := context.WithTimeout(client.WithRoute(a.operationContext(), s.session.host, s.session.target.Route), 12*time.Minute)
 	job := &dockerJob{title: tr(nil, "更新 ") + r.Project, host: s.session.host, endpoint: s.session.target.Endpoint, phase: "checking", status: "running", op: op, log: &dockerLogView{buffer: &dockerlog.Buffer{}, follow: true}, started: time.Now(), cancel: cancel}
 	if len(a.dockerJobs) >= 20 {
 		removed := false
@@ -409,7 +409,7 @@ func (a *app) refreshDockerInventory(sess *session) {
 	if !a.hasSession(sess) || sess.closed {
 		return
 	}
-	ctx, cancel := context.WithTimeout(a.operationContext(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(client.WithRoute(a.operationContext(), sess.host, sess.target.Route), 20*time.Second)
 	a.beginContext(ctx, approval.Operation{Host: sess.host, Kind: "exec", Endpoint: sess.target.Endpoint, HostFingerprint: sess.target.HostFingerprint, Command: monitor.InventoryCommand}, func(stream *client.Stream) (func(), error) {
 		defer stream.Close()
 		var out, stderr managementOutput
@@ -432,15 +432,38 @@ func (a *app) refreshDockerInventory(sess *session) {
 }
 
 func (a *app) dockerJobsView(c *ui.Context) {
+	history := a.activityHistory[1] == 1
+	if a.activityVisibleCount() == 0 {
+		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Center().Children(func() {
+			text := tr(c, "暂无服务器操作")
+			if history {
+				text = tr(c, "暂无已完成记录")
+			}
+			ui.Text(c, text).FontSize(12).TextColor(c.Theme().TextMuted)
+		})
+		return
+	}
 	ui.Scroll(c).FillWidth().Grow(1).Children(func() {
 		ui.Column(c).FillWidth().Gap(10).Children(func() {
 			for i := len(a.dockerJobs) - 1; i >= 0; i-- {
 				job := a.dockerJobs[i]
+				if (job.status == "done") != history {
+					continue
+				}
 				ui.Column(c).FillWidth().Gap(5).Padding(8).Border(1, c.Theme().Border).Radius(6).Children(func() {
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, reviewText(job.title)).FontSize(12).Bold().Grow(1)
 						if components.Button(c, tr(c, "详情")).Label(tr(c, "任务详情 ") + job.title).Clicked() {
 							a.openDockerJob(job)
+						}
+						// The row carries the next step: a running update can stop
+						// waiting, a failed one can go, like a finished record.
+						if job.status == "running" && job.cancel != nil && components.Button(c, tr(c, "停止等待")).Label(tr(c, "停止等待 ")+job.title).Clicked() {
+							job.cancel()
+						}
+						removable := history || job.status == "error"
+						if removable && components.SVGButton(c, components.CloseIcon, tr(c, "移除记录 ")+job.title).Tooltip(tr(c, "清理记录不影响服务和审计")).Clicked() {
+							a.dockerJobs = append(a.dockerJobs[:i], a.dockerJobs[i+1:]...)
 						}
 					})
 					ui.Text(c, reviewText(a.hostName(job.host)+" · "+composeJobState(job))).SingleLine().FontSize(11).TextColor(c.Theme().TextMuted)

@@ -1,0 +1,45 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>SSH 密钥</title><link rel="stylesheet" href="../../tokens.css"></head>
+<body class="flex flex-col w-[1080px] h-[860px] bg-canvas">
+<div data-name="设置窗口" class="flex flex-row gap-space-sm p-space-sm w-full h-full">
+  <div data-name="设置导航" class="flex flex-col gap-space-xs p-space-md w-[200px] h-full bg-surface rounded-window-panel">
+    <div data-name="设置标题栏" class="flex flex-col pl-window-title-inset w-full h-control"><p data-name="设置标题" class="w-full text-text type-section">设置</p></div>
+    <sp-use component="导航项" data-name="工作区" props="图标: 隐藏" class="w-full h-control" data-click="08 设置/工作区"><p data-name="标签">工作区</p></sp-use>
+    <sp-use component="导航项" data-name="安全与解锁" props="图标: 隐藏" class="w-full h-control" data-click="08 设置/安全与解锁"><p data-name="标签">安全与解锁</p></sp-use>
+    <sp-use component="导航项" data-name="SSH 密钥" props="状态: 选中; 图标: 隐藏" class="w-full h-control"><p data-name="标签">SSH 密钥</p></sp-use>
+    <sp-use component="导航项" data-name="加速与代理" props="图标: 隐藏" class="w-full h-control" data-click="08 设置/加速与代理"><p data-name="标签">加速与代理</p></sp-use>
+    <sp-use component="导航项" data-name="运行与后台" props="图标: 隐藏" class="w-full h-control" data-click="08 设置/运行与后台"><p data-name="标签">运行与后台</p></sp-use>
+    <sp-use component="导航项" data-name="授权中心" props="图标: 隐藏" class="w-full h-control" data-click="08 设置/授权中心 · 待处理"><p data-name="标签">授权中心</p></sp-use>
+  </div>
+  <div data-name="设置内容" class="flex flex-col gap-space-md p-space-md w-full h-full bg-surface rounded-window-panel">
+    <div data-name="标题栏" class="flex flex-row items-center w-full h-control"><p data-name="标题" class="w-full text-text type-section">SSH 密钥</p><sp-use component="图标按钮" data-name="关闭设置"><p data-name="图标"></p></sp-use></div>
+    <div data-name="内容居中" class="flex flex-col items-start w-full h-fit">
+      <div data-name="设置内容容器" class="flex flex-col gap-space-md w-full max-w-settings-content h-fit">
+        <div data-name="管理动作" class="flex flex-row gap-space-sm w-full h-fit">
+          <sp-use component="按钮" props="样式: 普通" data-name="刷新密钥"><p data-name="文字">刷新密钥</p></sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="查看待处理请求" data-click="08 设置/密钥使用授权"><p data-name="文字">查看待处理请求</p></sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="结束限时授权"><p data-name="文字">结束限时授权</p></sp-use>
+        </div>
+        <div data-name="创建 SSH 密钥" class="flex flex-col gap-space-sm p-space-md w-full h-fit border border-border rounded-control">
+          <p data-name="标题" class="w-full text-text type-section">新建密钥</p>
+          <sp-use component="输入框" data-name="密钥名称" class="w-full h-control"><p data-name="值">密钥名称</p></sp-use>
+          <div data-name="签名验证" class="flex flex-col gap-space-xs w-full h-fit"><p data-name="标签" class="w-full text-text type-control">签名验证</p><sp-use component="输入框" data-name="验证方式选择" class="w-full h-control"><p data-name="值">macOS 验证（指纹或 Mac 登录密码） ⌄</p></sp-use></div>
+          <sp-use component="按钮" data-name="生成密钥"><p data-name="文字">生成密钥</p></sp-use>
+        </div>
+        <div data-name="SSH 密钥开发机" class="flex flex-col gap-space-sm p-space-md w-full h-fit border border-border rounded-control">
+          <p data-name="名称" class="w-full text-text type-record-title">开发机</p>
+          <p data-name="指纹" class="w-full text-text type-panel-label">SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDE12</p>
+          <p data-name="验证方式" class="w-full text-muted type-control">签名前系统验证</p>
+          <div data-name="密钥动作" class="flex flex-row gap-space-sm w-full h-fit"><sp-use component="按钮" props="样式: 普通" data-name="复制公钥"><p data-name="文字">复制公钥</p></sp-use><sp-use component="按钮" props="样式: 普通" data-name="限时授权"><p data-name="文字">限时授权</p></sp-use><sp-use component="按钮" props="样式: 轻量" data-name="删除密钥"><p data-name="文字" class="text-danger">删除</p></sp-use></div>
+        </div>
+        <div data-name="外部 SSH 客户端" class="flex flex-col gap-space-sm p-space-md w-full h-fit border border-border rounded-control">
+          <p data-name="标题" class="w-full text-text type-section">外部 SSH 客户端</p>
+          <p data-name="套接字" class="w-full text-muted type-panel-label">SmallSSH/signing/agent.sock</p>
+          <sp-use component="按钮" props="样式: 普通" data-name="复制套接字"><p data-name="文字">复制 SSH_AUTH_SOCK</p></sp-use>
+          <sp-use component="按钮" props="样式: 普通" data-name="通知状态"><p data-name="文字">签名通知已开启</p></sp-use>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

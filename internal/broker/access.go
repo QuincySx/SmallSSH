@@ -20,15 +20,30 @@ func (s *Server) failAudit(err error) error {
 
 // Policy refusals never create a pending request. A caller label, a parent
 // grant, or the public ServerStatus flag cannot acquire owner authority.
-func (s *Server) checkAutomation(p vault.Profile, op approval.Operation, parent string) error {
+func (s *Server) checkAutomation(p vault.Profile, op approval.Operation, parent string, peers ...approval.Peer) error {
+	if parent != "" {
+		if grant, err := s.Approvals.Get(parent); err == nil {
+			permission := grant.Operation.Grant.Permission
+			if permission == "guarded" || permission == approval.MaintenancePermission {
+				if err = accesspolicy.CheckGuarded(op); err != nil {
+					return s.recordRefusal(op, parent, accesspolicy.Reason(err), p.Name, err, peers...)
+				}
+			}
+		}
+	}
 	if err := p.Policy.Check(op); err != nil {
-		return s.recordRefusal(op, parent, accesspolicy.Reason(err), p.Name, err)
+		return s.recordRefusal(op, parent, accesspolicy.Reason(err), p.Name, err, peers...)
+	}
+	if op.Kind == "grant" && op.Grant.Permission == approval.MaintenancePermission && op.Grant.ReadRoot != "" {
+		if err := p.Policy.Check(approval.Operation{Kind: "file-info", Path: op.Grant.ReadRoot}); err != nil {
+			return s.recordRefusal(op, parent, accesspolicy.Reason(err), p.Name, err, peers...)
+		}
 	}
 	return nil
 }
 
-func (s *Server) recordRefusal(op approval.Operation, parent, reason, hostName string, cause error) error {
-	if err := s.audit.reject(op, parent, reason, hostName); err != nil {
+func (s *Server) recordRefusal(op approval.Operation, parent, reason, hostName string, cause error, peers ...approval.Peer) error {
+	if err := s.audit.reject(op, parent, reason, hostName, peers...); err != nil {
 		// No authority or remote effect is allowed when its refusal cannot be
 		// recorded. Existing grants are also invalidated on audit failure.
 		return s.failAudit(err)
@@ -36,15 +51,15 @@ func (s *Server) recordRefusal(op approval.Operation, parent, reason, hostName s
 	return cause
 }
 
-func (s *Server) recordAuthorityFailure(op approval.Operation, parent, reason string, cause error) error {
+func (s *Server) recordAuthorityFailure(op approval.Operation, parent, reason string, cause error, peers ...approval.Peer) error {
 	name := ""
 	if p, err := s.Vault.Profile(op.Host); err == nil {
 		name = p.Name
 	}
-	return s.recordRefusal(op, parent, reason, name, cause)
+	return s.recordRefusal(op, parent, reason, name, cause, peers...)
 }
 
-func (s *Server) auditRequest(event string, r *approval.Request) error {
+func (s *Server) auditRequest(event string, r *approval.Request, actors ...approval.Peer) error {
 	name := ""
 	if r != nil {
 		if p, err := s.Vault.Profile(r.Operation.Host); err == nil {
@@ -54,7 +69,7 @@ func (s *Server) auditRequest(event string, r *approval.Request) error {
 	if s.auditFault.Load() {
 		return errAuditUnavailable
 	}
-	if err := s.audit.writeHost(event, r, name); err != nil {
+	if err := s.audit.writeHost(event, r, name, actors...); err != nil {
 		return s.failAudit(err)
 	}
 	return nil
@@ -119,7 +134,7 @@ func policyDenial(err error) bool {
 	return errors.Is(err, accesspolicy.ErrDisabled) || errors.Is(err, accesspolicy.ErrProtected) ||
 		errors.Is(err, accesspolicy.ErrUncontrolled) || errors.Is(err, accesspolicy.ErrCommand) ||
 		errors.Is(err, accesspolicy.ErrEmptyCommand) || errors.Is(err, accesspolicy.ErrDestructiveCommand) ||
-		errors.Is(err, accesspolicy.ErrInvalidPolicy)
+		errors.Is(err, accesspolicy.ErrInvalidPolicy) || errors.Is(err, accesspolicy.ErrHighRisk)
 }
 
 func managementAttempt(q Message) approval.Operation {
@@ -140,6 +155,29 @@ func managementAttempt(q Message) approval.Operation {
 }
 
 func (s *Server) invalidateRelayDependents(id string) {
+	// Temporary owner routes are absent from the saved profile graph. They
+	// must still lose authority when a jump host's identity or credentials change.
+	for _, request := range s.Approvals.List() {
+		op := request.Operation
+		if !op.Route.Temporary() || op.Route.Mode == "direct" {
+			continue
+		}
+		candidate, err := s.Vault.Profile(op.Host)
+		if err != nil {
+			continue
+		}
+		route, err := s.operationRoute(candidate, op.Route)
+		if err != nil {
+			s.Approvals.InvalidateHost(op.Host)
+			continue
+		}
+		for _, hop := range route[1:] {
+			if hop.ID == id {
+				s.Approvals.InvalidateHost(op.Host)
+				break
+			}
+		}
+	}
 	// A relay's credentials or endpoint also belong to every dependent route.
 	for _, summary := range s.Vault.Summaries() {
 		if summary.ID == id {

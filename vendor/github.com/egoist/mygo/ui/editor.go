@@ -23,6 +23,8 @@ type editEvent struct {
 	key   Key
 	text  string
 	caret int
+	// repeat marks a command whose key, held down, repeats (commandKey).
+	repeat bool
 	// replace makes an insertion or a composition take the runes from to
 	// to instead of the selection, as an input method asked.
 	replace  bool
@@ -51,6 +53,7 @@ type editor struct {
 	queue              []editEvent
 	multiline          bool
 	readOnly           bool   // selectable text: selected and copied, not edited
+	maxLength          int    // UTF-16 units the user may enter, none when <= 0 (MaxLength)
 	source             string // the text of selectable text
 	password           bool
 	// onPaste sees a paste before it is inserted (OnPaste).
@@ -71,6 +74,11 @@ type editor struct {
 	// wrapped text between them; zero for the paragraphs, at least three.
 	lines       [2]int
 	placeholder string
+	// Placeholder color is paint-only and reset by each widget build.
+	placeholderColor    Color
+	placeholderColorSet bool
+	// caretWidth is paint-only, in DIPs, and reset by each widget build.
+	caretWidth float32
 	// ranges style runs of the text (TextRanges): as given until apart is
 	// set, then merged into runs apart, sorted by Start (sortRanges).
 	ranges []TextRange
@@ -98,7 +106,10 @@ type editor struct {
 	undo, redo       []undoStep
 	lastEdit         time.Time
 	// now is the time, the engine's (engine.now), for what depends on it.
+	// sys is the text system of the window the editor draws in, the
+	// engine's: a Tester's window shapes apart from the others' (#1722).
 	now       func() time.Time
+	sys       *text.System
 	coalesce  bool
 	dragging  bool
 	dragUnit  int // 1 rune, 2 word, 3 line
@@ -107,12 +118,17 @@ type editor struct {
 	contentW  float32
 }
 
-func newEditor(now func() time.Time) *editor { return &editor{now: now} }
+func newEditor(now func() time.Time, sys *text.System) *editor {
+	return &editor{now: now, sys: sys}
+}
 
 func (ed *editor) String() string { return ed.buf.string() }
 
 // edit replaces the runes from a to z with s, and tells the area.
 func (ed *editor) edit(a, z int, s string) {
+	// An edit ends the drag of a press: a pointer still down would take the
+	// caret back to it, and the next key would land there or replace what it selects.
+	ed.dragging = false
 	first, old, after := ed.buf.replace(a, z, s)
 	if ed.area != nil {
 		ed.area.edited(&ed.buf, first, old, after)
@@ -123,6 +139,7 @@ func (ed *editor) edit(a, z int, s string) {
 // set in each build and its edits follow.
 type editorOptions struct {
 	readOnly, password bool
+	maxLength          int
 	onPaste            func(text string) bool
 	onTextKey          func(k TextKey) bool
 }
@@ -131,8 +148,10 @@ type editorOptions struct {
 // the options its pending edits apply by, and this build's start from
 // the defaults.
 func (ed *editor) rebuild() {
-	ed.shown = editorOptions{ed.readOnly, ed.password, ed.onPaste, ed.onTextKey}
-	ed.readOnly, ed.password, ed.lines, ed.onPaste, ed.onTextKey = false, false, [2]int{}, nil, nil
+	ed.shown = editorOptions{ed.readOnly, ed.password, ed.maxLength, ed.onPaste, ed.onTextKey}
+	ed.readOnly, ed.password, ed.maxLength, ed.lines, ed.onPaste, ed.onTextKey = false, false, 0, [2]int{}, nil, nil
+	ed.placeholderColorSet = false
+	ed.caretWidth = 1
 }
 
 // withShown runs fn, which applies the user's edits, with the options of
@@ -140,11 +159,11 @@ func (ed *editor) rebuild() {
 // returns, before this build's ReadOnly or OnPaste, and follows what the
 // user saw.
 func (ed *editor) withShown(fn func()) {
-	now := editorOptions{ed.readOnly, ed.password, ed.onPaste, ed.onTextKey}
+	now := editorOptions{ed.readOnly, ed.password, ed.maxLength, ed.onPaste, ed.onTextKey}
 	o := ed.shown
-	ed.readOnly, ed.password, ed.onPaste, ed.onTextKey = o.readOnly, o.password, o.onPaste, o.onTextKey
+	ed.readOnly, ed.password, ed.maxLength, ed.onPaste, ed.onTextKey = o.readOnly, o.password, o.maxLength, o.onPaste, o.onTextKey
 	fn()
-	ed.readOnly, ed.password, ed.onPaste, ed.onTextKey = now.readOnly, now.password, now.onPaste, now.onTextKey
+	ed.readOnly, ed.password, ed.maxLength, ed.onPaste, ed.onTextKey = now.readOnly, now.password, now.maxLength, now.onPaste, now.onTextKey
 }
 
 func (ed *editor) insert(s string) {
@@ -154,6 +173,9 @@ func (ed *editor) insert(s string) {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	a, b := ed.selection()
 	ranges := ed.selectedRanges()
+	if a == b && len(ranges) == 0 && ed.fit(a, a, s) == "" {
+		return // nothing fits (MaxLength): no step of undo either
+	}
 	ed.record(a == b && utf8.RuneCountInString(s) == 1)
 	if len(ranges) == 0 {
 		ed.replace(ed.caret, ed.caret, s)

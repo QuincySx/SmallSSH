@@ -1,3 +1,5 @@
 {
-  "vendor/github.com/egoist/mygo/internal/darwin/access.go": "2b7ca21f62b569112d7774b6b9ff360408759182934e3ef2dcda73e973fded84"
+  "vendor/github.com/egoist/mygo/internal/darwin/access.go": "5a5686f22f9d8c6bb2c4685f189073baada015762c89d37352db6d895864b0d4",
+  "vendor/github.com/sagernet/sing-vmess/vless/vision.go": "646de2757dff18653c6b48ac866b5ccfd7fded29ca7eaa6eb9552f27cfe710d1",
+  "vendor/github.com/sagernet/sing-vmess/vless/vision_utls.go": "50174799618132d35154bb450b7b04a6b3c4277abe9875fe55461c152a05d0b5"
 }

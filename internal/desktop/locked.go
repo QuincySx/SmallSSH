@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
 	"sshclient/internal/desktop/components"
 )
 
@@ -19,7 +20,8 @@ func (a *app) lockedView(c *ui.Context) {
 	}
 	systemReady := !a.create && a.unlockSystemReady()
 	usePassword := a.create || state.passwordMode || !systemReady
-	nativeIcon := state.presentation != nil && a.busy && state.systemAttempt
+	verifying := state.busy
+	nativeIcon := state.presentation != nil && verifying && state.systemAttempt
 	backdrop, surface := t.Surface.Mix(t.Background, 0.4), t.Background
 	if t.Dark {
 		backdrop, surface = t.Background, t.Surface
@@ -41,21 +43,18 @@ func (a *app) lockedView(c *ui.Context) {
 						ui.Text(c, tr(c, "为这台电脑上的连接资料设置一个主密码。")).FontSize(13).TextColor(t.TextMuted).FillWidth().TextAlign(ui.Center)
 					}
 				})
-				submitted, systemClicked := false, false
+				submitted, systemClicked, cancelClicked := false, false, false
 				var anchor ui.Rect
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
 					if usePassword {
 						// Mode-specific keys prevent a newly expanded field from
 						// reusing the method row's previously committed bounds.
-						input, action := components.AuthenticationPasswordWithAnchor(c.Key("vault-unlock-password"), &a.pass, tr(c, "主密码"), a.approvalSystemLabel(c), systemReady, a.busy && !nativeIcon, nativeIcon)
+						input, action := components.AuthenticationPasswordWithAnchor(c.Key("vault-unlock-password"), &a.pass, tr(c, "主密码"), a.systemAuthenticationMethod(c), systemReady, a.busy && !nativeIcon, nativeIcon)
 						input.Placeholder(tr(c, "输入主密码")).Tooltip(tr(c, "本机保险库主密码，与服务器登录密码不同")).AutoFocus()
 						action.Disabled(a.busy)
 						submitted, systemClicked = input.Submitted(), systemReady && action.Clicked()
 						if systemReady {
-							bounds := action.Bounds()
-							if bounds.W > 0 && bounds.H > 0 {
-								anchor = ui.Rect{X: bounds.X + (bounds.W-32)/2, Y: bounds.Y + (bounds.H-32)/2, W: 32, H: 32}
-							}
+							anchor = action.Bounds()
 						}
 						if nativeIcon && (input.Changed() || submitted) {
 							password := a.pass
@@ -67,7 +66,7 @@ func (a *app) lockedView(c *ui.Context) {
 							a.unlockError = ""
 						}
 						if a.create {
-							input, _ := components.AuthenticationPasswordWithAnchor(c.Key("vault-unlock-confirm"), &a.confirm, tr(c, "确认主密码"), "", false, a.busy, false)
+							input, _ := components.AuthenticationPasswordWithAnchor(c.Key("vault-unlock-confirm"), &a.confirm, tr(c, "确认主密码"), components.SystemAuthenticationMethod{}, false, a.busy, false)
 							input.Placeholder(tr(c, "再次输入主密码"))
 							if input.Changed() {
 								state.passwordMode = true
@@ -77,29 +76,22 @@ func (a *app) lockedView(c *ui.Context) {
 							ui.Text(c, tr(c, "请使用较长、独立的主密码，用于保护已保存的连接。")).FillWidth().FontSize(12).TextColor(t.TextMuted)
 						}
 					} else {
-						method := components.Button(c, "", components.ButtonOptions{Variant: components.Quiet}).Key("vault-unlock-method").
-							Label(a.approvalSystemLabel(c)).FillWidth().Height(38).Padding(0).AutoFocus().Disabled(a.busy && !state.systemAttempt)
-						method.Children(func() {
-							ui.Text(c, a.approvalSystemLabel(c)).FontSize(14).Grow(1).SingleLine()
-							ui.Box(c).Size(36, 34).Center().Children(func() {
-								icon := ui.Box(c).Key("vault-unlock-biometric-icon").Size(32, 32).Center()
-								anchor = icon.Bounds()
-								icon.Children(func() {
-									if nativeIcon {
-										return
-									}
-									if a.busy {
-										ui.Spinner(c).Size(18, 18)
-									} else {
-										ui.Icon(c, components.FingerprintIcon).Size(22, 22).TextColor(t.Accent)
-									}
-								})
-							})
+						useMasterPassword := false
+						ui.Row(c).FillWidth().Gap(8).Height(design.Length("size-authentication-action")).AlignItems(ui.Center).Children(func() {
+							useMasterPassword = masterPasswordAction(c.Key("vault-password-action"), false).AutoFocus().Clicked()
+							ui.Spacer(c).Grow(1)
+							if verifying {
+								cancelClicked = cancelVerificationButton(c.Key("vault-cancel-verification")).Clicked()
+							}
+							action := components.SystemAuthenticationButton(c.Key("vault-unlock-system"), a.systemAuthenticationMethod(c), a.busy, a.busy, nativeIcon).
+								Background(ui.Hex(design.Color(t.Dark, "color-accentsoft")))
+							anchor, systemClicked = action.Bounds(), action.Clicked()
 						})
-						if method.Clicked() || c.Shortcut(0, ui.KeyEnter) {
+						if useMasterPassword || !systemClicked && c.Shortcut(0, ui.KeyEnter) {
 							a.expandUnlockPassword()
 						}
 					}
+					a.authenticationHint(c, state.systemAttempt)
 					if a.unlockError != "" {
 						ui.Box(c).FillWidth().Padding(10, 12).Radius(8).Background(t.Danger.Alpha(0.07)).Children(func() {
 							ui.Text(c, a.unlockError).FillWidth().FontSize(12).TextColor(t.Danger).Label(tr(c, "解锁错误"))
@@ -124,12 +116,21 @@ func (a *app) lockedView(c *ui.Context) {
 							label = tr(c, "正在创建…")
 						}
 					}
-					clicked := components.PrimaryButton(c, label).FillWidth().Height(38).Label(tr(c, "确认解锁")).Disabled(!ready).Clicked()
+					clicked := false
+					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
+						if verifying {
+							cancelClicked = cancelVerificationButton(c.Key("vault-cancel-verification")).Clicked()
+						}
+						clicked = components.PrimaryButton(c, label).Grow(1).MinWidth(0).
+							Height(38).Label(tr(c, "确认解锁")).Disabled(!ready).Clicked()
+					})
 					if ready && (clicked || submitted) {
 						a.unlock()
 					}
 				}
-				if systemClicked {
+				if verifying && (cancelClicked || c.Shortcut(0, ui.KeyEscape)) {
+					a.cancelUnlockVerification()
+				} else if systemClicked {
 					a.systemUnlock()
 				}
 			})

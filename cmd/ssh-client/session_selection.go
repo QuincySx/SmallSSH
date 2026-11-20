@@ -34,5 +34,9 @@ func writeApprovalNotice(w io.Writer, r approval.Request) {
 	if r.Status != "pending" {
 		return
 	}
+	if r.ParentID != "" {
+		fmt.Fprintf(w, "%s\n本次操作已进入授权中心，等待单独确认；不会扩大当前会话权限。\n", client.Describe(r))
+		return
+	}
 	fmt.Fprintf(w, "%s\n单次请求已进入授权中心，也可由人类终端执行 smallssh approve %s。连续操作请运行 smallssh exec 连接ID，复用同一进程的 session 会话授权。\n", client.Describe(r), r.ID)
 }

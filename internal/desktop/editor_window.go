@@ -3,6 +3,7 @@ package desktop
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -26,6 +27,12 @@ func editorBufferText(buffer *editor.Buffer) string {
 	var out bytes.Buffer
 	_, _ = buffer.WriteTo(&out) // bytes.Buffer writes cannot fail.
 	return out.String()
+}
+
+func editorBufferSize(buffer *editor.Buffer) int {
+	// MyGo preserves per-line endings, including mixed CRLF/LF files.
+	n, _ := buffer.WriteTo(io.Discard)
+	return int(n)
 }
 
 func (a *app) editorPathParts() (string, string) {
@@ -62,7 +69,7 @@ func (a *app) openEditorWindow() {
 	a.editorWindowFocus = true
 	if a.editorWin != nil {
 		a.refreshEditorWindowTitle()
-		a.editorWin.Show()
+		a.showPresenceWindow(a.editorWin)
 		a.editorWin.Invalidate()
 		return
 	}
@@ -102,7 +109,7 @@ func (a *app) openEditorWindow() {
 		}
 		if w != nil {
 			a.editorWin = w
-			w.Show()
+			a.showPresenceWindow(w)
 		} else {
 			a.status = tr(nil, "无法打开编辑器窗口")
 		}
@@ -168,7 +175,7 @@ func (a *app) editorWindowView(c *ui.Context) {
 			ui.Row(c).FillWidth().Padding(5, 10).Gap(12).Children(func() {
 				ui.Text(c, fmt.Sprintf(tr(c, "%d 行 · 第 %d 行，第 %d 列"), a.edit.Buffer.LineCount(), pos.Line+1, pos.Col+1)).FontSize(11).TextColor(c.Theme().TextMuted)
 				ui.Spacer(c).Grow(1)
-				ui.Text(c, fmt.Sprintf("UTF-8 · %s · %d B", ending, len(editorBufferText(a.edit.Buffer)))).FontSize(11).TextColor(c.Theme().TextMuted)
+				ui.Text(c, fmt.Sprintf("UTF-8 · %s · %d B", ending, editorBufferSize(a.edit.Buffer))).FontSize(11).TextColor(c.Theme().TextMuted)
 			})
 		},
 	}, func() {

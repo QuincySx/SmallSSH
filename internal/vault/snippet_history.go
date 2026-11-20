@@ -95,7 +95,7 @@ func (s *Session) SaveParameterHistory(file string, command snippet.Command, tar
 		}
 	}
 	trimParameterHistory(values)
-	copy := &Session{header: s.header, key: s.key, profiles: s.profiles, snippets: values, notes: s.notes, auditHead: s.auditHead}
+	copy := &Session{header: s.header, key: s.key, routes: s.routes, profiles: s.profiles, snippets: values, notes: s.notes, auditHead: s.auditHead}
 	if err := Save(file, copy, false); err != nil {
 		return err
 	}

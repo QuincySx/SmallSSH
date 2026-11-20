@@ -4,7 +4,8 @@
   "stroke": 2,
   "provenance": "Lucide 1.61.0 only; official outlined SVG glyphs, stable Alva names/codepoints, original 24-unit canvas and no per-icon positioning edits.",
   "license": "ISC AND MIT",
-  "licenseFile": "lucide/LICENSE",
+  "licenseFile": "Lucide-LICENSE.txt",
+  "fontFile": "SmallSSHIcons-400.woff",
   "source": {
     "package": "lucide-static",
     "version": "1.61.0",

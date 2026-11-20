@@ -3,23 +3,25 @@ package desktop
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"sort"
 	"sshclient/internal/desktop/components"
+	"sshclient/internal/sshkey"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"sshclient/internal/broker"
+	"sshclient/docs/design"
 	"sshclient/internal/client"
+	"sshclient/internal/connectcfg"
 	"sshclient/internal/hardware"
-	"sshclient/internal/sshconn"
+	"sshclient/internal/protocol"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/vault"
 )
 
@@ -31,22 +33,23 @@ type connectionEditor struct {
 	errors            map[string]string
 	notes             *connectionNotesLoad
 	authLabel         string
-	replace, connect  bool
-	review            bool
-	identity          *sshconn.HostIdentity
-	confirmed         bool
+	replace           bool
 	trustedTarget     string
-	keyInfo           *sshconn.KeyInfo
-	agentKeys         []sshconn.KeyInfo
+	keyInfo           *sshdata.KeyInfo
+	agentKeys         []sshdata.KeyInfo
+	managed           managedConnectionKeys
 	focusPolicy       bool
+	protectedPaths    string
+	pathsReady        bool
+	focusPaths        bool
 	section           string
 	focusName         bool
 	sectionScrolls    [4]ui.ScrollState
 	replaceProxy      bool
 	hardwareKeys      []hardware.Key
-	routeMeasurements []sshconn.RouteMeasurement
+	hardwarePIN       bool
+	routeMeasurements []sshdata.RouteMeasurement
 	measuredNetwork   string
-	recheck           bool
 	showSecret        map[string]bool
 	pendingNote       *pendingConnectionNote
 }
@@ -54,7 +57,6 @@ type connectionEditor struct {
 type pendingConnectionNote struct {
 	summary vault.Summary
 	id      string
-	connect bool
 }
 
 func (a *app) postUI(fn func()) {
@@ -76,7 +78,7 @@ func (a *app) resetConnectionEditor() {
 	if a.connection.notes != nil {
 		a.connection.notes.cancel()
 	}
-	a.connection = connectionEditor{sequence: sequence, errors: map[string]string{}, authLabel: "服务器密码", connect: true, focusName: true}
+	a.connection = connectionEditor{sequence: sequence, errors: map[string]string{}, authLabel: "服务器密码", focusName: true}
 	a.form.Password = ""
 	a.form.PrivateKey = ""
 	a.form.KeyPassphrase = ""
@@ -111,9 +113,11 @@ func authLabel(kind string) string {
 	case "key":
 		return "已有私钥"
 	case "pkcs11":
-		return "硬件密钥（PKCS#11）"
+		return "硬件密钥"
 	case "agent":
 		return "SSH 密钥代理"
+	case "managed":
+		return "SmallSSH 密钥"
 	}
 	return "服务器密码"
 }
@@ -121,10 +125,12 @@ func authKind(label string) string {
 	switch label {
 	case "已有私钥":
 		return "key"
-	case "硬件密钥（PKCS#11）":
+	case "硬件密钥":
 		return "pkcs11"
 	case "SSH 密钥代理":
 		return "agent"
+	case "SmallSSH 密钥":
+		return "managed"
 	}
 	return "password"
 }
@@ -175,29 +181,20 @@ func (a *app) connectionView(c *ui.Context) {
 	if a.details != nil {
 		title = tr(c, "编辑连接")
 	}
-	review := a.connection.review && a.connection.identity != nil
-	width, height := float32(820), float32(620)
-	if review {
-		title, width, height = tr(c, "确认服务器身份"), 640, 380
-	}
 	open := true
 	components.Dialog(c, &open, components.DialogOptions{
-		Title: title, Width: width, Height: height, BodyOwnsScroll: !review, Compact: !review,
+		Title: title, Size: components.DialogLarge, Height: design.Length("size-connection-editor-height"), BodyOwnsScroll: true, Compact: true,
 		Close: a.requestCloseConnection, CloseDisabled: a.connection.phase == "save",
 	}, func() {
-		if a.page != 0 {
-			return
-		}
-		if review {
-			a.connectionIdentityView(c)
-		} else {
+		if a.page == 0 {
 			a.connectionForm(c)
 		}
 	}, func() {
 		if a.page == 0 {
-			a.connectionFooter(c, review)
+			a.connectionFooter(c)
 		}
 	})
+
 	if !open && a.page == 0 {
 		a.requestCloseConnection()
 	}
@@ -235,11 +232,14 @@ func (a *app) connectionGeneralForm(c *ui.Context) {
 			components.FormSection(c, tr(c, "登录身份"), func() {
 				a.connectionField(c, "user", tr(c, "用户名"), &a.form.User, false, "")
 				ui.Field(c, tr(c, "登录方式"), func() {
-					if sourceSelect(c, &e.authLabel, []string{"服务器密码", "已有私钥", "SSH 密钥代理", "硬件密钥（PKCS#11）"}).FillWidth().Height(components.FormHeight).Label(tr(c, "登录方式选择")).Changed() {
+					if sourceSelect(c, &e.authLabel, []string{"服务器密码", "已有私钥", "SmallSSH 密钥", "SSH 密钥代理", "硬件密钥"}).FillWidth().Height(components.FormHeight).Label(tr(c, "登录方式选择")).Changed() {
 						a.form.Auth = authKind(e.authLabel)
 						a.form.Password = ""
 						a.form.PrivateKey = ""
 						a.form.KeyPassphrase = ""
+						a.form.AgentFingerprint = ""
+						e.agentKeys = nil
+						e.managed = managedConnectionKeys{}
 						a.form.Hardware.PIN = ""
 						a.keyFile = ""
 						e.keyInfo = nil
@@ -266,27 +266,36 @@ func (a *app) connectionGeneralForm(c *ui.Context) {
 					if !keep {
 						switch a.form.Auth {
 						case "key":
-							ui.Field(c, tr(c, "私钥文件"), func() {
-								ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-									if ui.TextInput(c, &a.keyFile).Grow(1).Height(components.FormHeight).Label(tr(c, "私钥文件输入")).Placeholder(tr(c, "选择文件，或粘贴本机完整路径")).
-										Tooltip(tr(c, "支持 OpenSSH / PEM；加密保存在本机，不上传私钥")).Changed() {
-										e.keyInfo = nil
-										delete(e.errors, "key")
+							ui.Field(c, tr(c, "私钥"), func() {
+								placeholder := "选择文件，或粘贴本机完整路径"
+								if a.form.PrivateKey != "" {
+									placeholder = "已粘贴私钥"
+								}
+								if ui.TextInput(c, &a.keyFile).FillWidth().Height(components.FormHeight).Label(tr(c, "私钥文件输入")).Placeholder(tr(c, placeholder)).Changed() {
+									a.form.PrivateKey = ""
+									e.keyInfo = nil
+									delete(e.errors, "key")
+								}
+								ui.Row(c).FillWidth().Gap(8).Wrap().Children(func() {
+									if components.Button(c, tr(c, "粘贴私钥")).Clicked() {
+										a.pastePrivateKey(c.ReadClipboard())
 									}
 									if components.Button(c, tr(c, "选择私钥文件…")).Clicked() {
 										a.openPrivateKeyPicker()
 									}
 								})
 							}).Error(e.errors["key"])
-							a.connectionField(c, "key", tr(c, "私钥口令"), &a.form.KeyPassphrase, true, tr(c, "仅在私钥文件已加密时填写"))
+							a.connectionField(c, "key", tr(c, "私钥口令"), &a.form.KeyPassphrase, true, tr(c, "仅在私钥已加密时填写"))
 							ui.Field(c, tr(c, "私钥检查"), func() {
-								if components.Button(c, tr(c, "检查私钥")).Disabled(a.keyFile == "").Clicked() {
+								if components.Button(c, tr(c, "检查私钥")).Disabled(a.keyFile == "" && a.form.PrivateKey == "").Clicked() {
 									a.checkPrivateKey()
 								}
 								if e.keyInfo != nil {
 									ui.Text(c, e.keyInfo.Algorithm+" · "+e.keyInfo.Fingerprint).FontSize(11).Selectable()
 								}
 							})
+						case "managed":
+							a.managedConnectionForm(c)
 						case "agent":
 							ui.Field(c, tr(c, "代理身份"), func() {
 								if len(e.agentKeys) > 0 {
@@ -326,7 +335,7 @@ func (a *app) connectionGeneralForm(c *ui.Context) {
 					ui.Text(c, tr(c, "已信任 · ")+a.form.Fingerprint).FontSize(11).Selectable()
 					if components.Button(c, tr(c, "重新核对服务器身份")).Clicked() {
 						a.invalidateHostIdentity()
-						a.connection.recheck = true
+						e.message = tr(c, "下次连接时核对服务器身份")
 						delete(e.errors, "trust")
 						delete(e.errors, "form")
 					}
@@ -361,13 +370,12 @@ func (a *app) connectionGeneralForm(c *ui.Context) {
 
 func (a *app) isTestVault() bool { return filepath.Base(a.dir) == "ssh-client-workbench-preview-qa" }
 
-// Only the in-process human desktop holds this session. Public CLI requests
-// cannot obtain it; they still need their own explicit owner approval.
-func (a *app) unlockedOwner() (*vault.Session, error) {
+// Only the authenticated desktop holds this process-bound owner capability.
+func (a *app) unlockedOwner() (client.OwnerProof, error) {
 	if !a.online || a.server == nil {
 		return nil, errors.New(tr(nil, "保险库已锁定，请重新解锁后继续"))
 	}
-	return a.server.Vault, nil
+	return a.server, nil
 }
 
 func (a *app) connectionGroups() []string {
@@ -392,7 +400,8 @@ func (a *app) connectionGroupField(c *ui.Context) {
 		field := ui.Row(c).FillWidth().Height(components.FormHeight).Radius(t.Radius).Background(t.Surface).Border(1, t.Border).AlignItems(ui.Center).Children(func() {
 			cb = ui.ComboboxBase(c, &a.form.Group)
 			cb.Input.Grow(1).Height(components.FormHeight-2).Padding(6, 10).Label(tr(c, "分组输入")).Placeholder(tr(c, "选择已有分组，或输入新分组"))
-			if components.IconButton(c, "⌄", tr(c, "展开分组")).Size(30, 30).TextColor(t.TextMuted).Clicked() {
+			if components.SVGButton(c, components.ChevronDownIcon, tr(c, "展开分组")).
+				Size(components.FieldActionSize, components.FieldActionSize).TextColor(t.TextMuted).Clicked() {
 				cb.SetOpen(!cb.Open())
 				cb.Input.Focus()
 			}
@@ -438,20 +447,7 @@ func (a *app) connectionGroupField(c *ui.Context) {
 	}).Error(a.connection.errors["group"])
 }
 
-func (a *app) connectionActionLabel(review bool) string {
-	if review {
-		if a.connection.connect {
-			return tr(nil, "信任并连接")
-		}
-		return tr(nil, "信任并保存")
-	}
-	if a.connection.connect {
-		return tr(nil, "保存并连接")
-	}
-	return tr(nil, "保存连接")
-}
-
-func (a *app) connectionFooter(c *ui.Context, review bool) {
+func (a *app) connectionFooter(c *ui.Context) {
 	e := &a.connection
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
 		for _, key := range []string{"trust", "form"} {
@@ -468,11 +464,9 @@ func (a *app) connectionFooter(c *ui.Context, review bool) {
 		if e.message != "" {
 			ui.Text(c, e.message).FontSize(12).FillWidth()
 		}
-		components.ActionGroup(c, ui.Start, func() {
+		components.ActionGroup(c, ui.End, func() {
 			cancelLabel := tr(c, "取消")
-			if e.phase == "connect" {
-				cancelLabel = tr(c, "取消连接（配置已保存）")
-			} else if e.pendingNote != nil {
+			if e.pendingNote != nil {
 				cancelLabel = tr(c, "放弃备注并关闭")
 			}
 			if components.Button(c, cancelLabel).Height(36).Disabled(e.phase == "save").Clicked() {
@@ -482,130 +476,63 @@ func (a *app) connectionFooter(c *ui.Context, review bool) {
 					a.cancelConnectionEditor()
 				}
 			}
-			if !review {
-				c.Key("connection-connect-after-save")
-				ui.Checkbox(c, &e.connect, tr(c, "保存后连接")).Disabled(e.phase != "" || e.pendingNote != nil)
-			}
-			if review && components.Button(c, tr(c, "返回修改")).Height(36).Disabled(e.phase != "").Clicked() {
-				e.review = false
-			}
-			ui.Spacer(c).Grow(1)
-			label := a.connectionActionLabel(review)
-			switch e.phase {
-			case "probe":
-				label = tr(c, "正在读取服务器身份…")
-			case "save":
+
+			label := tr(c, "保存连接")
+			if e.phase == "save" {
 				label = tr(c, "正在保存…")
-			case "connect":
-				label = tr(c, "正在连接…")
 			}
+
 			if e.pendingNote != nil && e.phase == "" {
 				label = tr(c, "重试保存备注")
 			}
-			if components.Button(c, label, components.ButtonOptions{Variant: components.Primary, Busy: e.phase != ""}).Height(36).Disabled(a.connectionNotesBlocked()).Clicked() {
-				if review {
-					a.trustAndSaveConnection()
-				} else {
-					a.saveProfile()
-				}
+			if components.Button(c, label, components.ButtonOptions{Variant: components.Primary, Busy: e.phase == "save"}).Height(36).Disabled(a.connectionNotesBlocked()).Clicked() {
+				a.saveProfile()
 			}
 		})
 	})
-}
-
-func (a *app) connectionIdentityView(c *ui.Context) {
-	identity := a.connection.identity
-	ui.Column(c).FillWidth().Gap(18).Children(func() {
-		ui.Text(c, tr(c, "此服务器尚未被信任。")).TextColor(c.Theme().TextMuted)
-		ui.Column(c).FillWidth().Padding(20).Gap(12).Radius(10).Background(c.Theme().Surface).Children(func() {
-			ui.Text(c, a.form.Name).FontSize(17).Bold()
-			ui.Text(c, a.form.User+"@"+targetID(identity.Host, identity.Port)).Selectable()
-			ui.Text(c, tr(c, "主机指纹 · ")+identity.Algorithm).TextColor(c.Theme().TextMuted)
-			ui.Text(c, identity.Fingerprint).Selectable().FillWidth().Label(tr(c, "待信任服务器指纹"))
-		})
-		ui.Text(c, tr(c, "请与云控制台或已有可信连接核对指纹，确认后才会登录服务器。")).FillWidth()
-	})
-}
-
-// showIdentityPrompt is the first-use / recheck confirmation. It shows the
-// fingerprint the app negotiated, asks once, and stores the accepted value in
-// the encrypted vault, never in ~/.ssh/known_hosts.
-func (a *app) showIdentityPrompt(identity sshconn.HostIdentity, seq uint64, gen int, id string) {
-	title := tr(nil, "首次连接")
-	if a.connection.recheck {
-		title = tr(nil, "重新核对服务器身份")
-	}
-	accept := tr(nil, "信任指纹并保存")
-	if a.connection.connect {
-		accept = tr(nil, "信任指纹并连接")
-	}
-	target := a.form.User + "@" + targetID(identity.Host, identity.Port)
-	message := fmt.Sprintf(tr(nil, "服务器指纹\n%s\n\n信任后保存在本机加密保险库，不写入 ~/.ssh/known_hosts；以后指纹变化会拒绝。"), identity.Fingerprint)
-	a.ask(title, target, message, "", "", accept, func(string) {
-		if !a.editorCurrent(seq, gen) || a.form.ID != id {
-			return
-		}
-		a.form.Fingerprint = identity.Fingerprint
-		a.connection.identity = &identity
-		a.connection.trustedTarget = targetID(identity.Host, identity.Port)
-		a.connection.confirmed = true
-		a.connection.review = false
-		a.connection.recheck = false
-		a.saveProfile()
-	})
-}
-
-func (a *app) trustAndSaveConnection() {
-	if !a.online || a.connection.phase != "" || a.connection.identity == nil {
-		return
-	}
-	a.prompt = promptState{}
-	identity := a.connection.identity
-	port, err := strconv.Atoi(a.port)
-	if err != nil || targetID(strings.TrimSpace(a.form.Host), port) != targetID(identity.Host, identity.Port) {
-		a.invalidateHostIdentity()
-		a.connection.errors["trust"] = tr(nil, "地址或端口已变化，请重新连接并核对身份")
-		return
-	}
-	a.form.Fingerprint = identity.Fingerprint
-	a.connection.trustedTarget = targetID(identity.Host, identity.Port)
-	a.connection.confirmed = true
-	a.saveProfile()
 }
 
 func (a *app) invalidateHostIdentity() {
 	a.form.Fingerprint = ""
-	a.connection.identity = nil
-	a.connection.confirmed = false
-	a.connection.review = false
-	a.connection.recheck = false
 	a.connection.trustedTarget = ""
 }
-func loadPrivateKey(file, phrase string) (string, *sshconn.KeyInfo, error) {
+
+const maxConnectionKeySize = 1 << 20
+
+func readPrivateKeyFile(file string) (string, error) {
 	st, err := os.Stat(file)
 	if err != nil {
-		return "", nil, errors.New(tr(nil, "无法打开私钥文件，请重新选择"))
+		return "", errors.New(tr(nil, "无法打开私钥文件，请重新选择"))
 	}
-	if !st.Mode().IsRegular() || st.Size() > 1<<20 {
-		return "", nil, errors.New(tr(nil, "请选择不超过 1 MiB 的私钥文件"))
+	if !st.Mode().IsRegular() || st.Size() > maxConnectionKeySize {
+		return "", errors.New(tr(nil, "请选择不超过 1 MiB 的私钥文件"))
 	}
 	f, err := os.Open(file)
 	if err != nil {
-		return "", nil, errors.New(tr(nil, "无法打开私钥文件，请重新选择"))
+		return "", errors.New(tr(nil, "无法打开私钥文件，请重新选择"))
 	}
 	defer f.Close()
 	st, err = f.Stat()
-	if err != nil || !st.Mode().IsRegular() || st.Size() > 1<<20 {
-		return "", nil, errors.New(tr(nil, "请选择不超过 1 MiB 的私钥文件"))
+	if err != nil || !st.Mode().IsRegular() || st.Size() > maxConnectionKeySize {
+		return "", errors.New(tr(nil, "请选择不超过 1 MiB 的私钥文件"))
 	}
-	b, err := io.ReadAll(io.LimitReader(f, (1<<20)+1))
-	if err != nil || len(b) > 1<<20 {
-		wipe(b)
-		return "", nil, errors.New(tr(nil, "无法读取完整私钥文件"))
-	}
+	b, err := io.ReadAll(io.LimitReader(f, maxConnectionKeySize+1))
 	defer wipe(b)
-	raw := string(b)
-	info, err := sshconn.InspectPrivateKey(raw, phrase)
+	if err != nil || len(b) > maxConnectionKeySize {
+		return "", errors.New(tr(nil, "无法读取完整私钥文件"))
+	}
+	return string(b), nil
+}
+
+func loadPrivateKey(file, raw, phrase string) (string, *sshdata.KeyInfo, error) {
+	if raw == "" {
+		var err error
+		raw, err = readPrivateKeyFile(file)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	info, err := sshkey.InspectPrivateKey(raw, phrase)
 	if err != nil {
 		return "", nil, err
 	}
@@ -640,11 +567,20 @@ func (a *app) openPrivateKeyPicker() {
 }
 
 func (a *app) selectPrivateKey(pick func() ([]string, error)) {
+	a.selectConnectionFile(pick, "请选择私钥文件；取消后可继续编辑", "key", func(path string) {
+		a.keyFile = path
+		a.form.PrivateKey = ""
+		a.connection.keyInfo = nil
+		a.checkPrivateKey()
+	})
+}
+
+func (a *app) selectConnectionFile(pick func() ([]string, error), message, field string, chosen func(string)) {
 	if a.connection.phase != "" {
 		return
 	}
 	ctx, seq, gen := a.editorOperation("picker")
-	a.connection.message = tr(nil, "请选择私钥文件；取消后可继续编辑")
+	a.connection.message = tr(nil, message)
 	go func() {
 		files, err := pick()
 		a.postUI(func() {
@@ -656,24 +592,41 @@ func (a *app) selectPrivateKey(pick func() ([]string, error)) {
 			a.connection.phase = ""
 			a.connection.message = ""
 			if err != nil {
-				a.connection.errors["key"] = tr(nil, "无法打开文件选择器，请重试")
+				a.connection.errors[field] = tr(nil, "无法打开文件选择器，请重试")
 			} else if len(files) > 0 {
-				a.keyFile = files[0]
-				a.connection.keyInfo = nil
-				a.checkPrivateKey()
+				chosen(files[0])
 			}
 		})
 	}()
 }
+
+func (a *app) pastePrivateKey(raw string) {
+	if a.connection.phase != "" {
+		return
+	}
+	switch {
+	case len(raw) > maxConnectionKeySize:
+		a.connection.errors["key"] = tr(nil, "私钥不能超过 1 MiB")
+		return
+	case strings.TrimSpace(raw) == "":
+		a.connection.errors["key"] = tr(nil, "剪贴板里没有私钥文本")
+		return
+	}
+	a.form.PrivateKey = raw
+	a.keyFile = ""
+	a.connection.keyInfo = nil
+	a.checkPrivateKey()
+}
+
 func (a *app) checkPrivateKey() {
 	if a.connection.phase != "" {
 		return
 	}
-	file, phrase := a.keyFile, a.form.KeyPassphrase
+	file, pasted, phrase := a.keyFile, a.form.PrivateKey, a.form.KeyPassphrase
 	ctx, seq, gen := a.editorOperation("key")
 	a.connection.message = tr(nil, "正在检查私钥…")
 	go func() {
-		_, info, err := loadPrivateKey(file, phrase)
+		_, info, err := loadPrivateKey(file, pasted, phrase)
 		a.postUI(func() {
 			if !a.editorCurrent(seq, gen) || ctx.Err() != nil {
 				return
@@ -704,7 +657,7 @@ func (a *app) readAgentIdentities() {
 	cli := a.client
 	a.connection.message = tr(nil, "正在读取代理中的公开身份…")
 	go func() {
-		result, err := cli.CallWithOwner(ctx, broker.Message{Action: "agentIdentities"}, owner)
+		result, err := cli.CallWithOwner(ctx, protocol.Message{Action: "agentIdentities"}, owner)
 		a.postUI(func() {
 			if !a.editorCurrent(seq, gen) || ctx.Err() != nil {
 				return
@@ -749,7 +702,7 @@ func (a *app) connectionDraft() (vault.ProfileChange, bool) {
 	if err != nil || port < 1 || port > 65535 {
 		errs["port"] = tr(nil, "端口应为 1–65535 之间的数字")
 	}
-	if sshconn.ValidateTarget(p.Host, port) != nil {
+	if sshkey.ValidateTarget(p.Host, port) != nil {
 		errs["host"] = tr(nil, "请检查服务器地址和端口")
 	}
 	if len(p.Group) > 128 || strings.ContainsAny(p.Group, "\x00\r\n") {
@@ -758,14 +711,17 @@ func (a *app) connectionDraft() (vault.ProfileChange, bool) {
 	if len(a.formNote.Manual) > 8192 || strings.ContainsAny(a.formNote.Manual, "\x00\x1b") {
 		errs["note"] = tr(nil, "备注最多 8 KiB，不能包含控制字符")
 	}
+	if err := p.Policy.Validate(); err != nil {
+		errs["policy"] = err.Error()
+	}
 	keep := a.details != nil && !a.connection.replace && p.Auth == a.details.Auth
 	if !keep {
 		switch p.Auth {
 		case "key":
-			if a.keyFile == "" {
-				errs["key"] = tr(nil, "请选择已有私钥文件")
+			if a.keyFile == "" && p.PrivateKey == "" {
+				errs["key"] = tr(nil, "请粘贴私钥或选择私钥文件")
 			}
-		case "agent":
+		case "agent", "managed":
 			if p.AgentFingerprint == "" {
 				errs["agent"] = tr(nil, "请读取并选择一个代理身份")
 			}
@@ -796,7 +752,7 @@ func (a *app) connectionDraft() (vault.ProfileChange, bool) {
 	if e := p.Network.Validate(); e != nil {
 		errs["form"] = e.Error()
 	}
-	keepProxy := a.details != nil && !a.connection.replaceProxy && p.Network.Proxy.Password == "" && p.Network.Proxy.Public() == a.details.Network.Proxy.Public()
+	keepProxy := p.Network.RouteID == "" && a.details != nil && !a.connection.replaceProxy && p.Network.Proxy.Password == "" && p.Network.Proxy.Public() == a.details.Network.Proxy.Public()
 	return vault.ProfileChange{Profile: p, KeepCredential: keep, KeepProxyCredential: keepProxy}, len(errs) == 0
 }
 
@@ -845,43 +801,7 @@ func (a *app) saveProfile() {
 		a.revealConnectionErrors()
 		return
 	}
-	if change.Profile.Fingerprint == "" {
-		if a.connection.identity != nil {
-			a.connection.review = true
-			a.showIdentityPrompt(*a.connection.identity, a.connection.sequence, a.generation, change.Profile.ID)
-			return
-		}
-		ctx, seq, gen := a.editorOperation("probe")
-		cli := a.client
-		owner, err := a.unlockedOwner()
-		if err != nil {
-			a.cancelConnectionEditor()
-			a.status = err.Error()
-			return
-		}
-		a.connection.message = tr(nil, "正在读取服务器身份，尚未发送登录凭据…")
-		go func() {
-			result, err := cli.CallWithOwner(ctx, broker.Message{Action: "probeHost", ID: change.Profile.ID, Target: change.Profile.Host, Port: change.Profile.Port, Network: &change.Profile.Network, KeepProxyCredential: change.KeepProxyCredential}, owner)
-			a.postUI(func() {
-				if !a.editorCurrent(seq, gen) || ctx.Err() != nil {
-					return
-				}
-				a.connection.cancel()
-				a.connection.cancel = nil
-				a.connection.phase = ""
-				a.connection.message = ""
-				if err != nil {
-					a.connection.errors["trust"] = err.Error()
-				} else if result.HostIdentity != nil {
-					a.connection.identity = result.HostIdentity
-					a.connection.review = true
-					a.connection.confirmed = false
-					a.showIdentityPrompt(*result.HostIdentity, seq, gen, change.Profile.ID)
-				}
-			})
-		}()
-		return
-	}
+
 	owner, err := a.unlockedOwner()
 	if err != nil {
 		a.connection.errors["form"] = err.Error()
@@ -889,8 +809,7 @@ func (a *app) saveProfile() {
 	}
 	ctx, seq, gen := a.editorOperation("save")
 	cli := a.client
-	file, phrase := a.keyFile, a.form.KeyPassphrase
-	connect := a.connection.connect
+	file, pasted, phrase := a.keyFile, a.form.PrivateKey, a.form.KeyPassphrase
 	note, noteChanged := a.formNote, a.formNote.Manual != a.formNoteOriginal.Manual
 	a.connection.message = tr(nil, "正在加密保存连接…")
 	go func() {
@@ -905,11 +824,10 @@ func (a *app) saveProfile() {
 				a.connection.message = ""
 				a.connection.errors[key] = err.Error()
 				a.revealConnectionErrors()
-				a.connection.review = false
 			})
 		}
 		if !change.KeepCredential && change.Profile.Auth == "key" {
-			raw, _, err := loadPrivateKey(file, phrase)
+			raw, _, err := loadPrivateKey(file, pasted, phrase)
 			if err != nil {
 				fail("key", err)
 				return
@@ -935,8 +853,7 @@ func (a *app) saveProfile() {
 					a.connection.phase = ""
 					a.connection.message = tr(nil, "连接已保存，备注未保存")
 					a.connection.errors["note"] = err.Error()
-					a.connection.pendingNote = &pendingConnectionNote{summary: summary, id: change.Profile.ID, connect: connect}
-					a.connection.review = false
+					a.connection.pendingNote = &pendingConnectionNote{summary: summary, id: change.Profile.ID}
 					a.details = &summary
 					a.rememberConnection(summary)
 					a.connection.replace = false
@@ -955,7 +872,7 @@ func (a *app) saveProfile() {
 				}
 			})
 		}
-		a.completeSavedConnection(ctx, seq, gen, cli, owner, connectionSummary(change.Profile), connect, change.KeepCredential)
+		a.completeSavedConnection(ctx, seq, gen, connectionSummary(change.Profile))
 	}()
 }
 
@@ -972,7 +889,7 @@ func (a *app) retryPendingNote() {
 	note := a.formNote
 	ctx, seq, gen := a.editorOperation("save")
 	cli := a.client
-	pending = &pendingConnectionNote{summary: pending.summary, id: pending.id, connect: pending.connect}
+	pending = &pendingConnectionNote{summary: pending.summary, id: pending.id}
 	delete(a.connection.errors, "note")
 	a.connection.message = tr(nil, "正在保存备注…")
 	go func() {
@@ -1004,62 +921,21 @@ func (a *app) retryPendingNote() {
 			}
 			delete(a.connection.errors, "note")
 		})
-		a.completeSavedConnection(ctx, seq, gen, cli, owner, pending.summary, pending.connect, true)
+		a.completeSavedConnection(ctx, seq, gen, pending.summary)
 	}()
 }
 
-func (a *app) completeSavedConnection(ctx context.Context, seq uint64, gen int, cli client.Client, owner client.OwnerProof, summary vault.Summary, connect, keepCredential bool) {
-	a.postUI(func() {
-		if a.editorCurrent(seq, gen) {
-			if cancel := a.connecting[summary.ID]; cancel != nil {
-				cancel()
-			}
-		}
-	})
-	var stream *client.Stream
-	var err error
-	if connect {
-		a.postUI(func() {
-			if a.editorCurrent(seq, gen) {
-				a.connection.phase = "connect"
-				a.connection.message = tr(nil, "已加密保存，正在连接终端…")
-			}
-		})
-		stream, err = cli.ConnectWithOwner(ctx, summary.ID, owner)
-	}
+func (a *app) completeSavedConnection(ctx context.Context, seq uint64, gen int, summary vault.Summary) {
 	a.postUI(func() {
 		if !a.editorCurrent(seq, gen) || ctx.Err() != nil {
-			if stream != nil {
-				stream.Close()
-			}
 			return
 		}
-		cancel := a.connection.cancel
-		a.connection.cancel = nil
 		a.rememberConnection(summary)
-		if err != nil {
-			cancel()
-			a.details = &summary
-			a.connection.replace = !keepCredential
-			a.connection.review = false
-			a.connection.phase = ""
-			a.connection.message = tr(nil, "连接已保存；登录未成功，可修改后重试")
-			a.connection.errors["form"] = connectionError(err)
-			return
-		}
+		a.connection.phase = ""
 		a.clearConnectionInputSecrets()
 		a.connection.pendingNote = nil
-		a.connection.phase = ""
-		a.connection.message = ""
-		a.details = nil
-		a.switchHost(summary.ID)
-		a.page = 1
-		if stream != nil {
-			a.attachTerminal(stream, summary.ID, cancel)
-		} else {
-			cancel()
-			a.status = tr(nil, "连接已加密保存，双击即可连接")
-		}
+		a.cancelConnectionEditor()
+		a.status = tr(nil, "连接已加密保存，双击即可连接")
 	})
 }
 
@@ -1072,7 +948,7 @@ func isHostKeyMismatch(err error) bool {
 // offerHostKeyUpdate reads the new identity and asks the owner whether to
 // replace the stored key. The record stays in the encrypted vault; nothing is
 // written to ~/.ssh. Replacing is a deliberate act, so it is never silent.
-func (a *app) offerHostKeyUpdate(host string, retry func()) {
+func (a *app) offerHostKeyUpdate(host string, route connectcfg.RouteSelection, retry func()) {
 	var summary vault.Summary
 	for _, c := range a.connections {
 		if c.ID == host {
@@ -1090,12 +966,12 @@ func (a *app) offerHostKeyUpdate(host string, retry func()) {
 		return
 	}
 	ctx, cancel := context.WithCancel(a.operationContext())
-	cli, old := a.client, summary.Fingerprint
+	cli, old, gen := a.client, summary.Fingerprint, a.generation
 	go func() {
-		result, err := cli.CallWithOwner(ctx, broker.Message{Action: "probeHost", ID: summary.ID, Target: summary.Host, Port: summary.Port}, owner)
+		result, err := cli.CallWithOwner(ctx, hostIdentityQuery(summary, route), owner)
 		a.postUI(func() {
 			cancel()
-			if !a.online {
+			if !a.online || gen != a.generation {
 				return
 			}
 			if err != nil || result.HostIdentity == nil {
@@ -1106,14 +982,18 @@ func (a *app) offerHostKeyUpdate(host string, retry func()) {
 			message := tr(nil, "服务器返回的指纹与已保存的不同，已阻止登录。\n\n旧：") + old +
 				tr(nil, "\n新：") + next + tr(nil, "\n\n保存新指纹会替换这条服务器的旧记录；只有确认服务器确实换过密钥时才保存。")
 			a.ask(tr(nil, "服务器指纹已变化"), a.hostName(host), message, "", "", tr(nil, "保存新指纹并连接"), func(string) {
-				p := vault.Profile{ID: summary.ID, Name: summary.Name, Group: summary.Group, Host: summary.Host,
-					Port: summary.Port, User: summary.User, Auth: summary.Auth, AgentFingerprint: summary.AgentFingerprint,
-					Policy: summary.Policy, Fingerprint: next}
+				if !a.online || gen != a.generation {
+					return
+				}
+				trust := vault.HostTrustChange{ID: summary.ID, Host: summary.Host, Port: summary.Port, Previous: old, Fingerprint: next}
 				go func() {
 					saveCtx, saveCancel := context.WithTimeout(a.operationContext(), 30*time.Second)
 					defer saveCancel()
-					err := cli.SaveConnection(saveCtx, vault.ProfileChange{Profile: p, KeepCredential: true}, owner)
+					err := cli.SaveHostTrust(saveCtx, trust, owner)
 					a.postUI(func() {
+						if !a.online || gen != a.generation {
+							return
+						}
 						if err != nil {
 							a.status = err.Error()
 							return
@@ -1131,6 +1011,7 @@ func (a *app) offerHostKeyUpdate(host string, retry func()) {
 				}()
 			})
 			a.prompt.danger = true
+			a.prompt.size = components.DialogSmall
 		})
 	}()
 }
@@ -1138,6 +1019,8 @@ func (a *app) offerHostKeyUpdate(host string, retry func()) {
 func connectionError(err error) string {
 	message := err.Error()
 	switch {
+	case errors.Is(err, io.EOF):
+		return tr(nil, "SSH 连接提前关闭，请检查服务器或代理线路后重试")
 	case strings.Contains(message, "主机指纹与已确认记录不一致"):
 		return tr(nil, "服务器身份与已保存记录不同，已阻止登录。请先重新核对服务器身份")
 	case strings.Contains(message, "unable to authenticate"):

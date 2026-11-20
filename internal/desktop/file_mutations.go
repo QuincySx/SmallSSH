@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"sshclient/internal/approval"
 	"sshclient/internal/client"
-	"sshclient/internal/sshconn"
-	"sshclient/internal/vault"
+	"sshclient/internal/sshdata"
 )
 
 func directoryContains(local bool, parent, name string) bool {
@@ -27,7 +27,7 @@ func (a *app) fileMutationCompleted(endpoint string, origin *directoryBrowser, d
 	seen := map[*directoryBrowser]bool{}
 	browsers := []*directoryBrowser{origin}
 	for _, p := range a.allFilePanes() {
-		if b := p.states[endpoint]; b != nil {
+		if b := p.states[fileRouteKey(endpoint, origin.route)]; b != nil {
 			browsers = append(browsers, b)
 		}
 	}
@@ -43,13 +43,15 @@ func (a *app) fileMutationCompleted(endpoint string, origin *directoryBrowser, d
 				delete(b.loading, path)
 			}
 		}
-		// A fixed second pane may only have loaded the destination. Without
-		// source metadata, reload its listing instead of inventing an entry.
-		_, sourceLoaded := b.cache[dir]
-		if kind == "rename" && dir != destinationParent && !sourceLoaded {
-			delete(b.cache, destinationParent)
-			b.tree = nil
-			b.indexFiles()
+		if kind == "rename" && dir != destinationParent {
+			// A second pane or a concurrent refresh may only have loaded
+			// the destination. Reload it when source metadata is missing.
+			sourceName := baseName(local, name)
+			if _, loaded := b.cache[destinationParent]; loaded && !slices.ContainsFunc(b.cache[dir], func(f sshdata.File) bool { return f.Name == sourceName }) {
+				delete(b.cache, destinationParent)
+				b.tree = nil
+				b.indexFiles()
+			}
 		}
 		for path := range b.loadError {
 			if path == dir || kind == "rename" && path == destinationParent || isDir && (kind == "remove" || kind == "rename") && directoryContains(local, name, path) {
@@ -95,12 +97,12 @@ func (a *app) fileMutationCompleted(endpoint string, origin *directoryBrowser, d
 
 // confirmRemoveFiles snapshots both the endpoint and each entry before a
 // confirmation can be displayed or another pane can change selection.
-func (a *app) confirmRemoveFiles(endpoint string, browser *directoryBrowser, dir string, files []sshconn.File) {
+func (a *app) confirmRemoveFiles(endpoint string, browser *directoryBrowser, dir string, files []sshdata.File) {
 	if len(files) == 0 {
 		return
 	}
 	local := endpoint == localEndpoint
-	entries := append([]sshconn.File(nil), files...)
+	entries := append([]sshdata.File(nil), files...)
 	names := make([]string, 0, len(entries))
 	for _, file := range entries {
 		if file.Name == "" || file.Name == "." || file.Name == ".." || strings.ContainsAny(file.Name, "/\\\x00") {
@@ -123,8 +125,8 @@ func (a *app) confirmRemoveFiles(endpoint string, browser *directoryBrowser, dir
 		if a.busy {
 			return
 		}
-		ctx, gen := a.operationContext(), a.generation
-		var owner *vault.Session
+		ctx, gen := client.WithRoute(a.operationContext(), endpoint, browser.route), a.generation
+		var owner client.OwnerProof
 		if !local {
 			var err error
 			owner, err = a.unlockedOwner()
@@ -136,7 +138,7 @@ func (a *app) confirmRemoveFiles(endpoint string, browser *directoryBrowser, dir
 		cli := a.client
 		a.work(func() (func(), error) {
 			type result struct {
-				file sshconn.File
+				file sshdata.File
 				err  error
 			}
 			results := make([]result, 0, len(entries))

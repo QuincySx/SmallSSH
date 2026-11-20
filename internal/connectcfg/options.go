@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"sshclient/internal/proxyconfig"
 )
 
 type Terminal struct {
@@ -40,10 +42,23 @@ type Proxy struct {
 	Address  string `json:"address,omitempty"`
 	User     string `json:"user,omitempty"`
 	Password string `json:"password,omitempty"`
+	// Config is a restricted outbound JSON with credentials removed. Password
+	// holds the encrypted credential JSON for embedded protocols only.
+	Config string `json:"config,omitempty"`
 }
 
 func (p Proxy) Public() Proxy { p.Password = ""; return p }
 func (p Proxy) Validate() error {
+	if proxyconfig.Supported(p.Mode) {
+		if p.User != "" {
+			return errors.New("导入线路不使用独立的代理用户名")
+		}
+		_, err := proxyconfig.Outbound(p.Mode, p.Address, p.Config, p.Password, false)
+		return err
+	}
+	if p.Config != "" {
+		return errors.New("此代理类型不接受节点 JSON")
+	}
 	if len(p.Address) > 512 || len(p.User) > 255 || len(p.Password) > 255 || strings.ContainsAny(p.Address+p.User+p.Password, "\x00\r\n") {
 		return errors.New("代理字段无效或超过上限")
 	}
@@ -70,6 +85,7 @@ func (p Proxy) Validate() error {
 }
 
 type Network struct {
+	RouteID           string `json:"routeID,omitempty"`
 	Proxy             Proxy  `json:"proxy,omitzero"`
 	Relay             string `json:"relay,omitempty"`
 	KeepaliveSeconds  int    `json:"keepaliveSeconds,omitempty"`
@@ -78,6 +94,12 @@ type Network struct {
 
 func (n Network) Public() Network { n.Proxy = n.Proxy.Public(); return n }
 func (n Network) Validate() error {
+	if len(n.RouteID) > 128 || strings.ContainsAny(n.RouteID, "\x00\r\n") {
+		return errors.New("线路 ID 无效")
+	}
+	if n.RouteID != "" && (n.Relay != "" || n.Proxy != (Proxy{})) {
+		return errors.New("已保存线路不能与连接专用代理或 SSH 中转并选")
+	}
 	if err := n.Proxy.Validate(); err != nil {
 		return err
 	}
@@ -93,6 +115,9 @@ func (n Network) Validate() error {
 	return nil
 }
 
+// MacSmartCard selects the OS-backed PIV interface instead of a PKCS#11 file.
+const MacSmartCard = "macos-smartcard"
+
 type Hardware struct {
 	Module       string `json:"module,omitempty"`
 	ModuleSHA256 string `json:"moduleSHA256,omitempty"`
@@ -106,7 +131,11 @@ func (h Hardware) Public() Hardware { h.PIN = ""; return h }
 func (h Hardware) Validate() error {
 	hash, e := hex.DecodeString(h.ModuleSHA256)
 	id, ie := hex.DecodeString(h.KeyID)
-	if !filepath.IsAbs(h.Module) || len(h.Module) > 4096 || strings.ContainsAny(h.Module, "\x00\r\n") || e != nil || len(hash) != 32 || len(h.TokenSerial) == 0 || len(h.TokenSerial) > 32 || ie != nil || len(id) == 0 || len(id) > 128 || !strings.HasPrefix(h.Fingerprint, "SHA256:") || len(h.PIN) > 1024 {
+	driverOK := filepath.IsAbs(h.Module) && len(h.Module) <= 4096 && !strings.ContainsAny(h.Module, "\x00\r\n") && e == nil && len(hash) == 32
+	if h.Module == MacSmartCard {
+		driverOK = h.ModuleSHA256 == "" && h.PIN == "" && len(h.TokenSerial) == 32 && len(id) == 32
+	}
+	if !driverOK || len(h.TokenSerial) == 0 || len(h.TokenSerial) > 32 || ie != nil || len(id) == 0 || len(id) > 128 || !strings.HasPrefix(h.Fingerprint, "SHA256:") || len(h.PIN) > 1024 {
 		return errors.New("硬件密钥需指定原生模块完整路径及 SHA256、令牌序列号、密钥 ID 和公钥指纹")
 	}
 	return nil

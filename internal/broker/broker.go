@@ -4,7 +4,6 @@ package broker
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,9 +20,11 @@ import (
 	"sshclient/internal/connectcfg"
 	"sshclient/internal/fileattrs"
 	"sshclient/internal/localipc"
+	"sshclient/internal/operationrisk"
 	"sshclient/internal/ownercap"
 	"sshclient/internal/protocol"
 	"sshclient/internal/sshconn"
+	"sshclient/internal/sshdata"
 	"sshclient/internal/vault"
 )
 
@@ -64,6 +65,9 @@ type Server struct {
 	requestOwners   map[string]string
 	tlsConfig       *tls.Config
 	publicKeyPin    string
+	liveForwards    sync.Map
+	identityMu      sync.Mutex
+	identityAgent   identityController
 }
 
 // Open takes exclusive ownership of the vault until Close. The caller reads the
@@ -140,6 +144,11 @@ func openSessionWithRelease(dir string, v *vault.Session, now func() time.Time, 
 			}
 		}
 	}
+	// Keep the committed anchor inside retention even when this unlocked core
+	// survives several rotations and later exits without a clean close.
+	log.store.SetRotationCheckpoint(func(head string) error {
+		return v.SaveAuditHead(VaultPath(dir), head)
+	})
 	if e = log.write("unlocked", nil); e != nil {
 		log.close()
 		l.Close()
@@ -181,6 +190,7 @@ func openSessionWithRelease(dir string, v *vault.Session, now func() time.Time, 
 	// Only an authenticated owner session can publish initial trust. Existing
 	// different anchors remain untouched and require explicit owner repair.
 	_ = localipc.PairBroker(dir, publicKeyPin, false)
+	s.startPackagedIdentityAgent()
 	s.wg.Add(2)
 	go s.serve()
 	go func() {
@@ -269,6 +279,7 @@ func (s *Server) Close() {
 	s.once.Do(func() {
 		s.roots.clear()
 		s.cancel()
+		s.closeIdentityAgent()
 		s.listener.Close()
 		if s.ownerRegistry != nil {
 			s.ownerRegistry.Close()
@@ -299,12 +310,7 @@ func (s *Server) SealAudit() error {
 		}
 		s.auditExpiries()
 		_ = s.auditRequest("locked", nil)
-		head := s.audit.head()
-		if head == "" {
-			return
-		}
-		s.Vault.SetAuditHead(head)
-		s.sealErr = vault.Save(VaultPath(s.dir), s.Vault, false)
+		s.sealErr = s.audit.store.Checkpoint()
 	})
 	return s.sealErr
 }
@@ -353,13 +359,27 @@ func (s *Server) probeHost(w *localipc.Wire, q Message, channel *callerChannel) 
 			}
 		}
 	}
-	route, e := s.Vault.ResolveRoute(vault.Profile{ID: q.ID, Network: network})
+	var route []vault.Profile
+	var e error
+	if q.ConnectionRoute != nil {
+		if q.Network != nil {
+			return Message{}, errors.New("连接线路不能与手填代理同时使用")
+		}
+		target, err := s.Vault.Profile(q.ID)
+		if err != nil {
+			return Message{}, err
+		}
+		route, e = s.operationRoute(target, *q.ConnectionRoute)
+	} else {
+		route, e = s.Vault.ResolveRoute(vault.Profile{ID: q.ID, Network: network})
+	}
+
 	if e != nil {
 		return Message{}, e
 	}
 	if len(route) > 1 {
 		// The relay authenticates even though the destination probe does not.
-		request := approval.Request{ID: vault.ShortID(), Nonce: vault.ShortID(), OwnerIssued: true, Status: "running", Expires: time.Now().Add(8 * time.Second), Operation: approval.Operation{Kind: "route-probe", Host: q.ID, Client: "所有者连接探测", Endpoint: net.JoinHostPort(q.Target, strconv.Itoa(q.Port)), HostFingerprint: q.ExpectedFingerprint, Destination: network.Relay}}
+		request := approval.Request{ID: vault.ShortID(), Nonce: vault.ShortID(), OwnerIssued: true, Status: "running", Expires: time.Now().Add(8 * time.Second), Operation: approval.Operation{Kind: "route-probe", Host: q.ID, Client: "所有者连接探测", Endpoint: net.JoinHostPort(q.Target, strconv.Itoa(q.Port)), HostFingerprint: q.ExpectedFingerprint, Destination: route[0].Network.Relay}}
 		if e := s.auditRequest("started", &request); e != nil {
 			return Message{}, e
 		}
@@ -393,7 +413,7 @@ func (s *Server) probeHost(w *localipc.Wire, q Message, channel *callerChannel) 
 		measured, e := sshconn.MeasureRoutes(ctx, route)
 		return Message{RouteMeasurements: measured}, e
 	}
-	identity, e := sshconn.ProbeRoute(ctx, q.Target, q.Port, network, route[1:])
+	identity, e := sshconn.ProbeRoute(ctx, q.Target, q.Port, route[0].Network, route[1:])
 	if e != nil {
 		return Message{}, e
 	}
@@ -419,7 +439,14 @@ func (d dataWriter) Write(p []byte) (int, error) {
 }
 
 func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
-	fail := func(e error) { _ = w.Send(Message{Action: "error", Error: e.Error()}) }
+	errorResult := func(e error) Message {
+		msg := Message{Action: "error", Error: e.Error()}
+		if errors.Is(e, sshdata.ErrUploadTargetExists) {
+			msg.ErrorCode = protocol.ErrorUploadTargetExists
+		}
+		return msg
+	}
+	fail := func(e error) { _ = w.Send(errorResult(e)) }
 	s.ownerMu.Lock()
 	if s.auditFault.Load() {
 		s.ownerMu.Unlock()
@@ -453,8 +480,14 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 	}
 	p, e := s.Vault.Profile(op.Host)
 	var route []vault.Profile
+	if e == nil && op.Route.Temporary() && !r.OwnerIssued {
+		e = approval.ErrDenied
+	}
 	if e == nil {
-		route, e = s.Vault.ResolveRoute(p)
+		route, e = s.operationRoute(p, op.Route)
+		if e == nil {
+			p = route[0]
+		}
 	}
 	var scope approval.GrantScope
 	if e == nil && r.ParentID != "" {
@@ -466,7 +499,7 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 		}
 	}
 	if e == nil && !r.OwnerIssued {
-		e = s.checkAutomation(p, op, r.ParentID)
+		e = s.checkAutomation(p, op, r.ParentID, r.Peer)
 	}
 	if e != nil {
 		s.ownerMu.Unlock()
@@ -504,7 +537,7 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 	var opFailed bool
 	fail = func(err error) {
 		opFailed = true
-		_ = finish(Message{Action: "error", Error: err.Error()})
+		_ = finish(errorResult(err))
 	}
 	defer func() {
 		if !ended {
@@ -560,6 +593,9 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 	// terminal or a stream keeps its own, bound to its own context: revoking it
 	// must still end the transport it opened.
 	key := pooledKey(p)
+	// A runtime source captures its own upstream route. Even if two sources
+	// have the same relay host, their authenticated transports cannot mix.
+	key.options += "\x00" + op.Route.Key()
 	// Snapshot configuration while ownerMu protects the profile. Both transport
 	// reuse and canonical path caches retain this exact configuration identity.
 	lease := s.conns.lease(key)
@@ -570,6 +606,10 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 	}
 	s.ownerMu.Unlock()
 	if c == nil {
+		if e = s.resolveIdentitySockets(route); e != nil {
+			fail(e)
+			return
+		}
 		if c, e = sshconn.DialRoute(ctx, route); e != nil {
 			fail(e)
 			return
@@ -631,10 +671,14 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 			}
 		}
 	}
-	if scope.ReadRoot != "" || scope.WriteRoot != "" {
+	writeRoot := scope.WriteRoot
+	if r.ParentGeneration != "" && !r.MediumReview && writeRoot == "" && operationrisk.ReviewOptionalMutation(op.Kind, op.Path, op.Destination) {
+		writeRoot = "/"
+	}
+	if scope.ReadRoot != "" || writeRoot != "" {
 		lockWrites()
 		if e = c.CheckAllowedPaths(ctx, accesspolicy.ReadPaths(op), scope.ReadRoot); e == nil {
-			e = c.CheckAllowedPaths(ctx, accesspolicy.MutationPaths(op), scope.WriteRoot)
+			e = c.CheckAllowedPaths(ctx, accesspolicy.MutationPaths(op), writeRoot)
 		}
 		if e != nil {
 			fail(s.recordRefusal(op, r.ParentID, "scope_denied", p.Name, e))
@@ -650,6 +694,11 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 		if e != nil {
 			fail(e)
 			return
+		}
+
+		if op.Tunnel.Kind == "socks5" {
+			s.liveForwards.Store(q.ID, forward.Address())
+			defer s.liveForwards.Delete(q.ID)
 		}
 		defer forward.Close()
 	}
@@ -745,12 +794,18 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 		}
 		_ = finish(Message{Action: "done"})
 	case "monitor":
-		if e := s.streamSharedMonitor(ctx, c, p.ID, p.Fingerprint, w); e != nil && ctx.Err() == nil {
+		if e := s.streamSharedMonitor(ctx, c, p.ID, p.Fingerprint, w, lease); e != nil && ctx.Err() == nil {
 			fail(e)
 		}
 
-	case "exec":
-		r, e := c.Exec(ctx, op.Command)
+	case "exec", "upgrade-preview":
+		command := op.Command
+		if op.Kind == "upgrade-preview" {
+			// Use only the existing package indexes and a fixed simulation. No
+			// package, options, or configuration can be supplied by the caller.
+			command = "LC_ALL=C /usr/bin/apt-get --simulate --no-download upgrade"
+		}
+		r, e := c.Exec(ctx, command)
 		if e != nil {
 			fail(e)
 			return
@@ -851,7 +906,7 @@ func (s *Server) run(w *localipc.Wire, q Message, channel *callerChannel) {
 					statusCollector, statusSub = coll, sub
 					statusMu.Unlock()
 					markReady.Do(func() { close(ready) })
-				})
+				}, lease)
 				// A subscription that failed before registering must not leave the
 				// reader below waiting on it.
 				markReady.Do(func() { close(ready) })
@@ -911,25 +966,13 @@ func VaultPath(dir string) string { return filepath.Join(dir, "vault.json") }
 func Exists(dir string) bool      { _, e := os.Stat(VaultPath(dir)); return e == nil }
 
 func ProfileProof(challenge string, p vault.Profile, prove func([]byte) ([]byte, error)) ([]byte, error) {
-	b, e := json.Marshal(p)
-	if e != nil {
-		return nil, e
-	}
-	return prove(append([]byte("ssh-client/profile-put/v1\x00"+challenge+"\x00"), b...))
+	return protocol.ProfileProof(challenge, p, prove)
 }
 
 func ProfileChangeProof(challenge string, p vault.ProfileChange, prove func([]byte) ([]byte, error)) ([]byte, error) {
-	b, e := json.Marshal(p)
-	if e != nil {
-		return nil, e
-	}
-	return prove(append([]byte("ssh-client/profile-change/v1\x00"+challenge+"\x00"), b...))
+	return protocol.ProfileChangeProof(challenge, p, prove)
 }
 
 func OwnerRequestProof(challenge string, op approval.Operation, prove func([]byte) ([]byte, error)) ([]byte, error) {
-	b, e := json.Marshal(op)
-	if e != nil {
-		return nil, e
-	}
-	return prove(append([]byte("ssh-client/owner-request/v1\x00"+challenge+"\x00"), b...))
+	return protocol.OwnerRequestProof(challenge, op, prove)
 }

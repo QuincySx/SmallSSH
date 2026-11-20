@@ -96,6 +96,7 @@ func filterConnections(values []vault.Summary, id string) []vault.Summary {
 }
 
 type promptState struct {
+	route                                        *savedRouteEditor
 	host                                         dialogHost
 	docker                                       *dockerDialogState
 	properties                                   *filePropertiesState
@@ -104,15 +105,22 @@ type promptState struct {
 	detached                                     bool
 	title, target, message, value, field, accept string
 	secret, multiline                            bool
-	width, multilineHeight                       float32
+	width                                        float32
+	size                                         components.DialogSize
+	connectionIdentity                           bool
 	danger                                       bool
 	error                                        string
 	generation                                   int
 	validate                                     func(string) error
 	confirm                                      func(string)
+	cancel                                       func()
+	cancelText                                   string
 }
 
 func (a *app) ask(title, target, message, field, value, accept string, fn func(string)) {
+	if a.prompt.cancel != nil {
+		a.dismissPrompt()
+	}
 	a.cancelFileProperties()
 	a.cancelDockerDialog()
 	a.prompt = promptState{open: true, host: a.currentDialogHost(), detached: a.toolsWindowFocused(), title: title, target: target, message: message, field: field, value: value, accept: accept, confirm: fn, generation: a.generation}
@@ -120,6 +128,10 @@ func (a *app) ask(title, target, message, field, value, accept string, fn func(s
 }
 
 func (a *app) promptView(c *ui.Context) {
+	if a.prompt.route != nil {
+		a.savedRouteDialog(c)
+		return
+	}
 	if a.prompt.docker != nil {
 		a.dockerDialogView(c)
 		return
@@ -134,22 +146,9 @@ func (a *app) promptView(c *ui.Context) {
 	}
 	submit := false
 	components.Dialog(c, &a.prompt.open, components.DialogOptions{
-		Title: a.prompt.title, Target: reviewText(a.prompt.target), Description: a.prompt.message, Width: a.prompt.width,
+		Title: a.prompt.title, Target: reviewText(a.prompt.target), Description: a.prompt.message, Width: a.prompt.width, Size: a.prompt.size,
 	}, func() {
 		if a.prompt.field != "" {
-			if a.prompt.multiline && a.prompt.multilineHeight > 0 {
-				ui.Column(c).FillWidth().Gap(components.FormGap).Children(func() {
-					ui.Text(c, a.prompt.field).FontSize(13)
-					area := ui.TextArea(c, &a.prompt.value).Height(a.prompt.multilineHeight).FillWidth().Label(a.prompt.field).AutoFocus()
-					if area.Changed() {
-						a.prompt.error = ""
-					}
-					if a.prompt.error != "" {
-						ui.Text(c, a.prompt.error).FillWidth().FontSize(12).TextColor(c.Theme().Danger)
-					}
-				})
-				return
-			}
 			ui.Field(c, a.prompt.field, func() {
 				if a.prompt.multiline {
 					ui.TextArea(c, &a.prompt.value).Height(140).FillWidth().Label(a.prompt.field)
@@ -166,8 +165,12 @@ func (a *app) promptView(c *ui.Context) {
 			}).Error(a.prompt.error)
 		}
 	}, func() {
-		if components.Button(c, tr(c, "取消")).Height(components.FormHeight).Clicked() {
-			a.prompt = promptState{}
+		cancelText := a.prompt.cancelText
+		if cancelText == "" {
+			cancelText = tr(c, "取消")
+		}
+		if components.Button(c, cancelText).Height(components.FormHeight).Clicked() {
+			a.dismissPrompt()
 			return
 		}
 		variant := components.Primary
@@ -194,7 +197,7 @@ func (a *app) promptView(c *ui.Context) {
 		}
 	})
 	if !a.prompt.open {
-		a.prompt = promptState{}
+		a.dismissPrompt()
 	}
 }
 
@@ -207,7 +210,7 @@ func (a *app) workspaceView(c *ui.Context) {
 	}
 	a.ensurePanes()
 	c.Key("workbench-navigation-split")
-	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(0, 8, 8, 8).Children(func() {
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(0, components.WorkspaceInset, components.WorkspaceInset, components.WorkspaceInset).Children(func() {
 		components.SidebarSplit(c, &a.sidebarWidth, a.sidebarHidden, func() {
 			a.connectionSidebar(c, a.sidebarHidden)
 		}, func() {
@@ -296,11 +299,17 @@ func (a *app) sidebarToggle(c *ui.Context) {
 	c.Key("workspace-sidebar-toggle")
 	page := a.workspaceNavigationPage()
 	label := a.pageSidebarLabel(page)
-	if components.SVGButton(c, components.SidebarIcon, label).Clicked() {
-		a.sidebarHidden = !a.sidebarHidden
-		if a.page == 1 {
-			a.contentFocus = a.terminalFocusWanted()
-		}
+	_, _, _, _, key := workspaceKeys()
+	if components.SVGButton(c, components.SidebarIcon, label, shortcutTip(label, key)).Clicked() {
+		a.toggleSidebar()
+	}
+}
+
+// toggleSidebar is shared by the header button and the View menu.
+func (a *app) toggleSidebar() {
+	a.sidebarHidden = !a.sidebarHidden
+	if a.page == 1 {
+		a.contentFocus = a.terminalFocusWanted()
 	}
 }
 
@@ -449,7 +458,6 @@ func (a *app) editConnection() {
 			a.ownerPass = ""
 			a.connection.authLabel = authLabel(d.Auth)
 			a.connection.trustedTarget = targetID(d.Host, d.Port)
-			a.connection.connect = false
 			a.page = 0
 			a.startConnectionNotes(d.ID)
 			return
@@ -645,4 +653,12 @@ func (a *app) activeTerminalName() string {
 		return sessionDisplayName(nil, a.sessions[a.active])
 	}
 	return tr(nil, "请先连接终端")
+}
+
+func (a *app) dismissPrompt() {
+	canceled := a.prompt.cancel
+	a.prompt = promptState{}
+	if canceled != nil {
+		canceled()
+	}
 }

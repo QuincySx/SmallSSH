@@ -35,6 +35,7 @@ func coreToolbar(c *context, fn func()) *node {
 	tb.FocusGroup(Horizontal)
 	items := coreLocal(tb, "overflow", func() []toolbarItem { return nil })
 	tb.overflow = items
+	tb.special = true // it lays its own controls out
 	saved := c.buttons
 	c.buttons = toolbarButtons
 	tb.Children(func() {
@@ -58,8 +59,10 @@ func coreToolbar(c *context, fn func()) *node {
 				rt := c.rt
 				if s := rt.states[it.id]; s != nil {
 					if it.menu {
+						// Below the overflow button, in the next pass,
+						// which builds the menu button again.
 						x, y := more.st.menuCorner()
-						rt.askMenu(s, x, y, true)
+						rt.askMenuLater(s, x, y)
 					} else {
 						rt.clickLater = append(rt.clickLater, it.id)
 						rt.consumed = true
@@ -98,6 +101,8 @@ func (e *node) layoutToolbar(cw float32) {
 	for ch := e.first; ch != nil; ch = ch.next {
 		if ch.collapsed {
 			// Laid out again: the room may have grown.
+			journalKeep(e.c.rt, &ch.flags)
+			journalKeep(e.c.rt, &ch.collapsed)
 			ch.flags &^= flagAbsolute | flagInvisible
 			ch.collapsed = false
 			e.forgetIntrinsic()
@@ -134,7 +139,10 @@ func (e *node) layoutToolbar(cw float32) {
 		}
 	}
 	collapse := func(ch *node) {
-		ch.flags |= flagAbsolute | flagInvisible
+		journalKeep(e.c.rt, &ch.flags)
+		journalKeep(e.c.rt, &ch.collapsed)
+		ch.flags |= flagInvisible
+		ch.markAbsolute()
 		ch.collapsed = true
 		e.forgetIntrinsic()
 	}

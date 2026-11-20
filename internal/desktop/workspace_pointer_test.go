@@ -21,6 +21,12 @@ func TestWorkspacePointerDragsBuildSixPeerPanesWithoutReplacingContent(t *testin
 	source := files.source
 	sessions := slices.Clone(a.sessions)
 	tt := ui.NewTester(a.view, 1440, 960)
+	tabLabel := func(label string) string {
+		if a.workspaceCanvas || len(a.terminalGroups()) > 1 {
+			return "顶部标签：" + label
+		}
+		return label
+	}
 	split := func(label string, group *terminalGroup, edge string, count int) {
 		t.Helper()
 		r, ok := tt.Find(fmt.Sprintf("终端组%d", group.id))
@@ -38,7 +44,7 @@ func TestWorkspacePointerDragsBuildSixPeerPanesWithoutReplacingContent(t *testin
 		case "bottom":
 			y = r.Y + r.H - 6
 		}
-		dragTerminalTab(t, tt, label, x, y)
+		dragTerminalTab(t, tt, tabLabel(label), x, y)
 		tt.Frame()
 		if len(a.terminalGroups()) != count {
 			t.Fatalf("%s %s: expected %d panes, got %d", label, edge, count, len(a.terminalGroups()))
@@ -64,7 +70,7 @@ func TestWorkspacePointerDragsBuildSixPeerPanesWithoutReplacingContent(t *testin
 		expectTerminalInput(t, recorders[i], "")
 	}
 	r, _ := tt.Find(fmt.Sprintf("终端组%d", sessions[0].group.id))
-	dragTerminalTab(t, tt, "文件", r.X+r.W/2, r.Y+r.H/2)
+	dragTerminalTab(t, tt, tabLabel("文件"), r.X+r.W/2, r.Y+r.H/2)
 	if len(a.terminalGroups()) != 5 || files.group != sessions[0].group {
 		t.Fatal("moving the last tool did not collapse its empty pane")
 	}
@@ -82,7 +88,7 @@ func TestWorkspacePointerDragsBuildSixPeerPanesWithoutReplacingContent(t *testin
 	if !ok {
 		t.Fatal("no dock to receive the independent file view")
 	}
-	dragTerminalTab(t, tt, "文件", dock.X+dock.W/2, dock.Y+dock.H/2)
+	dragTerminalTab(t, tt, tabLabel("文件"), dock.X+dock.W/2, dock.Y+dock.H/2)
 	if a.workspaceTools[toolFiles] != nil || a.dock != toolFiles || a.primaryFilePane != pane || pane.browser() != browser {
 		t.Fatal("dragging a file peer back to the dock lost its content")
 	}

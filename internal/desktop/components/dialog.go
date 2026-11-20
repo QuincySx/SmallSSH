@@ -3,10 +3,20 @@ package components
 import (
 	"fmt"
 	"github.com/egoist/mygo/ui"
+	"sshclient/docs/design"
+)
+
+type DialogSize uint8
+
+const (
+	DialogDefault DialogSize = iota
+	DialogSmall
+	DialogLarge
 )
 
 type DialogOptions struct {
 	Title, Target, Description string
+	Size                       DialogSize
 	Width, Height              float32
 	Close                      func()
 	CloseDisabled              bool
@@ -16,6 +26,23 @@ type DialogOptions struct {
 	Compact        bool
 }
 
+const DialogSidebarInset float32 = 8
+
+// DialogSidebar frames category navigation as one surface while keeping its
+// native scroll and keyboard focus group separate from the form content.
+func DialogSidebar(c *ui.Context, key, label string, width float32, children func()) ui.Element {
+	c.Key(key)
+	return ui.Column(c).Width(width).FillHeight().Shrink(0).MinHeight(0).
+		Padding(DialogSidebarInset).Radius(8).Border(1, c.Theme().Border).
+		Background(c.Theme().Background).Label(label).Children(func() {
+		c.Key("navigation-sidebar-scroll:" + key)
+		ui.Scroll(c).FillWidth().Grow(1).MinHeight(0).Label(label + tr(c, "滚动区")).Children(func() {
+			c.Key("navigation-sidebar-items:" + key)
+			ui.Column(c).FillWidth().Gap(NavigationItemGap).FocusGroup(ui.Vertical).Children(children)
+		})
+	})
+}
+
 // Dialog owns presentation and MyGo's focus trap/Escape behavior. Validation,
 // cancellation, secret lifetime and permission checks belong to the caller.
 // It never implicitly accepts an action or closes after a failed validation.
@@ -23,6 +50,12 @@ func Dialog(c *ui.Context, open *bool, o DialogOptions, body, actions func()) ui
 	width := o.Width
 	if width <= 0 {
 		width = 520
+		switch o.Size {
+		case DialogSmall:
+			width = design.Length("size-dialog-small")
+		case DialogLarge:
+			width = design.Length("size-dialog-large")
+		}
 	}
 	w, h := c.Size()
 	padding, gap, titleSize := float32(16), float32(12), float32(16)

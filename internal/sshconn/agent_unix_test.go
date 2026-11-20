@@ -102,3 +102,30 @@ func TestUnresponsiveAgentHonorsCancellation(t *testing.T) {
 		t.Fatal("public identity read ignored cancellation", e)
 	}
 }
+
+func TestManagedIdentityUsesOnlyBrokerResolvedSocket(t *testing.T) {
+	fixture := testserver.New(t)
+	raw, err := ssh.ParseRawPrivateKey([]byte(fixture.PrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring := agent.NewKeyring()
+	if err = ring.Add(agent.AddedKey{PrivateKey: raw}); err != nil {
+		t.Fatal(err)
+	}
+	socket := agentSocket(t, func(c net.Conn) { agent.ServeAgent(ring, c) })
+	t.Setenv("SSH_AUTH_SOCK", "/synthetic/untrusted-environment.sock")
+	p := fixture.Profile()
+	p.Auth = "managed"
+	p.Password = ""
+	p.AgentFingerprint = ssh.FingerprintSHA256(fixture.Key.PublicKey())
+	if _, err = sshconn.Dial(context.Background(), p); err == nil {
+		t.Fatal("managed authentication fell back to environment")
+	}
+	p.AgentSocket = socket
+	c, err := sshconn.Dial(context.Background(), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+}

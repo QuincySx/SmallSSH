@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"sshclient/internal/broker"
 	"sshclient/internal/localipc"
@@ -37,6 +38,7 @@ func (h *Host) lockCoreLocked() error {
 	core := h.core
 	h.core = nil
 	h.generation++
+	h.unlockNoticeAt = time.Time{}
 	h.mu.Unlock()
 
 	h.cleanupPendingLocked()
